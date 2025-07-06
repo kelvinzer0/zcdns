@@ -1,0 +1,47 @@
+---
+title: DNS Concepts
+description: Understanding important concepts in DNS
+---
+
+# DNS Concepts
+
+Understanding basic DNS concepts will help you manage domains and troubleshoot DNS issues more effectively.
+
+## DNS Hierarchy
+
+DNS uses a hierarchical structure consisting of:
+
+### Root Domain
+- The highest level in the DNS hierarchy
+- Represented by a dot (.)
+- Managed by root name servers
+
+### Top-Level Domain (TLD)
+- Top-level domains like .com, .org, .id
+- Managed by different registries
+
+### Second-Level Domain
+- The domain you register (example: example in example.com)
+
+### Subdomain
+- Part of the main domain (example: www.example.com)
+
+## DNS Resolution Process
+
+1. **Query**: Browser requests IP address for domain
+2. **Recursive Resolver**: Receives query and searches for answer
+3. **Root Nameserver**: Directs to TLD nameserver
+4. **TLD Nameserver**: Directs to authoritative nameserver
+5. **Authoritative Nameserver**: Provides final IP address
+6. **Response**: IP address is returned to browser
+
+## DNS Caching
+
+- **Browser Cache**: Stores DNS results in browser
+- **OS Cache**: Operating system stores DNS results
+- **Resolver Cache**: ISP stores DNS results
+- **TTL (Time To Live)**: Determines how long cache is valid
+
+## DNS Propagation
+
+The time required for DNS changes to spread across the internet, typically 24-48 hours.

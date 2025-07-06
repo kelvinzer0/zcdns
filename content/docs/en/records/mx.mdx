@@ -1,0 +1,154 @@
+---
+title: MX Record
+description: DNS record that specifies email server for domain
+---
+
+# MX Record
+
+MX Record is a DNS record that specifies which email server is responsible for receiving email for your domain.
+
+## What is an MX Record?
+
+MX (Mail Exchange) Record directs email sent to your domain to the appropriate email server. Without MX records, your domain cannot receive email.
+
+## MX Record Format
+
+```
+Name: example.com
+Type: MX
+Priority: 10
+Value: mail.example.com
+TTL: 3600
+```
+
+## MX Record Components
+
+### Priority
+- Number 0-65535 that determines email server order
+- **Lower number = higher priority**
+- If high priority server is down, email goes to next priority
+
+### Mail Server
+- Domain name of email server (must be FQDN)
+- Must point to A or AAAA record
+- Cannot point to CNAME record
+
+## Configuration Examples
+
+### Single Mail Server
+```
+example.com MX 10 mail.example.com
+```
+
+### Multiple Mail Servers (Redundancy)
+```
+example.com MX 10 mail1.example.com
+example.com MX 20 mail2.example.com
+example.com MX 30 mail3.example.com
+```
+
+### Google Workspace
+```
+example.com MX 1  aspmx.l.google.com
+example.com MX 5  alt1.aspmx.l.google.com
+example.com MX 5  alt2.aspmx.l.google.com
+example.com MX 10 alt3.aspmx.l.google.com
+example.com MX 10 alt4.aspmx.l.google.com
+```
+
+### Microsoft 365
+```
+example.com MX 0 example-com.mail.protection.outlook.com
+```
+
+## How to Create MX Record
+
+1. Login to DNS management panel
+2. Select "Add Record"
+3. Choose type "MX"
+4. Enter domain name (@ for root domain)
+5. Enter priority (10 for primary server)
+6. Enter mail server FQDN
+7. Set TTL
+8. Save record
+
+## Best Practices
+
+### Priority Planning
+- **Primary server**: Priority 10
+- **Backup server**: Priority 20, 30, etc
+- **Don't use priority 0** except for Microsoft 365
+
+### Redundancy
+- Always provide at least 2 MX records
+- Use servers in different geographical locations
+- Test all servers regularly
+
+### Security
+- Ensure mail servers support TLS
+- Implement SPF, DKIM, and DMARC
+- Monitor for spam and abuse
+
+## Troubleshooting
+
+### Verify MX Record
+```bash
+nslookup -type=MX example.com
+dig example.com MX
+```
+
+### Test Email Delivery
+```bash
+telnet mail.example.com 25
+```
+
+### Common Issues
+
+#### Email Not Delivered
+- Check MX record exists and is correct
+- Ensure mail server is accessible
+- Check firewall port 25
+
+#### Email Bounces
+- Verify MX record priority
+- Ensure mail server is not overloaded
+- Check mail server configuration
+
+#### Spam Issues
+- Implement SPF record
+- Setup DKIM signing
+- Configure DMARC policy
+
+## Integration with Other Records
+
+### SPF Record (TXT)
+```
+example.com TXT "v=spf1 mx include:_spf.google.com ~all"
+```
+
+### DKIM Record (TXT)
+```
+selector._domainkey.example.com TXT "v=DKIM1; k=rsa; p=..."
+```
+
+### DMARC Record (TXT)
+```
+_dmarc.example.com TXT "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com"
+```
+
+## Popular Email Providers
+
+### Gmail/Google Workspace
+- Easy setup and reliable
+- Excellent spam filtering
+- Integration with Google services
+
+### Microsoft 365
+- Integration with Office suite
+- Advanced threat protection
+- Compliance features
+
+### Self-hosted
+- Full control
+- High customization
+- Requires technical expertise

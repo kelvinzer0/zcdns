@@ -1,0 +1,226 @@
+---
+title: PTR Record
+description: DNS record for reverse DNS lookup that translates IP to domain
+---
+
+# PTR Record
+
+PTR Record is a DNS record used for reverse DNS lookup, translating IP addresses back to domain names.
+
+## What is a PTR Record?
+
+PTR (Pointer) Record does the opposite of an A record - converts IP addresses to domain names. This is important for email delivery, logging, and security verification.
+
+## PTR Record Format
+
+### IPv4 PTR Record
+```
+Name: 1.1.168.192.in-addr.arpa
+Type: PTR
+Value: mail.example.com
+TTL: 3600
+```
+
+### IPv6 PTR Record
+```
+Name: 1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa
+Type: PTR
+Value: mail.example.com
+TTL: 3600
+```
+
+## How PTR Records Work
+
+### Forward DNS (A Record)
+```
+example.com -> 192.168.1.1
+```
+
+### Reverse DNS (PTR Record)
+```
+192.168.1.1 -> example.com
+```
+
+## Why PTR Records are Important?
+
+### Email Delivery
+- **Spam Prevention**: Mail servers check PTR records for verification
+- **Reputation**: Matching PTR records improve deliverability
+- **Authentication**: Part of email authentication process
+
+### Security & Logging
+- **Log Analysis**: Convert IPs to hostnames in logs
+- **Forensics**: Identify traffic sources
+- **Monitoring**: Track connections by hostname
+
+### Compliance
+- **RFC Requirements**: Some RFCs recommend PTR records
+- **Best Practices**: Standard practice for mail servers
+
+## Reverse DNS Zone Format
+
+### IPv4 Reverse Zone
+For IP 192.168.1.1:
+```
+1.1.168.192.in-addr.arpa PTR mail.example.com
+```
+
+### IPv6 Reverse Zone
+For IP 2001:db8::1:
+```
+1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa PTR mail.example.com
+```
+
+## Who Manages PTR Records?
+
+### ISP/Hosting Provider
+- **Dedicated Server**: Usually managed by ISP
+- **VPS/Cloud**: Managed by hosting provider
+- **Shared Hosting**: Cannot be changed by user
+
+### Self-managed
+- **Own IP Block**: If you own IP block
+- **Delegated Reverse Zone**: ISP delegates reverse zone
+
+## How to Setup PTR Record
+
+### Through Hosting Provider
+1. Login to hosting control panel
+2. Find "Reverse DNS" or "PTR Record" menu
+3. Enter IP address and target hostname
+4. Save configuration
+
+### Through ISP
+1. Contact ISP or data center
+2. Request PTR record setup
+3. Provide IP address and target hostname
+4. Wait for ISP configuration
+
+## PTR Record Best Practices
+
+### Email Server
+- **Match Forward/Reverse**: PTR must match A record
+- **Use Mail Hostname**: Use mail server hostname, not main domain
+- **Consistent Naming**: Use consistent naming convention
+
+### Multiple IPs
+- **Dedicated PTR**: Each IP has its own PTR record
+- **Meaningful Names**: Use descriptive names
+- **Documentation**: Document IP-hostname mapping
+
+## Email Configuration Example
+
+### Forward DNS (A Record)
+```
+mail.example.com A 203.0.113.10
+```
+
+### Reverse DNS (PTR Record)
+```
+10.113.0.203.in-addr.arpa PTR mail.example.com
+```
+
+### Verify Match
+```bash
+# Forward lookup
+nslookup mail.example.com
+# Output: 203.0.113.10
+
+# Reverse lookup  
+nslookup 203.0.113.10
+# Output: mail.example.com
+```
+
+## Troubleshooting PTR Record
+
+### Verify PTR Record
+```bash
+# IPv4 reverse lookup
+nslookup 192.168.1.1
+dig -x 192.168.1.1
+
+# IPv6 reverse lookup
+nslookup 2001:db8::1
+dig -x 2001:db8::1
+```
+
+### Test Email Delivery
+```bash
+# Check if PTR matches hostname
+host 203.0.113.10
+# Should return: mail.example.com
+
+# Verify forward matches reverse
+host mail.example.com
+# Should return: 203.0.113.10
+```
+
+### Common Issues
+
+#### No PTR Record
+- **Symptom**: Email bounces or goes to spam
+- **Solution**: Setup PTR record through ISP/hosting provider
+- **Check**: `dig -x [IP_ADDRESS]`
+
+#### Forward/Reverse Mismatch
+- **Symptom**: Email authentication fails
+- **Solution**: Ensure A record and PTR record match
+- **Check**: Compare forward and reverse lookup results
+
+#### Permission Denied
+- **Symptom**: Cannot setup PTR record
+- **Solution**: Contact ISP or hosting provider
+- **Alternative**: Use dedicated IP with PTR control
+
+## Verification Tools
+
+### Command Line Tools
+```bash
+# Basic reverse lookup
+nslookup 192.168.1.1
+
+# Detailed reverse lookup
+dig -x 192.168.1.1
+
+# Check specific DNS server
+dig @8.8.8.8 -x 192.168.1.1
+```
+
+### Online Tools
+- MXToolbox Reverse DNS Lookup
+- DNSstuff Reverse DNS
+- WhatIsMyIPAddress Reverse DNS
+- IntoDNS Reverse DNS Check
+
+## PTR Record for IPv6
+
+### IPv6 PTR Format
+IPv6 uses more complex format:
+```
+# IP: 2001:db8::1
+# PTR: 1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa
+```
+
+### Tools for IPv6 PTR
+```bash
+# Generate IPv6 PTR name
+python3 -c "
+import ipaddress
+ip = ipaddress.IPv6Address('2001:db8::1')
+print(ip.reverse_pointer)
+"
+```
+
+## Monitoring PTR Record
+
+### Automated Checks
+- Monitor PTR record availability
+- Alert if PTR record changes
+- Verify forward/reverse consistency
+
+### Email Deliverability
+- Monitor email bounce rate
+- Check spam score reports
+- Track email authentication results
+
+PTR Record is an important component for email delivery and network security. Always ensure it exists and matches forward DNS records.

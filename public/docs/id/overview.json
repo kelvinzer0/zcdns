@@ -1,0 +1,7 @@
+{
+  "frontMatter": {
+    "title": "Pengantar DNS",
+    "description": "Memahami dasar-dasar Domain Name System (DNS) dan cara kerjanya"
+  },
+  "content": "<h1>Pengantar DNS</h1>\n<p>Domain Name System (DNS) adalah sistem yang menerjemahkan nama domain yang mudah diingat (seperti example.com) menjadi alamat IP yang dapat dipahami oleh komputer.</p>\n<h2>Apa itu DNS?</h2>\n<p>DNS berfungsi seperti buku telepon internet. Ketika Anda mengetik nama website di browser, DNS akan mencari alamat IP yang sesuai dengan nama domain tersebut.</p>\n<h2>Mengapa DNS Penting?</h2>\n<ul>\n<li><strong>Kemudahan Penggunaan</strong>: Lebih mudah mengingat &quot;google.com&quot; daripada &quot;142.250.190.78&quot;</li>\n<li><strong>Fleksibilitas</strong>: Memungkinkan perubahan server tanpa mengubah nama domain</li>\n<li><strong>Skalabilitas</strong>: Mendukung miliaran nama domain di seluruh dunia</li>\n</ul>\n<h2>Komponen Utama DNS</h2>\n<ol>\n<li><strong>Domain Name</strong>: Nama yang mudah diingat (contoh: example.com)</li>\n<li><strong>DNS Records</strong>: Data yang menyimpan informasi tentang domain</li>\n<li><strong>Name Servers</strong>: Server yang menyimpan dan mengelola DNS records</li>\n<li><strong>Resolvers</strong>: Sistem yang menerjemahkan nama domain menjadi alamat IP</li>\n</ol>\n<p>DNS adalah fondasi dari internet modern yang memungkinkan kita mengakses website dengan mudah menggunakan nama yang dapat diingat.</p>\n"
+}

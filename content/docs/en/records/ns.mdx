@@ -1,0 +1,179 @@
+---
+title: NS Record
+description: DNS record that specifies authoritative nameservers for domain
+---
+
+# NS Record
+
+NS Record is a DNS record that specifies which nameservers are authoritative for managing DNS records of a domain or subdomain.
+
+## What is an NS Record?
+
+NS (Name Server) Record points to nameservers responsible for storing and managing DNS records for a specific domain. This record is essential for DNS delegation.
+
+## NS Record Format
+
+```
+Name: example.com
+Type: NS
+Value: ns1.example.com
+TTL: 86400
+```
+
+## Types of NS Records
+
+### Root Domain NS Records
+Specify nameservers for main domain:
+```
+example.com NS ns1.zcdns.id
+example.com NS ns2.zcdns.id
+```
+
+### Subdomain NS Records
+Delegate subdomain to other nameservers:
+```
+subdomain.example.com NS ns1.subdomain-host.com
+subdomain.example.com NS ns2.subdomain-host.com
+```
+
+## How NS Records Work
+
+1. **DNS Query**: Browser requests information about example.com
+2. **Root Servers**: Direct to TLD nameservers (.com)
+3. **TLD Servers**: Check NS record and direct to authoritative nameserver
+4. **Authoritative Servers**: Provide final answer (A, CNAME, etc)
+
+## Configuration Examples
+
+### ZeroCentDNS Nameservers
+```
+example.com NS ns1.zcdns.id
+example.com NS ns2.zcdns.id
+```
+
+### Google Cloud DNS
+```
+example.com NS ns-cloud-a1.googledomains.com
+example.com NS ns-cloud-a2.googledomains.com
+example.com NS ns-cloud-a3.googledomains.com
+example.com NS ns-cloud-a4.googledomains.com
+```
+
+### AWS Route 53
+```
+example.com NS ns-123.awsdns-12.com
+example.com NS ns-456.awsdns-34.net
+example.com NS ns-789.awsdns-56.org
+example.com NS ns-012.awsdns-78.co.uk
+```
+
+## Subdomain Delegation
+
+Delegate subdomain to another DNS provider:
+
+```
+# At main nameserver (example.com)
+api.example.com NS ns1.api-provider.com
+api.example.com NS ns2.api-provider.com
+
+# At api-provider.com nameserver
+api.example.com A 192.168.1.100
+api.example.com AAAA 2001:db8::1
+```
+
+## How to Change NS Records
+
+### At Domain Registrar
+1. Login to registrar control panel
+2. Find "Nameservers" or "DNS Management" menu
+3. Change from default to custom nameservers
+4. Enter new nameservers
+5. Save changes
+
+### Propagation Time
+- NS record changes take 24-48 hours
+- NS record TTL is usually high (86400 seconds = 24 hours)
+- Use multiple DNS checkers for verification
+
+## Best Practices
+
+### Redundancy
+- Always use at least 2 nameservers
+- Maximum 13 nameservers (RFC limit)
+- Use nameservers in different geographical locations
+
+### Performance
+- Choose DNS provider with global network
+- Monitor nameserver response time
+- Use anycast for load distribution
+
+### Security
+- Enable DNSSEC if supported
+- Monitor for DNS hijacking
+- Use reputable DNS providers
+
+## Troubleshooting
+
+### Verify NS Record
+```bash
+nslookup -type=NS example.com
+dig example.com NS
+```
+
+### Check Nameserver Response
+```bash
+nslookup example.com ns1.zcdns.id
+dig @ns1.zcdns.id example.com
+```
+
+### Common Issues
+
+#### Domain Not Resolving
+- Check NS record at registrar
+- Ensure nameservers are active and responding
+- Check configuration at target nameserver
+
+#### Slow Propagation
+- NS records have high TTL (24 hours)
+- Flush local DNS cache
+- Wait up to 48 hours for full propagation
+
+#### Subdomain Delegation Failed
+- Ensure NS record exists at parent domain
+- Verify target nameserver has records for subdomain
+- Check for conflicts with other records
+
+## Popular DNS Providers
+
+### ZeroCentDNS
+- **Pros**: Free, fast, Full DNS Control
+- **Cons**: Limited advanced features
+
+### Cloudflare
+- **Pros**: Free, fast, DNSSEC, DDoS protection
+- **Cons**: Limited advanced features in free plan
+
+### Google Cloud DNS
+- **Pros**: Reliable, global network, GCP integration
+- **Cons**: Paid service, complex for beginners
+
+### AWS Route 53
+- **Pros**: Scalable, health checks, traffic routing
+- **Cons**: Paid service, learning curve
+
+### Namecheap DNS
+- **Pros**: Free for customers, easy to use
+- **Cons**: Limited advanced features
+
+## Monitoring NS Records
+
+### Monitoring Tools
+- DNS monitoring services
+- Uptime monitoring for nameservers
+- DNSSEC validation monitoring
+
+### Important Metrics
+- Nameserver response time
+- Nameserver availability
+- DNS query success rate
+- DNSSEC validation status

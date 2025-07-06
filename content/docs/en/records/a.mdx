@@ -1,0 +1,69 @@
+---
+title: A Record
+description: DNS record that points domain to IPv4 address
+---
+
+# A Record
+
+A Record is the most commonly used DNS record type for pointing domain names to IPv4 addresses.
+
+## What is an A Record?
+
+An A Record (Address Record) connects a domain name with an IPv4 address. When someone accesses your domain, the A Record tells the browser which server IP address to contact.
+
+## A Record Format
+
+```
+Name: example.com
+Type: A
+Value: 192.168.1.1
+TTL: 3600
+```
+
+## Usage Examples
+
+### Main Domain
+```
+example.com -> 192.168.1.1
+```
+
+### Subdomains
+```
+www.example.com -> 192.168.1.1
+blog.example.com -> 192.168.1.2
+```
+
+## How to Create an A Record
+
+1. Login to DNS management panel
+2. Select "Add Record" or "Create Record"
+3. Choose type "A"
+4. Enter name (@ for root domain, or subdomain)
+5. Enter target IPv4 address
+6. Set TTL (usually 300-3600 seconds)
+7. Save record
+
+## Best Practices
+
+- **Low TTL**: Use 300 seconds TTL when testing
+- **Multiple A Records**: Can point to multiple IPs for load balancing
+- **Consistency**: Ensure all A Records point to active servers
+
+## Troubleshooting
+
+### Record Not Working
+- Check if IP address is correct
+- Wait for DNS propagation (up to 48 hours)
+- Check previous record's TTL
+
+### Verification Tools
+```bash
+nslookup example.com
+dig example.com A
+```
+
+## Differences from Other Records
+
+- **A vs AAAA**: A for IPv4, AAAA for IPv6
+- **A vs CNAME**: A points to IP, CNAME points to another domain
+- **A vs ALIAS**: A is standard DNS, ALIAS is provider-specific

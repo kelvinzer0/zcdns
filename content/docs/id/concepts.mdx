@@ -1,0 +1,47 @@
+---
+title: Konsep DNS
+description: Memahami konsep-konsep penting dalam DNS
+---
+
+# Konsep DNS
+
+Memahami konsep dasar DNS akan membantu Anda mengelola domain dan troubleshooting masalah DNS dengan lebih efektif.
+
+## Hierarki DNS
+
+DNS menggunakan struktur hierarkis yang terdiri dari:
+
+### Root Domain
+- Tingkat tertinggi dalam hierarki DNS
+- Direpresentasikan dengan titik (.)
+- Dikelola oleh root name servers
+
+### Top-Level Domain (TLD)
+- Domain tingkat atas seperti .com, .org, .id
+- Dikelola oleh registry yang berbeda
+
+### Second-Level Domain
+- Domain yang Anda daftarkan (contoh: example dalam example.com)
+
+### Subdomain
+- Bagian dari domain utama (contoh: www.example.com)
+
+## Proses Resolusi DNS
+
+1. **Query**: Browser meminta alamat IP untuk domain
+2. **Recursive Resolver**: Menerima query dan mencari jawaban
+3. **Root Nameserver**: Mengarahkan ke TLD nameserver
+4. **TLD Nameserver**: Mengarahkan ke authoritative nameserver
+5. **Authoritative Nameserver**: Memberikan alamat IP final
+6. **Response**: Alamat IP dikembalikan ke browser
+
+## DNS Caching
+
+- **Browser Cache**: Menyimpan hasil DNS di browser
+- **OS Cache**: Sistem operasi menyimpan hasil DNS
+- **Resolver Cache**: ISP menyimpan hasil DNS
+- **TTL (Time To Live)**: Menentukan berapa lama cache berlaku
+
+## DNS Propagation
+
+Waktu yang dibutuhkan untuk perubahan DNS menyebar ke seluruh internet, biasanya 24-48 jam.

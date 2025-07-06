@@ -1,0 +1,242 @@
+---
+title: SRV Record
+description: DNS record that specifies location of specific services within domain
+---
+
+# SRV Record
+
+SRV Record is a DNS record that specifies hostname and port for specific services, allowing applications to automatically discover services.
+
+## What is an SRV Record?
+
+SRV (Service) Record provides information about services available within a domain, including hostname, port, priority, and weight for load balancing.
+
+## SRV Record Format
+
+```
+Name: _service._protocol.domain
+Type: SRV
+Priority: 10
+Weight: 5
+Port: 443
+Target: server.example.com
+TTL: 3600
+```
+
+## SRV Record Components
+
+### Service Name
+```
+_service._protocol.domain
+```
+- **_service**: Service name (example: _http, _sip, _xmpp)
+- **_protocol**: Transport protocol (_tcp or _udp)
+- **domain**: Domain providing the service
+
+### Priority
+```
+Priority: 10
+```
+- Number 0-65535
+- **Lower number = higher priority**
+- Client tries low priority servers first
+
+### Weight
+```
+Weight: 5
+```
+- Load balancing for servers with same priority
+- **Higher number = more likely to be chosen**
+- 0 = backup server
+
+### Port
+```
+Port: 443
+```
+- Port number where service runs
+- 1-65535
+
+### Target
+```
+Target: server.example.com
+```
+- Hostname of server providing service
+- Must be FQDN (Fully Qualified Domain Name)
+
+## SRV Record Usage Examples
+
+### HTTP/HTTPS Services
+```
+_http._tcp.example.com SRV 10 5 80 web1.example.com
+_https._tcp.example.com SRV 10 5 443 web1.example.com
+```
+
+### Email Services (SMTP)
+```
+_smtp._tcp.example.com SRV 10 5 25 mail.example.com
+_submission._tcp.example.com SRV 10 5 587 mail.example.com
+```
+
+### VoIP Services (SIP)
+```
+_sip._tcp.example.com SRV 10 5 5060 sip1.example.com
+_sip._udp.example.com SRV 10 5 5060 sip1.example.com
+```
+
+### XMPP/Jabber
+```
+_xmpp-client._tcp.example.com SRV 10 5 5222 xmpp.example.com
+_xmpp-server._tcp.example.com SRV 10 5 5269 xmpp.example.com
+```
+
+### Minecraft Server
+```
+_minecraft._tcp.example.com SRV 10 5 25565 mc.example.com
+```
+
+## Load Balancing with SRV Records
+
+### Priority-based (Failover)
+```
+_http._tcp.example.com SRV 10 0 80 primary.example.com
+_http._tcp.example.com SRV 20 0 80 backup.example.com
+```
+
+### Weight-based (Load Distribution)
+```
+_http._tcp.example.com SRV 10 60 80 server1.example.com
+_http._tcp.example.com SRV 10 40 80 server2.example.com
+```
+
+### Combined Priority + Weight
+```
+# Primary servers (priority 10)
+_http._tcp.example.com SRV 10 50 80 primary1.example.com
+_http._tcp.example.com SRV 10 50 80 primary2.example.com
+
+# Backup servers (priority 20)  
+_http._tcp.example.com SRV 20 100 80 backup.example.com
+```
+
+## How to Create SRV Record
+
+1. Login to DNS management panel
+2. Select "Add Record"
+3. Choose type "SRV"
+4. Enter service name (_service._protocol)
+5. Enter priority, weight, port
+6. Enter target hostname
+7. Set TTL
+8. Save record
+
+## Service Discovery Process
+
+1. **Client Query**: Application queries SRV record for service
+2. **DNS Response**: DNS returns list of servers with priority/weight
+3. **Priority Selection**: Client chooses server with highest priority
+4. **Weight Calculation**: If multiple servers with same priority, use weight
+5. **Connection**: Client connects to selected server
+
+## SRV Record Best Practices
+
+### Naming Convention
+- Use standard service names (_http, _https, _sip)
+- Be consistent with protocol (_tcp vs _udp)
+- Document custom service names
+
+### Priority Planning
+- **Primary services**: Priority 10
+- **Secondary services**: Priority 20, 30
+- **Emergency backup**: Priority 100
+
+### Weight Distribution
+- Distribute based on server capacity
+- Powerful servers = higher weight
+- Monitor actual load distribution
+
+### Redundancy
+- Always provide backup servers
+- Test failover regularly
+- Monitor health of all servers
+
+## Troubleshooting SRV Record
+
+### Verify SRV Record
+```bash
+nslookup -type=SRV _http._tcp.example.com
+dig _http._tcp.example.com SRV
+```
+
+### Test Service Discovery
+```bash
+# Check specific service
+dig _sip._tcp.example.com SRV
+
+# Check all SRV records for domain
+dig example.com ANY | grep SRV
+```
+
+### Common Issues
+
+#### Service Not Discovered
+- **Check**: SRV record format is correct
+- **Verify**: Target hostname resolves to IP
+- **Test**: Port is accessible on target server
+
+#### Uneven Load Balancing
+- **Check**: Weight calculation
+- **Monitor**: Actual traffic distribution
+- **Adjust**: Weight values based on monitoring
+
+#### Failover Not Working
+- **Check**: Priority values
+- **Test**: Primary server down scenario
+- **Verify**: Client supports SRV failover
+
+## Applications Using SRV Records
+
+### VoIP Systems
+- **SIP**: Session Initiation Protocol
+- **H.323**: Video conferencing
+- **Skype for Business**: Microsoft UC platform
+
+### Messaging Systems
+- **XMPP**: Extensible Messaging and Presence Protocol
+- **IRC**: Internet Relay Chat
+- **Matrix**: Decentralized chat protocol
+
+### Gaming
+- **Minecraft**: Server discovery
+- **TeamSpeak**: Voice communication
+- **Discord**: Gaming communication
+
+### Enterprise Services
+- **LDAP**: Directory services
+- **Kerberos**: Authentication
+- **CalDAV/CardDAV**: Calendar/Contact sync
+
+## Monitoring SRV Records
+
+### Health Checks
+- Monitor target server availability
+- Check port accessibility
+- Verify service functionality
+
+### Performance Monitoring
+- Track response times per server
+- Monitor load distribution
+- Alert on failover events
+
+### Tools
+```bash
+# Monitor SRV record changes
+dig _http._tcp.example.com SRV +short
+
+# Test service connectivity
+telnet server.example.com 80
+
+# Check service health
+curl -I http://server.example.com
+```
+
+SRV Records enable automatic service discovery and sophisticated load balancing, essential for modern applications requiring high availability.

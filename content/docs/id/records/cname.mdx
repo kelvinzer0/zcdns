@@ -1,0 +1,133 @@
+---
+title: CNAME Record
+description: DNS record yang membuat alias untuk domain lain
+---
+
+# CNAME Record
+
+CNAME Record adalah DNS record yang membuat alias atau nama alternatif untuk domain lain, memungkinkan satu domain mengarah ke domain lain.
+
+## Apa itu CNAME Record?
+
+CNAME (Canonical Name) Record membuat alias untuk domain lain. Ketika browser mengakses domain dengan CNAME, DNS akan mengarahkan ke domain target yang ditentukan.
+
+## Format CNAME Record
+
+```
+Name: www.example.com
+Type: CNAME
+Value: example.com
+TTL: 3600
+```
+
+## Contoh Penggunaan
+
+### Subdomain ke Domain Utama
+```
+www.example.com -> example.com
+```
+
+### Alias untuk Layanan Eksternal
+```
+blog.example.com -> myblog.wordpress.com
+shop.example.com -> mystore.shopify.com
+```
+
+### Load Balancer
+```
+api.example.com -> lb-12345.us-east-1.elb.amazonaws.com
+```
+
+## Aturan CNAME Record
+
+### Yang Boleh
+- Subdomain dapat menggunakan CNAME
+- Satu CNAME dapat mengarah ke CNAME lain (chaining)
+- CNAME dapat mengarah ke domain eksternal
+
+### Yang Tidak Boleh
+- **Root domain tidak boleh CNAME**: example.com tidak bisa CNAME
+- **Tidak bisa dicampur**: Domain dengan CNAME tidak bisa punya record lain
+- **MX record conflict**: Domain dengan MX record tidak bisa CNAME
+
+## Cara Membuat CNAME Record
+
+1. Login ke DNS management panel
+2. Pilih "Add Record"
+3. Pilih type "CNAME"
+4. Masukkan nama subdomain (tanpa root domain)
+5. Masukkan target domain (harus FQDN)
+6. Atur TTL
+7. Simpan record
+
+## CNAME vs A Record
+
+<table>
+  <thead>
+    <tr>
+      <th>Aspek</th>
+      <th>CNAME</th>
+      <th>A Record</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Target</td>
+      <td>Nama domain</td>
+      <td>Alamat IP</td>
+    </tr>
+    <tr>
+      <td>Root domain</td>
+      <td>Tidak boleh</td>
+      <td>Boleh</td>
+    </tr>
+    <tr>
+      <td>Fleksibilitas</td>
+      <td>Tinggi</td>
+      <td>Rendah</td>
+    </tr>
+    <tr>
+      <td>Performa</td>
+      <td>Sedikit lambat</td>
+      <td>Cepat</td>
+    </tr>
+  </tbody>
+</table>
+
+
+## Best Practices
+
+### Gunakan CNAME Untuk
+- Subdomain yang mengarah ke domain utama
+- Layanan eksternal (CDN, hosting)
+- Load balancer dengan nama yang berubah
+
+### Hindari CNAME Untuk
+- Root domain (gunakan A/ALIAS record)
+- Domain dengan MX record
+- Chain CNAME yang terlalu panjang
+
+## Troubleshooting
+
+### Verifikasi CNAME
+```bash
+nslookup www.example.com
+dig www.example.com CNAME
+```
+
+### Masalah Umum
+- **CNAME di root domain**: Gunakan A atau ALIAS record
+- **CNAME loop**: Pastikan tidak ada circular reference
+- **Mixed records**: Hapus record lain jika menggunakan CNAME
+
+## Contoh Konfigurasi
+
+```
+# Benar
+www.example.com CNAME example.com
+blog.example.com CNAME myblog.wordpress.com
+
+# Salah
+example.com CNAME otherdomain.com  # Root domain tidak boleh CNAME
+www.example.com CNAME example.com
+www.example.com A 192.168.1.1     # Tidak boleh dicampur

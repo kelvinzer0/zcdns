@@ -1,0 +1,25 @@
+{
+  "financial_overview": {
+    "year": 2024,
+    "monthly_data": [
+      { "month": "Jan", "income": 150, "expenses": 100, "foss_donation": 30 },
+      { "month": "Feb", "income": 180, "expenses": 110, "foss_donation": 36 },
+      { "month": "Mar", "income": 200, "expenses": 120, "foss_donation": 40 },
+      { "month": "Apr", "income": 170, "expenses": 115, "foss_donation": 34 },
+      { "month": "May", "income": 220, "expenses": 130, "foss_donation": 44 }
+    ],
+    "total_expenses": 575,
+    "total_income": 920,
+    "net_income": 345,
+    "total_foss_donations": 184
+  },
+  "foss_donations_breakdown": [
+    { "project": "Let's Encrypt", "amount": 100 },
+    { "project": "Codeberg", "amount": 50 },
+    { "project": "Various FOSS Projects", "amount": 34 }
+  ],
+  "annual_reports": [
+    { "year": 2023, "url": "/reports/annual-report-2023.pdf" },
+    { "year": 2022, "url": "/reports/annual-report-2022.pdf" }
+  ]
+}

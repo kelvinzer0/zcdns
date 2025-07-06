@@ -1,0 +1,92 @@
+---
+title: AAAA Record
+description: DNS record yang mengarahkan domain ke alamat IPv6
+---
+
+# AAAA Record
+
+AAAA Record adalah DNS record yang mengarahkan nama domain ke alamat IPv6, mendukung protokol internet generasi terbaru.
+
+## Apa itu AAAA Record?
+
+AAAA Record (quad-A Record) menghubungkan nama domain dengan alamat IP versi 6 (IPv6). Record ini penting untuk mendukung konektivitas IPv6 yang semakin banyak digunakan.
+
+## Format AAAA Record
+
+```
+Name: example.com
+Type: AAAA
+Value: 2001:0db8:85a3:0000:0000:8a2e:0370:7334
+TTL: 3600
+```
+
+## Contoh Penggunaan
+
+### Domain Utama
+```
+example.com -> 2001:db8::1
+```
+
+### Subdomain
+```
+www.example.com -> 2001:db8::1
+ipv6.example.com -> 2001:db8::2
+```
+
+## Mengapa IPv6 Penting?
+
+- **Alamat IP Lebih Banyak**: IPv6 menyediakan 340 undecillion alamat
+- **Performa Lebih Baik**: Routing yang lebih efisien
+- **Keamanan Built-in**: IPSec terintegrasi
+- **Masa Depan Internet**: IPv4 semakin terbatas
+
+## Cara Membuat AAAA Record
+
+1. Login ke DNS management panel
+2. Pilih "Add Record"
+3. Pilih type "AAAA"
+4. Masukkan nama domain
+5. Masukkan alamat IPv6 (format lengkap atau disingkat)
+6. Atur TTL
+7. Simpan record
+
+## Format Alamat IPv6
+
+### Format Lengkap
+```
+2001:0db8:85a3:0000:0000:8a2e:0370:7334
+```
+
+### Format Disingkat
+```
+2001:db8:85a3::8a2e:370:7334
+```
+
+## Dual Stack Configuration
+
+Sebaiknya gunakan A dan AAAA record bersamaan:
+
+```
+example.com A 192.168.1.1
+example.com AAAA 2001:db8::1
+```
+
+## Troubleshooting
+
+### Verifikasi AAAA Record
+```bash
+nslookup -type=AAAA example.com
+dig example.com AAAA
+```
+
+### Masalah Umum
+- **Format IPv6 Salah**: Pastikan format alamat benar
+- **Provider Tidak Support**: Beberapa provider belum support IPv6
+- **Client Tidak Support**: Perangkat lama mungkin tidak support IPv6
+
+## Best Practices
+
+- Selalu sediakan A dan AAAA record
+- Test konektivitas IPv6 sebelum deploy
+- Monitor traffic IPv6 vs IPv4
+- Gunakan TTL yang sama untuk A dan AAAA record

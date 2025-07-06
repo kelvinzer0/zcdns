@@ -1,0 +1,24 @@
+<svg width="400" height="300" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="400" height="300" rx="16" fill="hsl(0 0% 98%)"/>
+
+  <!-- Main Server -->
+  <rect x="150" y="50" width="100" height="40" rx="8" fill="hsl(240 5.9% 10%)"/>
+  <circle cx="170" cy="70" r="4" fill="hsl(173 58% 39%)"/>
+  <circle cx="230" cy="70" r="4" fill="hsl(0 0% 63.9%)"/>
+
+  <!-- Connecting Lines -->
+  <path d="M100 150 C 120 100, 130 100, 150 80" stroke="hsl(0 0% 89.8%)" stroke-width="2" fill="none"/>
+  <path d="M300 150 C 280 100, 270 100, 250 80" stroke="hsl(0 0% 89.8%)" stroke-width="2" fill="none"/>
+   <path d="M200 250 C 200 200, 180 100, 180 80" stroke="hsl(0 0% 89.8%)" stroke-width="2" fill="none"/>
+
+  <!-- Client Nodes -->
+  <circle cx="100" cy="150" r="15" fill="hsl(220 70% 50%)"/>
+  <circle cx="300" cy="150" r="15" fill="hsl(220 70% 50%)"/>
+  <circle cx="200" cy="250" r="15" fill="hsl(220 70% 50%)"/>
+
+  <!-- Data Packets -->
+  <circle cx="125" cy="115" r="5" fill="hsl(43 74% 66%)"/>
+  <circle cx="275" cy="115" r="5" fill="hsl(43 74% 66%)"/>
+   <circle cx="190" cy="155" r="5" fill="hsl(43 74% 66%)"/>
+</svg>

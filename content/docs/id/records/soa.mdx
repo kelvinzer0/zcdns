@@ -1,0 +1,215 @@
+---
+title: SOA Record
+description: DNS record yang berisi informasi administratif tentang zone DNS
+---
+
+# SOA Record
+
+SOA Record adalah DNS record yang berisi informasi administratif penting tentang zone DNS, termasuk nameserver utama dan parameter zone.
+
+## Apa itu SOA Record?
+
+SOA (Start of Authority) Record adalah record pertama dalam setiap zone DNS yang mendefinisikan parameter administratif dan operasional untuk zone tersebut.
+
+## Format SOA Record
+
+```
+Name: example.com
+Type: SOA
+Value: ns1.example.com admin.example.com 2024010101 7200 3600 604800 86400
+TTL: 86400
+```
+
+## Komponen SOA Record
+
+### Primary Nameserver (MNAME)
+```
+ns1.example.com
+```
+Nameserver utama yang authoritative untuk zone ini.
+
+### Responsible Person (RNAME)
+```
+admin.example.com
+```
+Email administrator zone (@ diganti dengan .).
+
+### Serial Number
+```
+2024010101
+```
+Nomor versi zone, biasanya format YYYYMMDDNN.
+
+### Refresh Interval
+```
+7200 (2 jam)
+```
+Seberapa sering secondary nameserver cek update.
+
+### Retry Interval
+```
+3600 (1 jam)
+```
+Interval retry jika refresh gagal.
+
+### Expire Time
+```
+604800 (7 hari)
+```
+Kapan secondary nameserver stop answering jika tidak bisa contact primary.
+
+### Minimum TTL
+```
+86400 (24 jam)
+```
+TTL default untuk record dalam zone ini.
+
+## Contoh SOA Record Lengkap
+
+```
+example.com. IN SOA ns1.example.com. admin.example.com. (
+    2024010101  ; Serial number
+    7200        ; Refresh (2 hours)
+    3600        ; Retry (1 hour)  
+    604800      ; Expire (7 days)
+    86400       ; Minimum TTL (24 hours)
+)
+```
+
+## Serial Number Management
+
+### Format Serial Number
+- **YYYYMMDDNN**: 2024010101 (1 Jan 2024, revision 01)
+- **Unix Timestamp**: 1704067200
+- **Incremental**: 1, 2, 3, 4, ...
+
+### Aturan Serial Number
+- **Harus naik**: Setiap update zone, serial harus lebih besar
+- **32-bit integer**: Maksimal 4,294,967,295
+- **Rollover**: Jika mencapai maksimal, mulai dari 1
+
+## Parameter Timing
+
+### Refresh Interval
+- **Recommended**: 1-24 jam
+- **High-change zones**: 1-6 jam
+- **Stable zones**: 12-24 jam
+
+### Retry Interval
+- **Recommended**: 1/2 dari refresh interval
+- **Minimum**: 60 detik
+- **Maximum**: Refresh interval
+
+### Expire Time
+- **Recommended**: 7-30 hari
+- **Minimum**: 7 hari
+- **Critical zones**: 14-30 hari
+
+### Minimum TTL
+- **Recommended**: 1-24 jam
+- **Caching**: Menentukan berapa lama negative response di-cache
+- **Performance**: TTL rendah = update cepat, TTL tinggi = performance baik
+
+## Best Practices SOA Record
+
+### Serial Number
+- Gunakan format YYYYMMDDNN untuk readability
+- Increment setiap kali ada perubahan zone
+- Dokumentasikan perubahan dengan serial number
+
+### Timing Values
+- Sesuaikan dengan kebutuhan zone
+- Zone stabil = interval lebih panjang
+- Zone sering berubah = interval lebih pendek
+
+### Email Administrator
+- Gunakan email yang aktif dimonitor
+- Format: admin.example.com (bukan admin@example.com)
+- Setup forwarding ke email administrator
+
+## Troubleshooting SOA Record
+
+### Verifikasi SOA Record
+```bash
+nslookup -type=SOA example.com
+dig example.com SOA
+```
+
+### Check Serial Number
+```bash
+# Check current serial
+dig example.com SOA +short | awk '{print $3}'
+
+# Check from specific nameserver
+dig @ns1.example.com example.com SOA
+```
+
+### Masalah Umum
+
+#### Zone Transfer Gagal
+- **Symptom**: Secondary nameserver tidak update
+- **Check**: Serial number di primary vs secondary
+- **Solution**: Pastikan serial number naik
+
+#### Negative Caching Terlalu Lama
+- **Symptom**: Record yang dihapus masih di-cache
+- **Check**: Minimum TTL di SOA record
+- **Solution**: Turunkan minimum TTL sebelum hapus record
+
+#### Email Administrator Tidak Valid
+- **Symptom**: Tidak bisa contact administrator
+- **Check**: Format email di RNAME field
+- **Solution**: Perbaiki format dan setup forwarding
+
+## SOA Record untuk Different Scenarios
+
+### High-Traffic Website
+```
+example.com SOA ns1.example.com. admin.example.com. (
+    2024010101  ; Serial
+    3600        ; Refresh (1 hour)
+    1800        ; Retry (30 minutes)
+    1209600     ; Expire (14 days)
+    3600        ; Minimum TTL (1 hour)
+)
+```
+
+### Corporate Network
+```
+corp.example.com SOA ns1.corp.example.com. it.corp.example.com. (
+    2024010101  ; Serial
+    7200        ; Refresh (2 hours)
+    3600        ; Retry (1 hour)
+    604800      ; Expire (7 days)
+    86400       ; Minimum TTL (24 hours)
+)
+```
+
+### Development Environment
+```
+dev.example.com SOA ns1.dev.example.com. dev.example.com. (
+    2024010101  ; Serial
+    300         ; Refresh (5 minutes)
+    180         ; Retry (3 minutes)
+    86400       ; Expire (1 day)
+    300         ; Minimum TTL (5 minutes)
+)
+```
+
+## Monitoring SOA Record
+
+### Automated Monitoring
+- Monitor serial number changes
+- Alert jika zone transfer gagal
+- Check consistency antar nameserver
+
+### Tools Monitoring
+```bash
+# Script check serial consistency
+for ns in ns1.example.com ns2.example.com; do
+    echo "Checking $ns:"
+    dig @$ns example.com SOA +short | awk '{print $3}'
+done
+```
+
+SOA Record adalah fondasi dari setiap zone DNS. Konfigurasi yang tepat memastikan replikasi zone yang reliable dan performance yang optimal.

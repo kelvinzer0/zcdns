@@ -1,0 +1,165 @@
+---
+title: TXT Record
+description: DNS record untuk menyimpan informasi teks arbitrary
+---
+
+# TXT Record
+
+TXT Record adalah DNS record yang menyimpan informasi teks untuk berbagai keperluan seperti verifikasi domain, konfigurasi email, dan keamanan.
+
+## Apa itu TXT Record?
+
+TXT (Text) Record menyimpan data teks arbitrary yang dapat dibaca oleh aplikasi dan layanan. Record ini sering digunakan untuk verifikasi kepemilikan domain dan konfigurasi keamanan.
+
+## Format TXT Record
+
+```
+Name: example.com
+Type: TXT
+Value: "v=spf1 include:_spf.google.com ~all"
+TTL: 3600
+```
+
+## Penggunaan Umum TXT Record
+
+### 1. SPF (Sender Policy Framework)
+Mencegah email spoofing dengan menentukan server yang boleh mengirim email.
+
+```
+example.com TXT "v=spf1 mx include:_spf.google.com ~all"
+```
+
+### 2. DKIM (DomainKeys Identified Mail)
+Tanda tangan digital untuk email authentication.
+
+```
+selector._domainkey.example.com TXT "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA..."
+```
+
+### 3. DMARC (Domain-based Message Authentication)
+Policy untuk menangani email yang gagal SPF/DKIM check.
+
+```
+_dmarc.example.com TXT "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com"
+```
+
+### 4. Domain Verification
+Verifikasi kepemilikan domain untuk layanan seperti Google, Microsoft.
+
+```
+example.com TXT "google-site-verification=abc123def456"
+example.com TXT "MS=ms12345678"
+```
+
+### 5. CAA (Certificate Authority Authorization)
+Menentukan CA mana yang boleh menerbitkan sertifikat SSL.
+
+```
+example.com TXT "v=ca3-1.0; issue=letsencrypt.org"
+```
+
+## Cara Membuat TXT Record
+
+1. Login ke DNS management panel
+2. Pilih "Add Record"
+3. Pilih type "TXT"
+4. Masukkan nama (@ untuk root domain, atau subdomain)
+5. Masukkan value dalam tanda kutip
+6. Atur TTL
+7. Simpan record
+
+## Aturan TXT Record
+
+### Format Value
+- Harus dalam tanda kutip ganda
+- Maksimal 255 karakter per string
+- Bisa multiple string untuk value panjang
+
+### Multiple TXT Records
+- Satu domain bisa punya multiple TXT record
+- Setiap record untuk tujuan berbeda
+- Aplikasi akan membaca semua TXT record
+
+## Contoh Konfigurasi Lengkap
+
+```
+# SPF Record
+example.com TXT "v=spf1 mx include:_spf.google.com ~all"
+
+# DMARC Record  
+_dmarc.example.com TXT "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com; ruf=mailto:forensic@example.com"
+
+# DKIM Record
+google._domainkey.example.com TXT "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA..."
+
+# Domain Verification
+example.com TXT "google-site-verification=abc123def456ghi789"
+
+# CAA Record (as TXT)
+example.com TXT "v=ca3-1.0; issue=letsencrypt.org"
+```
+
+## Best Practices
+
+### SPF Configuration
+- Mulai dengan `-all` untuk testing, ubah ke `~all` atau `-all`
+- Include semua server email yang legitimate
+- Monitor SPF alignment dengan DMARC
+
+### DKIM Setup
+- Gunakan key length minimal 1024-bit
+- Rotate DKIM keys secara berkala
+- Test DKIM signature sebelum production
+
+### DMARC Policy
+- Mulai dengan `p=none` untuk monitoring
+- Gradually increase ke `p=quarantine` lalu `p=reject`
+- Setup aggregate dan forensic reporting
+
+## Troubleshooting
+
+### Verifikasi TXT Record
+```bash
+nslookup -type=TXT example.com
+dig example.com TXT
+```
+
+### Test SPF Record
+```bash
+dig example.com TXT | grep spf
+```
+
+### Masalah Umum
+
+#### SPF Record Tidak Berfungsi
+- Periksa syntax SPF record
+- Pastikan tidak ada multiple SPF record
+- Cek include mechanism
+
+#### DKIM Verification Gagal
+- Verifikasi DKIM record ada
+- Periksa selector yang digunakan
+- Test dengan DKIM validator online
+
+#### DMARC Policy Tidak Efektif
+- Pastikan SPF dan DKIM sudah setup
+- Cek alignment policy
+- Monitor DMARC reports
+
+## Tools Verifikasi
+
+### Online Tools
+- MXToolbox DNS Lookup
+- Google Admin Toolbox
+- DMARC Analyzer
+- SPF Record Checker
+
+### Command Line
+```bash
+# Check all TXT records
+dig example.com TXT
+# Check specific subdomain
+dig _dmarc.example.com TXT
+# Check with specific DNS server
+dig @8.8.8.8 example.com TXT
+```

@@ -1,0 +1,261 @@
+---
+title: CAA Record
+description: DNS record yang mengontrol otoritas sertifikat SSL/TLS untuk domain
+---
+
+# CAA Record
+
+CAA Record adalah DNS record yang menentukan Certificate Authority (CA) mana yang diizinkan menerbitkan sertifikat SSL/TLS untuk domain Anda.
+
+## Apa itu CAA Record?
+
+CAA (Certificate Authority Authorization) Record memberikan kontrol kepada pemilik domain untuk menentukan CA mana yang boleh menerbitkan sertifikat untuk domain mereka, meningkatkan keamanan SSL/TLS.
+
+## Format CAA Record
+
+```
+Name: example.com
+Type: CAA
+Flags: 0
+Tag: issue
+Value: letsencrypt.org
+TTL: 3600
+```
+
+## Komponen CAA Record
+
+### Flags
+```
+Flags: 0
+```
+- **0**: Non-critical (CA boleh ignore jika tidak support CAA)
+- **128**: Critical (CA harus honor CAA record)
+
+### Tag
+```
+Tag: issue
+```
+- **issue**: Izinkan CA menerbitkan sertifikat
+- **issuewild**: Izinkan CA menerbitkan wildcard certificate
+- **iodef**: URL untuk melaporkan pelanggaran CAA
+
+### Value
+```
+Value: letsencrypt.org
+```
+- Domain CA yang diizinkan
+- Atau ";" untuk melarang semua CA
+- Atau URL untuk iodef tag
+
+## Jenis CAA Record
+
+### Issue (Sertifikat Reguler)
+```
+example.com CAA 0 issue "letsencrypt.org"
+example.com CAA 0 issue "digicert.com"
+```
+
+### Issue Wild (Wildcard Certificate)
+```
+example.com CAA 0 issuewild "letsencrypt.org"
+example.com CAA 0 issuewild ";"  # Larang wildcard
+```
+
+### IODEF (Incident Reporting)
+```
+example.com CAA 0 iodef "mailto:security@example.com"
+example.com CAA 0 iodef "https://example.com/caa-report"
+```
+
+## Contoh Konfigurasi CAA
+
+### Let's Encrypt Only
+```
+example.com CAA 0 issue "letsencrypt.org"
+example.com CAA 0 issuewild "letsencrypt.org"
+example.com CAA 0 iodef "mailto:admin@example.com"
+```
+
+### Multiple CAs
+```
+example.com CAA 0 issue "letsencrypt.org"
+example.com CAA 0 issue "digicert.com"
+example.com CAA 0 issue "sectigo.com"
+example.com CAA 0 issuewild "digicert.com"
+```
+
+### Prohibit All Issuance
+```
+example.com CAA 0 issue ";"
+example.com CAA 0 issuewild ";"
+```
+
+### Subdomain Specific
+```
+secure.example.com CAA 0 issue "digicert.com"
+api.example.com CAA 0 issue "letsencrypt.org"
+```
+
+## CA Domain Names
+
+### Popular CAs
+```
+# Let's Encrypt
+letsencrypt.org
+
+# DigiCert
+digicert.com
+
+# Sectigo (formerly Comodo)
+sectigo.com
+
+# GlobalSign
+globalsign.com
+
+# GoDaddy
+godaddy.com
+
+# Amazon Certificate Manager
+amazon.com
+
+# Google Trust Services
+pki.goog
+```
+
+## Cara Membuat CAA Record
+
+1. Login ke DNS management panel
+2. Pilih "Add Record"
+3. Pilih type "CAA"
+4. Masukkan flags (biasanya 0)
+5. Pilih tag (issue, issuewild, atau iodef)
+6. Masukkan value (CA domain atau email/URL)
+7. Atur TTL
+8. Simpan record
+
+## CAA Record Inheritance
+
+### Parent Domain
+```
+example.com CAA 0 issue "letsencrypt.org"
+```
+
+### Subdomain Inheritance
+- `www.example.com` inherit CAA dari `example.com`
+- `api.example.com` inherit CAA dari `example.com`
+
+### Override Inheritance
+```
+# Parent domain
+example.com CAA 0 issue "letsencrypt.org"
+
+# Subdomain override
+secure.example.com CAA 0 issue "digicert.com"
+```
+
+## Best Practices CAA Record
+
+### Security
+- Gunakan CAA record untuk semua domain
+- Specify hanya CA yang benar-benar digunakan
+- Monitor certificate issuance dengan iodef
+
+### Maintenance
+- Review CAA record secara berkala
+- Update ketika ganti CA
+- Test sebelum deploy ke production
+
+### Monitoring
+- Setup iodef untuk incident reporting
+- Monitor Certificate Transparency logs
+- Alert untuk unauthorized certificate
+
+## Troubleshooting CAA Record
+
+### Verifikasi CAA Record
+```bash
+nslookup -type=CAA example.com
+dig example.com CAA
+```
+
+### Test CAA Policy
+```bash
+# Check CAA for specific subdomain
+dig secure.example.com CAA
+
+# Check CAA inheritance
+dig www.example.com CAA
+```
+
+### Masalah Umum
+
+#### Certificate Issuance Blocked
+- **Symptom**: CA menolak menerbitkan sertifikat
+- **Check**: CAA record allow CA yang diminta
+- **Solution**: Tambah CA ke CAA record atau hapus CAA
+
+#### Wildcard Certificate Gagal
+- **Symptom**: Wildcard cert tidak bisa diterbitkan
+- **Check**: issuewild tag di CAA record
+- **Solution**: Tambah issuewild record untuk CA
+
+#### CAA Record Tidak Efektif
+- **Symptom**: Unauthorized certificate masih bisa diterbitkan
+- **Check**: CA support CAA (tidak semua CA honor CAA)
+- **Solution**: Gunakan CA yang support CAA
+
+## Tools Verifikasi CAA
+
+### Online Tools
+- SSLMate CAA Record Helper
+- DigiCert CAA Lookup Tool
+- Qualys SSL Labs SSL Test
+
+### Command Line
+```bash
+# Basic CAA lookup
+dig example.com CAA
+
+# Check specific nameserver
+dig @8.8.8.8 example.com CAA
+
+# Check CAA for subdomain
+dig subdomain.example.com CAA
+```
+
+## CAA Record untuk Different Scenarios
+
+### High Security Environment
+```
+example.com CAA 128 issue "digicert.com"
+example.com CAA 128 issuewild ";"
+example.com CAA 0 iodef "mailto:security@example.com"
+```
+
+### Development Environment
+```
+dev.example.com CAA 0 issue "letsencrypt.org"
+dev.example.com CAA 0 issuewild "letsencrypt.org"
+```
+
+### Multi-CA Setup
+```
+example.com CAA 0 issue "letsencrypt.org"
+example.com CAA 0 issue "digicert.com"
+example.com CAA 0 issuewild "digicert.com"
+example.com CAA 0 iodef "https://example.com/caa-violations"
+```
+
+## Monitoring CAA Violations
+
+### Certificate Transparency
+- Monitor CT logs untuk unauthorized certificates
+- Setup alerts untuk certificate issuance
+- Regular audit certificate inventory
+
+### IODEF Reporting
+- Setup endpoint untuk menerima CAA violation reports
+- Log dan analyze violation attempts
+- Take action untuk unauthorized issuance
+
+CAA Record adalah layer security tambahan yang penting untuk melindungi domain dari unauthorized certificate issuance, terutama untuk domain high-value atau sensitive.

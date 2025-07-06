@@ -1,0 +1,69 @@
+---
+title: A Record
+description: DNS record yang mengarahkan domain ke alamat IPv4
+---
+
+# A Record
+
+A Record adalah jenis DNS record yang paling umum digunakan untuk mengarahkan nama domain ke alamat IPv4.
+
+## Apa itu A Record?
+
+A Record (Address Record) menghubungkan nama domain dengan alamat IP versi 4 (IPv4). Ketika seseorang mengakses domain Anda, A Record memberitahu browser alamat IP server yang harus dihubungi.
+
+## Format A Record
+
+```
+Name: example.com
+Type: A
+Value: 192.168.1.1
+TTL: 3600
+```
+
+## Contoh Penggunaan
+
+### Domain Utama
+```
+example.com -> 192.168.1.1
+```
+
+### Subdomain
+```
+www.example.com -> 192.168.1.1
+blog.example.com -> 192.168.1.2
+```
+
+## Cara Membuat A Record
+
+1. Login ke DNS management panel
+2. Pilih "Add Record" atau "Create Record"
+3. Pilih type "A"
+4. Masukkan nama (@ untuk root domain, atau subdomain)
+5. Masukkan alamat IPv4 target
+6. Atur TTL (biasanya 300-3600 detik)
+7. Simpan record
+
+## Best Practices
+
+- **TTL Rendah**: Gunakan TTL 300 detik saat testing
+- **Multiple A Records**: Bisa mengarah ke beberapa IP untuk load balancing
+- **Konsistensi**: Pastikan semua A Record mengarah ke server yang aktif
+
+## Troubleshooting
+
+### Record Tidak Berfungsi
+- Periksa alamat IP apakah benar
+- Tunggu propagasi DNS (hingga 48 jam)
+- Cek TTL record sebelumnya
+
+### Tools Verifikasi
+```bash
+nslookup example.com
+dig example.com A
+```
+
+## Perbedaan dengan Record Lain
+
+- **A vs AAAA**: A untuk IPv4, AAAA untuk IPv6
+- **A vs CNAME**: A mengarah ke IP, CNAME mengarah ke domain lain
+- **A vs ALIAS**: A standard DNS, ALIAS khusus beberapa provider

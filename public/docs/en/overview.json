@@ -1,0 +1,7 @@
+{
+  "frontMatter": {
+    "title": "DNS Overview",
+    "description": "Understanding the fundamentals of Domain Name System (DNS) and how it works"
+  },
+  "content": "<h1>DNS Overview</h1>\n<p>The Domain Name System (DNS) is a system that translates human-readable domain names (like example.com) into IP addresses that computers can understand.</p>\n<h2>What is DNS?</h2>\n<p>DNS functions like the internet&#39;s phone book. When you type a website name in your browser, DNS looks up the IP address that corresponds to that domain name.</p>\n<h2>Why is DNS Important?</h2>\n<ul>\n<li><strong>Ease of Use</strong>: It&#39;s easier to remember &quot;google.com&quot; than &quot;142.250.190.78&quot;</li>\n<li><strong>Flexibility</strong>: Allows server changes without changing the domain name</li>\n<li><strong>Scalability</strong>: Supports billions of domain names worldwide</li>\n</ul>\n<h2>Key DNS Components</h2>\n<ol>\n<li><strong>Domain Name</strong>: Human-readable name (example: example.com)</li>\n<li><strong>DNS Records</strong>: Data that stores information about the domain</li>\n<li><strong>Name Servers</strong>: Servers that store and manage DNS records</li>\n<li><strong>Resolvers</strong>: Systems that translate domain names into IP addresses</li>\n</ol>\n<p>DNS is the foundation of the modern internet that allows us to access websites easily using memorable names.</p>\n"
+}

@@ -1,0 +1,261 @@
+---
+title: CAA Record
+description: DNS record that controls SSL/TLS certificate authority for domain
+---
+
+# CAA Record
+
+CAA Record is a DNS record that specifies which Certificate Authorities (CAs) are allowed to issue SSL/TLS certificates for your domain.
+
+## What is a CAA Record?
+
+CAA (Certificate Authority Authorization) Record gives domain owners control over which CAs can issue certificates for their domains, enhancing SSL/TLS security.
+
+## CAA Record Format
+
+```
+Name: example.com
+Type: CAA
+Flags: 0
+Tag: issue
+Value: letsencrypt.org
+TTL: 3600
+```
+
+## CAA Record Components
+
+### Flags
+```
+Flags: 0
+```
+- **0**: Non-critical (CA may ignore if CAA not supported)
+- **128**: Critical (CA must honor CAA record)
+
+### Tag
+```
+Tag: issue
+```
+- **issue**: Allow CA to issue certificates
+- **issuewild**: Allow CA to issue wildcard certificates
+- **iodef**: URL for reporting CAA violations
+
+### Value
+```
+Value: letsencrypt.org
+```
+- Domain of allowed CA
+- Or ";" to prohibit all CAs
+- Or URL for iodef tag
+
+## Types of CAA Records
+
+### Issue (Regular Certificates)
+```
+example.com CAA 0 issue "letsencrypt.org"
+example.com CAA 0 issue "digicert.com"
+```
+
+### Issue Wild (Wildcard Certificates)
+```
+example.com CAA 0 issuewild "letsencrypt.org"
+example.com CAA 0 issuewild ";"  # Prohibit wildcards
+```
+
+### IODEF (Incident Reporting)
+```
+example.com CAA 0 iodef "mailto:security@example.com"
+example.com CAA 0 iodef "https://example.com/caa-report"
+```
+
+## CAA Configuration Examples
+
+### Let's Encrypt Only
+```
+example.com CAA 0 issue "letsencrypt.org"
+example.com CAA 0 issuewild "letsencrypt.org"
+example.com CAA 0 iodef "mailto:admin@example.com"
+```
+
+### Multiple CAs
+```
+example.com CAA 0 issue "letsencrypt.org"
+example.com CAA 0 issue "digicert.com"
+example.com CAA 0 issue "sectigo.com"
+example.com CAA 0 issuewild "digicert.com"
+```
+
+### Prohibit All Issuance
+```
+example.com CAA 0 issue ";"
+example.com CAA 0 issuewild ";"
+```
+
+### Subdomain Specific
+```
+secure.example.com CAA 0 issue "digicert.com"
+api.example.com CAA 0 issue "letsencrypt.org"
+```
+
+## CA Domain Names
+
+### Popular CAs
+```
+# Let's Encrypt
+letsencrypt.org
+
+# DigiCert
+digicert.com
+
+# Sectigo (formerly Comodo)
+sectigo.com
+
+# GlobalSign
+globalsign.com
+
+# GoDaddy
+godaddy.com
+
+# Amazon Certificate Manager
+amazon.com
+
+# Google Trust Services
+pki.goog
+```
+
+## How to Create CAA Record
+
+1. Login to DNS management panel
+2. Select "Add Record"
+3. Choose type "CAA"
+4. Enter flags (usually 0)
+5. Select tag (issue, issuewild, or iodef)
+6. Enter value (CA domain or email/URL)
+7. Set TTL
+8. Save record
+
+## CAA Record Inheritance
+
+### Parent Domain
+```
+example.com CAA 0 issue "letsencrypt.org"
+```
+
+### Subdomain Inheritance
+- `www.example.com` inherits CAA from `example.com`
+- `api.example.com` inherits CAA from `example.com`
+
+### Override Inheritance
+```
+# Parent domain
+example.com CAA 0 issue "letsencrypt.org"
+
+# Subdomain override
+secure.example.com CAA 0 issue "digicert.com"
+```
+
+## CAA Record Best Practices
+
+### Security
+- Use CAA records for all domains
+- Specify only CAs actually used
+- Monitor certificate issuance with iodef
+
+### Maintenance
+- Review CAA records regularly
+- Update when changing CAs
+- Test before deploying to production
+
+### Monitoring
+- Setup iodef for incident reporting
+- Monitor Certificate Transparency logs
+- Alert for unauthorized certificates
+
+## Troubleshooting CAA Record
+
+### Verify CAA Record
+```bash
+nslookup -type=CAA example.com
+dig example.com CAA
+```
+
+### Test CAA Policy
+```bash
+# Check CAA for specific subdomain
+dig secure.example.com CAA
+
+# Check CAA inheritance
+dig www.example.com CAA
+```
+
+### Common Issues
+
+#### Certificate Issuance Blocked
+- **Symptom**: CA refuses to issue certificate
+- **Check**: CAA record allows requested CA
+- **Solution**: Add CA to CAA record or remove CAA
+
+#### Wildcard Certificate Failed
+- **Symptom**: Wildcard cert cannot be issued
+- **Check**: issuewild tag in CAA record
+- **Solution**: Add issuewild record for CA
+
+#### CAA Record Not Effective
+- **Symptom**: Unauthorized certificates still issued
+- **Check**: CA supports CAA (not all CAs honor CAA)
+- **Solution**: Use CAs that support CAA
+
+## CAA Verification Tools
+
+### Online Tools
+- SSLMate CAA Record Helper
+- DigiCert CAA Lookup Tool
+- Qualys SSL Labs SSL Test
+
+### Command Line
+```bash
+# Basic CAA lookup
+dig example.com CAA
+
+# Check specific nameserver
+dig @8.8.8.8 example.com CAA
+
+# Check CAA for subdomain
+dig subdomain.example.com CAA
+```
+
+## CAA Records for Different Scenarios
+
+### High Security Environment
+```
+example.com CAA 128 issue "digicert.com"
+example.com CAA 128 issuewild ";"
+example.com CAA 0 iodef "mailto:security@example.com"
+```
+
+### Development Environment
+```
+dev.example.com CAA 0 issue "letsencrypt.org"
+dev.example.com CAA 0 issuewild "letsencrypt.org"
+```
+
+### Multi-CA Setup
+```
+example.com CAA 0 issue "letsencrypt.org"
+example.com CAA 0 issue "digicert.com"
+example.com CAA 0 issuewild "digicert.com"
+example.com CAA 0 iodef "https://example.com/caa-violations"
+```
+
+## Monitoring CAA Violations
+
+### Certificate Transparency
+- Monitor CT logs for unauthorized certificates
+- Setup alerts for certificate issuance
+- Regular audit certificate inventory
+
+### IODEF Reporting
+- Setup endpoint to receive CAA violation reports
+- Log and analyze violation attempts
+- Take action for unauthorized issuance
+
+CAA Records are an important additional security layer to protect domains from unauthorized certificate issuance, especially for high-value or sensitive domains.

@@ -1,0 +1,154 @@
+---
+title: MX Record
+description: DNS record yang menentukan server email untuk domain
+---
+
+# MX Record
+
+MX Record adalah DNS record yang menentukan server email mana yang bertanggung jawab menerima email untuk domain Anda.
+
+## Apa itu MX Record?
+
+MX (Mail Exchange) Record mengarahkan email yang dikirim ke domain Anda ke server email yang tepat. Tanpa MX record, domain Anda tidak dapat menerima email.
+
+## Format MX Record
+
+```
+Name: example.com
+Type: MX
+Priority: 10
+Value: mail.example.com
+TTL: 3600
+```
+
+## Komponen MX Record
+
+### Priority (Prioritas)
+- Angka 0-65535 yang menentukan urutan server email
+- **Angka lebih kecil = prioritas lebih tinggi**
+- Jika server prioritas tinggi down, email dikirim ke prioritas berikutnya
+
+### Mail Server
+- Nama domain server email (harus FQDN)
+- Harus mengarah ke A atau AAAA record
+- Tidak boleh mengarah ke CNAME record
+
+## Contoh Konfigurasi
+
+### Single Mail Server
+```
+example.com MX 10 mail.example.com
+```
+
+### Multiple Mail Servers (Redundancy)
+```
+example.com MX 10 mail1.example.com
+example.com MX 20 mail2.example.com
+example.com MX 30 mail3.example.com
+```
+
+### Google Workspace
+```
+example.com MX 1  aspmx.l.google.com
+example.com MX 5  alt1.aspmx.l.google.com
+example.com MX 5  alt2.aspmx.l.google.com
+example.com MX 10 alt3.aspmx.l.google.com
+example.com MX 10 alt4.aspmx.l.google.com
+```
+
+### Microsoft 365
+```
+example.com MX 0 example-com.mail.protection.outlook.com
+```
+
+## Cara Membuat MX Record
+
+1. Login ke DNS management panel
+2. Pilih "Add Record"
+3. Pilih type "MX"
+4. Masukkan nama domain (@ untuk root domain)
+5. Masukkan priority (10 untuk server utama)
+6. Masukkan mail server FQDN
+7. Atur TTL
+8. Simpan record
+
+## Best Practices
+
+### Priority Planning
+- **Primary server**: Priority 10
+- **Backup server**: Priority 20, 30, dst
+- **Jangan gunakan priority 0** kecuali untuk Microsoft 365
+
+### Redundancy
+- Selalu sediakan minimal 2 MX record
+- Gunakan server di lokasi geografis berbeda
+- Test semua server secara berkala
+
+### Security
+- Pastikan mail server support TLS
+- Implementasi SPF, DKIM, dan DMARC
+- Monitor untuk spam dan abuse
+
+## Troubleshooting
+
+### Verifikasi MX Record
+```bash
+nslookup -type=MX example.com
+dig example.com MX
+```
+
+### Test Email Delivery
+```bash
+telnet mail.example.com 25
+```
+
+### Masalah Umum
+
+#### Email Tidak Terkirim
+- Periksa MX record ada dan benar
+- Pastikan mail server dapat diakses
+- Cek firewall port 25
+
+#### Email Bounce
+- Verifikasi priority MX record
+- Pastikan mail server tidak overload
+- Cek konfigurasi mail server
+
+#### Spam Issues
+- Implementasi SPF record
+- Setup DKIM signing
+- Konfigurasi DMARC policy
+
+## Integrasi dengan Record Lain
+
+### SPF Record (TXT)
+```
+example.com TXT "v=spf1 mx include:_spf.google.com ~all"
+```
+
+### DKIM Record (TXT)
+```
+selector._domainkey.example.com TXT "v=DKIM1; k=rsa; p=..."
+```
+
+### DMARC Record (TXT)
+```
+_dmarc.example.com TXT "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com"
+```
+
+## Provider Email Populer
+
+### Gmail/Google Workspace
+- Mudah setup dan reliable
+- Spam filtering excellent
+- Integrasi dengan Google services
+
+### Microsoft 365
+- Integrasi dengan Office suite
+- Advanced threat protection
+- Compliance features
+
+### Self-hosted
+- Kontrol penuh
+- Customization tinggi
+- Memerlukan expertise teknis

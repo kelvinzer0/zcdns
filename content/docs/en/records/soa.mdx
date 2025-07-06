@@ -1,0 +1,215 @@
+---
+title: SOA Record
+description: DNS record containing administrative information about DNS zone
+---
+
+# SOA Record
+
+SOA Record is a DNS record that contains important administrative information about a DNS zone, including the primary nameserver and zone parameters.
+
+## What is an SOA Record?
+
+SOA (Start of Authority) Record is the first record in every DNS zone that defines administrative and operational parameters for that zone.
+
+## SOA Record Format
+
+```
+Name: example.com
+Type: SOA
+Value: ns1.example.com admin.example.com 2024010101 7200 3600 604800 86400
+TTL: 86400
+```
+
+## SOA Record Components
+
+### Primary Nameserver (MNAME)
+```
+ns1.example.com
+```
+The primary nameserver that is authoritative for this zone.
+
+### Responsible Person (RNAME)
+```
+admin.example.com
+```
+Zone administrator's email (@ replaced with .).
+
+### Serial Number
+```
+2024010101
+```
+Zone version number, usually in YYYYMMDDNN format.
+
+### Refresh Interval
+```
+7200 (2 hours)
+```
+How often secondary nameservers check for updates.
+
+### Retry Interval
+```
+3600 (1 hour)
+```
+Retry interval if refresh fails.
+
+### Expire Time
+```
+604800 (7 days)
+```
+When secondary nameservers stop answering if they can't contact primary.
+
+### Minimum TTL
+```
+86400 (24 hours)
+```
+Default TTL for records in this zone.
+
+## Complete SOA Record Example
+
+```
+example.com. IN SOA ns1.example.com. admin.example.com. (
+    2024010101  ; Serial number
+    7200        ; Refresh (2 hours)
+    3600        ; Retry (1 hour)  
+    604800      ; Expire (7 days)
+    86400       ; Minimum TTL (24 hours)
+)
+```
+
+## Serial Number Management
+
+### Serial Number Format
+- **YYYYMMDDNN**: 2024010101 (Jan 1, 2024, revision 01)
+- **Unix Timestamp**: 1704067200
+- **Incremental**: 1, 2, 3, 4, ...
+
+### Serial Number Rules
+- **Must increase**: Every zone update, serial must be larger
+- **32-bit integer**: Maximum 4,294,967,295
+- **Rollover**: If reaching maximum, start from 1
+
+## Timing Parameters
+
+### Refresh Interval
+- **Recommended**: 1-24 hours
+- **High-change zones**: 1-6 hours
+- **Stable zones**: 12-24 hours
+
+### Retry Interval
+- **Recommended**: 1/2 of refresh interval
+- **Minimum**: 60 seconds
+- **Maximum**: Refresh interval
+
+### Expire Time
+- **Recommended**: 7-30 days
+- **Minimum**: 7 days
+- **Critical zones**: 14-30 days
+
+### Minimum TTL
+- **Recommended**: 1-24 hours
+- **Caching**: Determines how long negative responses are cached
+- **Performance**: Low TTL = fast updates, High TTL = better performance
+
+## SOA Record Best Practices
+
+### Serial Number
+- Use YYYYMMDDNN format for readability
+- Increment every time zone changes
+- Document changes with serial number
+
+### Timing Values
+- Adjust according to zone needs
+- Stable zones = longer intervals
+- Frequently changing zones = shorter intervals
+
+### Administrator Email
+- Use actively monitored email
+- Format: admin.example.com (not admin@example.com)
+- Setup forwarding to administrator email
+
+## Troubleshooting SOA Record
+
+### Verify SOA Record
+```bash
+nslookup -type=SOA example.com
+dig example.com SOA
+```
+
+### Check Serial Number
+```bash
+# Check current serial
+dig example.com SOA +short | awk '{print $3}'
+
+# Check from specific nameserver
+dig @ns1.example.com example.com SOA
+```
+
+### Common Issues
+
+#### Zone Transfer Failed
+- **Symptom**: Secondary nameserver not updating
+- **Check**: Serial number on primary vs secondary
+- **Solution**: Ensure serial number increases
+
+#### Negative Caching Too Long
+- **Symptom**: Deleted records still cached
+- **Check**: Minimum TTL in SOA record
+- **Solution**: Lower minimum TTL before deleting records
+
+#### Invalid Administrator Email
+- **Symptom**: Cannot contact administrator
+- **Check**: Email format in RNAME field
+- **Solution**: Fix format and setup forwarding
+
+## SOA Record for Different Scenarios
+
+### High-Traffic Website
+```
+example.com SOA ns1.example.com. admin.example.com. (
+    2024010101  ; Serial
+    3600        ; Refresh (1 hour)
+    1800        ; Retry (30 minutes)
+    1209600     ; Expire (14 days)
+    3600        ; Minimum TTL (1 hour)
+)
+```
+
+### Corporate Network
+```
+corp.example.com SOA ns1.corp.example.com. it.corp.example.com. (
+    2024010101  ; Serial
+    7200        ; Refresh (2 hours)
+    3600        ; Retry (1 hour)
+    604800      ; Expire (7 days)
+    86400       ; Minimum TTL (24 hours)
+)
+```
+
+### Development Environment
+```
+dev.example.com SOA ns1.dev.example.com. dev.example.com. (
+    2024010101  ; Serial
+    300         ; Refresh (5 minutes)
+    180         ; Retry (3 minutes)
+    86400       ; Expire (1 day)
+    300         ; Minimum TTL (5 minutes)
+)
+```
+
+## Monitoring SOA Record
+
+### Automated Monitoring
+- Monitor serial number changes
+- Alert if zone transfer fails
+- Check consistency across nameservers
+
+### Monitoring Tools
+```bash
+# Script to check serial consistency
+for ns in ns1.example.com ns2.example.com; do
+    echo "Checking $ns:"
+    dig @$ns example.com SOA +short | awk '{print $3}'
+done
+```
+
+SOA Record is the foundation of every DNS zone. Proper configuration ensures reliable zone replication and optimal performance.

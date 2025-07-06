@@ -1,0 +1,179 @@
+---
+title: NS Record
+description: DNS record yang menentukan nameserver authoritative untuk domain
+---
+
+# NS Record
+
+NS Record adalah DNS record yang menentukan nameserver mana yang authoritative (berwenang) untuk mengelola DNS records suatu domain atau subdomain.
+
+## Apa itu NS Record?
+
+NS (Name Server) Record menunjuk ke nameserver yang bertanggung jawab menyimpan dan mengelola DNS records untuk domain tertentu. Record ini penting untuk delegasi DNS.
+
+## Format NS Record
+
+```
+Name: example.com
+Type: NS
+Value: ns1.example.com
+TTL: 86400
+```
+
+## Jenis NS Record
+
+### Root Domain NS Records
+Menentukan nameserver untuk domain utama:
+```
+example.com NS ns1.zcdns.id
+example.com NS ns2.zcdns.id
+```
+
+### Subdomain NS Records
+Mendelegasikan subdomain ke nameserver lain:
+```
+subdomain.example.com NS ns1.subdomain-host.com
+subdomain.example.com NS ns2.subdomain-host.com
+```
+
+## Cara Kerja NS Record
+
+1. **Query DNS**: Browser meminta informasi tentang example.com
+2. **Root Servers**: Mengarahkan ke TLD nameservers (.com)
+3. **TLD Servers**: Melihat NS record dan mengarahkan ke nameserver authoritative
+4. **Authoritative Servers**: Memberikan jawaban final (A, CNAME, dll)
+
+## Contoh Konfigurasi
+
+### ZeroCentDNS Nameservers
+```
+example.com NS ns1.zcdns.id
+example.com NS ns2.zcdns.id
+```
+
+### Google Cloud DNS
+```
+example.com NS ns-cloud-a1.googledomains.com
+example.com NS ns-cloud-a2.googledomains.com
+example.com NS ns-cloud-a3.googledomains.com
+example.com NS ns-cloud-a4.googledomains.com
+```
+
+### AWS Route 53
+```
+example.com NS ns-123.awsdns-12.com
+example.com NS ns-456.awsdns-34.net
+example.com NS ns-789.awsdns-56.org
+example.com NS ns-012.awsdns-78.co.uk
+```
+
+## Subdomain Delegation
+
+Mendelegasikan subdomain ke provider DNS lain:
+
+```
+# Di nameserver utama (example.com)
+api.example.com NS ns1.api-provider.com
+api.example.com NS ns2.api-provider.com
+
+# Di nameserver api-provider.com
+api.example.com A 192.168.1.100
+api.example.com AAAA 2001:db8::1
+```
+
+## Cara Mengubah NS Record
+
+### Di Registrar Domain
+1. Login ke control panel registrar
+2. Cari menu "Nameservers" atau "DNS Management"
+3. Ubah dari default ke custom nameservers
+4. Masukkan nameserver baru
+5. Simpan perubahan
+
+### Waktu Propagasi
+- Perubahan NS record membutuhkan waktu 24-48 jam
+- TTL NS record biasanya tinggi (86400 detik = 24 jam)
+- Gunakan multiple DNS checker untuk verifikasi
+
+## Best Practices
+
+### Redundancy
+- Selalu gunakan minimal 2 nameserver
+- Maksimal 13 nameserver (RFC limit)
+- Gunakan nameserver di lokasi geografis berbeda
+
+### Performance
+- Pilih provider DNS dengan network global
+- Monitor response time nameserver
+- Gunakan anycast untuk load distribution
+
+### Security
+- Aktifkan DNSSEC jika didukung
+- Monitor untuk DNS hijacking
+- Gunakan provider DNS yang reputable
+
+## Troubleshooting
+
+### Verifikasi NS Record
+```bash
+nslookup -type=NS example.com
+dig example.com NS
+```
+
+### Check Nameserver Response
+```bash
+nslookup example.com ns1.zcdns.id
+dig @ns1.zcdns.id example.com
+```
+
+### Masalah Umum
+
+#### Domain Tidak Resolve
+- Periksa NS record di registrar
+- Pastikan nameserver aktif dan responding
+- Cek konfigurasi di nameserver target
+
+#### Propagasi Lambat
+- NS record punya TTL tinggi (24 jam)
+- Flush DNS cache lokal
+- Tunggu hingga 48 jam untuk propagasi penuh
+
+#### Subdomain Delegation Gagal
+- Pastikan NS record ada di parent domain
+- Verifikasi nameserver target punya record untuk subdomain
+- Cek tidak ada konflik dengan record lain
+
+## Provider DNS Populer
+
+### ZeroCentDNS
+- **Pros**: Gratis, cepat, Kontrol DNS Lengkap
+- **Cons**: Fitur lanjutan terbatas
+
+### Cloudflare
+- **Pros**: Gratis, cepat, DNSSEC, DDoS protection
+- **Cons**: Limited advanced features di free plan
+
+### Google Cloud DNS
+- **Pros**: Reliable, global network, integrasi GCP
+- **Cons**: Berbayar, kompleks untuk pemula
+
+### AWS Route 53
+- **Pros**: Scalable, health checks, traffic routing
+- **Cons**: Berbayar, learning curve
+
+### Namecheap DNS
+- **Pros**: Gratis untuk customer, mudah digunakan
+- **Cons**: Limited advanced features
+
+## Monitoring NS Record
+
+### Tools Monitoring
+- DNS monitoring services
+- Uptime monitoring untuk nameservers
+- DNSSEC validation monitoring
+
+### Metrics Penting
+- Response time nameserver
+- Availability nameserver
+- DNS query success rate
+- DNSSEC validation status

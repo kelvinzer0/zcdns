@@ -1,0 +1,92 @@
+---
+title: AAAA Record
+description: DNS record that points domain to IPv6 address
+---
+
+# AAAA Record
+
+AAAA Record is a DNS record that points domain names to IPv6 addresses, supporting the latest generation internet protocol.
+
+## What is an AAAA Record?
+
+AAAA Record (quad-A Record) connects a domain name with an IPv6 address. This record is important for supporting IPv6 connectivity which is increasingly being used.
+
+## AAAA Record Format
+
+```
+Name: example.com
+Type: AAAA
+Value: 2001:0db8:85a3:0000:0000:8a2e:0370:7334
+TTL: 3600
+```
+
+## Usage Examples
+
+### Main Domain
+```
+example.com -> 2001:db8::1
+```
+
+### Subdomains
+```
+www.example.com -> 2001:db8::1
+ipv6.example.com -> 2001:db8::2
+```
+
+## Why IPv6 is Important?
+
+- **More IP Addresses**: IPv6 provides 340 undecillion addresses
+- **Better Performance**: More efficient routing
+- **Built-in Security**: Integrated IPSec
+- **Future of Internet**: IPv4 is becoming limited
+
+## How to Create AAAA Record
+
+1. Login to DNS management panel
+2. Select "Add Record"
+3. Choose type "AAAA"
+4. Enter domain name
+5. Enter IPv6 address (full or shortened format)
+6. Set TTL
+7. Save record
+
+## IPv6 Address Formats
+
+### Full Format
+```
+2001:0db8:85a3:0000:0000:8a2e:0370:7334
+```
+
+### Shortened Format
+```
+2001:db8:85a3::8a2e:370:7334
+```
+
+## Dual Stack Configuration
+
+Best practice is to use both A and AAAA records:
+
+```
+example.com A 192.168.1.1
+example.com AAAA 2001:db8::1
+```
+
+## Troubleshooting
+
+### Verify AAAA Record
+```bash
+nslookup -type=AAAA example.com
+dig example.com AAAA
+```
+
+### Common Issues
+- **Wrong IPv6 Format**: Ensure address format is correct
+- **Provider Not Supporting**: Some providers don't support IPv6 yet
+- **Client Not Supporting**: Older devices might not support IPv6
+
+## Best Practices
+
+- Always provide both A and AAAA records
+- Test IPv6 connectivity before deployment
+- Monitor IPv6 vs IPv4 traffic
+- Use same TTL for A and AAAA records

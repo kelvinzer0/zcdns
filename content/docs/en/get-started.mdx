@@ -1,0 +1,62 @@
+---
+title: Getting Started with DNS
+description: Step-by-step guide to getting started with DNS
+---
+
+# Getting Started with DNS
+
+This guide will help you understand how DNS works and the basic steps to manage DNS records.
+
+## Step 1: Understand Your Domain
+
+Before managing DNS, make sure you understand:
+- Your domain name (example: example.com)
+- Domain registrar (where you bought the domain)
+- Name servers being used
+
+## Step 2: Access DNS Management
+
+1. Login to your zcdns dashboard
+2. Look for "DNS Management" or "DNS Settings" menu
+
+## Step 3: Know Basic DNS Records
+
+### A Record
+Points domain to IPv4 address
+```
+example.com -> 192.168.1.1
+```
+
+### CNAME Record
+Creates alias for another domain
+```
+www.example.com -> example.com
+```
+
+### MX Record
+Specifies email server for domain
+```
+example.com -> mail.example.com (priority: 10)
+```
+
+## Step 4: Create Your First DNS Record
+
+1. Choose the type of record to create
+2. Enter name (subdomain or @ for root domain)
+3. Enter value (IP address or target domain)
+4. Set TTL (usually 300-3600 seconds)
+5. Save changes
+
+## Step 5: Verify DNS Record
+
+Use tools like:
+- `nslookup example.com`
+- `dig example.com`
+- Online DNS checker
+
+## Tips for Beginners
+
+- Start with low TTL (300 seconds) when testing
+- Backup DNS configuration before making changes
+- Wait for DNS propagation (up to 48 hours)
+- Test from different geographical locations

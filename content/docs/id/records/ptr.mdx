@@ -1,0 +1,226 @@
+---
+title: PTR Record
+description: DNS record untuk reverse DNS lookup yang menerjemahkan IP ke domain
+---
+
+# PTR Record
+
+PTR Record adalah DNS record yang digunakan untuk reverse DNS lookup, menerjemahkan alamat IP kembali menjadi nama domain.
+
+## Apa itu PTR Record?
+
+PTR (Pointer) Record melakukan kebalikan dari A record - mengubah alamat IP menjadi nama domain. Ini penting untuk email delivery, logging, dan security verification.
+
+## Format PTR Record
+
+### IPv4 PTR Record
+```
+Name: 1.1.168.192.in-addr.arpa
+Type: PTR
+Value: mail.example.com
+TTL: 3600
+```
+
+### IPv6 PTR Record
+```
+Name: 1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa
+Type: PTR
+Value: mail.example.com
+TTL: 3600
+```
+
+## Cara Kerja PTR Record
+
+### Forward DNS (A Record)
+```
+example.com -> 192.168.1.1
+```
+
+### Reverse DNS (PTR Record)
+```
+192.168.1.1 -> example.com
+```
+
+## Mengapa PTR Record Penting?
+
+### Email Delivery
+- **Spam Prevention**: Mail server cek PTR record untuk verifikasi
+- **Reputation**: PTR record yang cocok meningkatkan deliverability
+- **Authentication**: Bagian dari email authentication process
+
+### Security & Logging
+- **Log Analysis**: Mengubah IP menjadi hostname di log
+- **Forensics**: Identifikasi sumber traffic
+- **Monitoring**: Tracking koneksi berdasarkan hostname
+
+### Compliance
+- **RFC Requirements**: Beberapa RFC merekomendasikan PTR record
+- **Best Practices**: Standard practice untuk mail server
+
+## Format Reverse DNS Zone
+
+### IPv4 Reverse Zone
+Untuk IP 192.168.1.1:
+```
+1.1.168.192.in-addr.arpa PTR mail.example.com
+```
+
+### IPv6 Reverse Zone
+Untuk IP 2001:db8::1:
+```
+1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa PTR mail.example.com
+```
+
+## Siapa yang Mengelola PTR Record?
+
+### ISP/Hosting Provider
+- **Dedicated Server**: Biasanya ISP yang mengelola
+- **VPS/Cloud**: Provider hosting mengelola
+- **Shared Hosting**: Tidak bisa diubah user
+
+### Self-managed
+- **Own IP Block**: Jika punya IP block sendiri
+- **Delegated Reverse Zone**: ISP delegate reverse zone
+
+## Cara Setup PTR Record
+
+### Melalui Hosting Provider
+1. Login ke control panel hosting
+2. Cari menu "Reverse DNS" atau "PTR Record"
+3. Masukkan IP address dan target hostname
+4. Simpan konfigurasi
+
+### Melalui ISP
+1. Hubungi ISP atau data center
+2. Request PTR record setup
+3. Berikan IP address dan target hostname
+4. Tunggu konfigurasi dari ISP
+
+## Best Practices PTR Record
+
+### Email Server
+- **Match Forward/Reverse**: PTR harus match dengan A record
+- **Use Mail Hostname**: Gunakan hostname mail server, bukan domain utama
+- **Consistent Naming**: Gunakan naming convention yang konsisten
+
+### Multiple IPs
+- **Dedicated PTR**: Setiap IP punya PTR record sendiri
+- **Meaningful Names**: Gunakan nama yang descriptive
+- **Documentation**: Dokumentasikan mapping IP-hostname
+
+## Contoh Konfigurasi Email
+
+### Forward DNS (A Record)
+```
+mail.example.com A 203.0.113.10
+```
+
+### Reverse DNS (PTR Record)
+```
+10.113.0.203.in-addr.arpa PTR mail.example.com
+```
+
+### Verifikasi Match
+```bash
+# Forward lookup
+nslookup mail.example.com
+# Output: 203.0.113.10
+
+# Reverse lookup  
+nslookup 203.0.113.10
+# Output: mail.example.com
+```
+
+## Troubleshooting PTR Record
+
+### Verifikasi PTR Record
+```bash
+# IPv4 reverse lookup
+nslookup 192.168.1.1
+dig -x 192.168.1.1
+
+# IPv6 reverse lookup
+nslookup 2001:db8::1
+dig -x 2001:db8::1
+```
+
+### Test Email Delivery
+```bash
+# Check if PTR matches hostname
+host 203.0.113.10
+# Should return: mail.example.com
+
+# Verify forward matches reverse
+host mail.example.com
+# Should return: 203.0.113.10
+```
+
+### Masalah Umum
+
+#### PTR Record Tidak Ada
+- **Symptom**: Email bounce atau masuk spam
+- **Solution**: Setup PTR record melalui ISP/hosting provider
+- **Check**: `dig -x [IP_ADDRESS]`
+
+#### Forward/Reverse Mismatch
+- **Symptom**: Email authentication gagal
+- **Solution**: Pastikan A record dan PTR record match
+- **Check**: Bandingkan hasil forward dan reverse lookup
+
+#### Permission Denied
+- **Symptom**: Tidak bisa setup PTR record
+- **Solution**: Hubungi ISP atau hosting provider
+- **Alternative**: Gunakan dedicated IP dengan PTR control
+
+## Tools Verifikasi
+
+### Command Line Tools
+```bash
+# Basic reverse lookup
+nslookup 192.168.1.1
+
+# Detailed reverse lookup
+dig -x 192.168.1.1
+
+# Check specific DNS server
+dig @8.8.8.8 -x 192.168.1.1
+```
+
+### Online Tools
+- MXToolbox Reverse DNS Lookup
+- DNSstuff Reverse DNS
+- WhatIsMyIPAddress Reverse DNS
+- IntoDNS Reverse DNS Check
+
+## PTR Record untuk IPv6
+
+### Format IPv6 PTR
+IPv6 menggunakan format yang lebih kompleks:
+```
+# IP: 2001:db8::1
+# PTR: 1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa
+```
+
+### Tools untuk IPv6 PTR
+```bash
+# Generate IPv6 PTR name
+python3 -c "
+import ipaddress
+ip = ipaddress.IPv6Address('2001:db8::1')
+print(ip.reverse_pointer)
+"
+```
+
+## Monitoring PTR Record
+
+### Automated Checks
+- Monitor PTR record availability
+- Alert jika PTR record berubah
+- Verify forward/reverse consistency
+
+### Email Deliverability
+- Monitor email bounce rate
+- Check spam score reports
+- Track email authentication results
+
+PTR Record adalah komponen penting untuk email delivery dan network security. Pastikan selalu ada dan match dengan forward DNS record.

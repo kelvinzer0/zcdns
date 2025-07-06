@@ -1,0 +1,62 @@
+---
+title: Memulai dengan DNS
+description: Panduan langkah demi langkah untuk memulai dengan DNS
+---
+
+# Memulai dengan DNS
+
+Panduan ini akan membantu Anda memahami cara kerja DNS dan langkah-langkah dasar untuk mengelola DNS records.
+
+## Langkah 1: Memahami Domain Anda
+
+Sebelum mengelola DNS, pastikan Anda memahami:
+- Nama domain Anda (contoh: example.com)
+- Registrar domain (tempat Anda membeli domain)
+- Name servers yang digunakan
+
+## Langkah 2: Mengakses DNS Management
+
+1. Login ke dasbor zcdns
+2. Cari menu "DNS Management" atau "DNS Settings"
+
+## Langkah 3: Mengenal DNS Records Dasar
+
+### A Record
+Mengarahkan domain ke alamat IPv4
+```
+example.com -> 192.168.1.1
+```
+
+### CNAME Record
+Membuat alias untuk domain lain
+```
+www.example.com -> example.com
+```
+
+### MX Record
+Menentukan server email untuk domain
+```
+example.com -> mail.example.com (priority: 10)
+```
+
+## Langkah 4: Membuat DNS Record Pertama
+
+1. Pilih jenis record yang ingin dibuat
+2. Masukkan nama (subdomain atau @untuk root domain)
+3. Masukkan nilai (IP address atau domain target)
+4. Atur TTL (biasanya 300-3600 detik)
+5. Simpan perubahan
+
+## Langkah 5: Verifikasi DNS Record
+
+Gunakan tools seperti:
+- `nslookup example.com`
+- `dig example.com`
+- Online DNS checker
+
+## Tips untuk Pemula
+
+- Mulai dengan TTL rendah (300 detik) saat testing
+- Backup konfigurasi DNS sebelum membuat perubahan
+- Tunggu propagasi DNS (hingga 48 jam)
+- Test dari berbagai lokasi geografis

@@ -1,0 +1,167 @@
+---
+title: TXT Record
+description: DNS record for storing arbitrary text information
+---
+
+# TXT Record
+
+TXT Record is a DNS record that stores arbitrary text data for various purposes such as domain verification, email configuration, and security.
+
+## What is a TXT Record?
+
+TXT (Text) Record stores arbitrary text data that can be read by applications and services. This record is often used for domain ownership verification and security configuration.
+
+## TXT Record Format
+
+```
+Name: example.com
+Type: TXT
+Value: "v=spf1 include:_spf.google.com ~all"
+TTL: 3600
+```
+
+## Common TXT Record Uses
+
+### 1. SPF (Sender Policy Framework)
+Prevents email spoofing by specifying which servers can send email.
+
+```
+example.com TXT "v=spf1 mx include:_spf.google.com ~all"
+```
+
+### 2. DKIM (DomainKeys Identified Mail)
+Digital signature for email authentication.
+
+```
+selector._domainkey.example.com TXT "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA..."
+```
+
+### 3. DMARC (Domain-based Message Authentication)
+Policy for handling emails that fail SPF/DKIM checks.
+
+```
+_dmarc.example.com TXT "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com"
+```
+
+### 4. Domain Verification
+Verify domain ownership for services like Google, Microsoft.
+
+```
+example.com TXT "google-site-verification=abc123def456"
+example.com TXT "MS=ms12345678"
+```
+
+### 5. CAA (Certificate Authority Authorization)
+Specify which CAs can issue SSL certificates.
+
+```
+example.com TXT "v=ca3-1.0; issue=letsencrypt.org"
+```
+
+## How to Create TXT Record
+
+1. Login to DNS management panel
+2. Select "Add Record"
+3. Choose type "TXT"
+4. Enter name (@ for root domain, or subdomain)
+5. Enter value in quotes
+6. Set TTL
+7. Save record
+
+## TXT Record Rules
+
+### Value Format
+- Must be in double quotes
+- Maximum 255 characters per string
+- Can use multiple strings for long values
+
+### Multiple TXT Records
+- One domain can have multiple TXT records
+- Each record for different purposes
+- Applications will read all TXT records
+
+## Complete Configuration Example
+
+```
+# SPF Record
+example.com TXT "v=spf1 mx include:_spf.google.com ~all"
+
+# DMARC Record  
+_dmarc.example.com TXT "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com; ruf=mailto:forensic@example.com"
+
+# DKIM Record
+google._domainkey.example.com TXT "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA..."
+
+# Domain Verification
+example.com TXT "google-site-verification=abc123def456ghi789"
+
+# CAA Record (as TXT)
+example.com TXT "v=ca3-1.0; issue=letsencrypt.org"
+```
+
+## Best Practices
+
+### SPF Configuration
+- Start with `-all` for testing, change to `~all` or `-all`
+- Include all legitimate email servers
+- Monitor SPF alignment with DMARC
+
+### DKIM Setup
+- Use minimum 1024-bit key length
+- Rotate DKIM keys regularly
+- Test DKIM signature before production
+
+### DMARC Policy
+- Start with `p=none` for monitoring
+- Gradually increase to `p=quarantine` then `p=reject`
+- Setup aggregate and forensic reporting
+
+## Troubleshooting
+
+### Verify TXT Record
+```bash
+nslookup -type=TXT example.com
+dig example.com TXT
+```
+
+### Test SPF Record
+```bash
+dig example.com TXT | grep spf
+```
+
+### Common Issues
+
+#### SPF Record Not Working
+- Check SPF record syntax
+- Ensure no multiple SPF records
+- Check include mechanisms
+
+#### DKIM Verification Failed
+- Verify DKIM record exists
+- Check selector being used
+- Test with online DKIM validator
+
+#### DMARC Policy Not Effective
+- Ensure SPF and DKIM are setup
+- Check alignment policy
+- Monitor DMARC reports
+
+## Verification Tools
+
+### Online Tools
+- MXToolbox DNS Lookup
+- Google Admin Toolbox
+- DMARC Analyzer
+- SPF Record Checker
+
+### Command Line
+```bash
+# Check all TXT records
+dig example.com TXT
+
+# Check specific subdomain
+dig _dmarc.example.com TXT
+
+# Check with specific DNS server
+dig @8.8.8.8 example.com TXT
+```

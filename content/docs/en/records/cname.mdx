@@ -1,0 +1,133 @@
+---
+title: CNAME Record
+description: DNS record that creates an alias for another domain
+---
+
+# CNAME Record
+
+CNAME Record is a DNS record that creates an alias or alternative name for another domain, allowing one domain to point to another domain.
+
+## What is a CNAME Record?
+
+CNAME (Canonical Name) Record creates an alias for another domain. When a browser accesses a domain with CNAME, DNS will redirect to the specified target domain.
+
+## CNAME Record Format
+
+```
+Name: www.example.com
+Type: CNAME
+Value: example.com
+TTL: 3600
+```
+
+## Usage Examples
+
+### Subdomain to Main Domain
+```
+www.example.com -> example.com
+```
+
+### Alias for External Services
+```
+blog.example.com -> myblog.wordpress.com
+shop.example.com -> mystore.shopify.com
+```
+
+### Load Balancer
+```
+api.example.com -> lb-12345.us-east-1.elb.amazonaws.com
+```
+
+## CNAME Record Rules
+
+### Allowed
+- Subdomains can use CNAME
+- One CNAME can point to another CNAME (chaining)
+- CNAME can point to external domains
+
+### Not Allowed
+- **Root domain cannot be CNAME**: example.com cannot be CNAME
+- **Cannot be mixed**: Domain with CNAME cannot have other records
+- **MX record conflict**: Domain with MX record cannot be CNAME
+
+## How to Create CNAME Record
+
+1. Login to DNS management panel
+2. Select "Add Record"
+3. Choose type "CNAME"
+4. Enter subdomain name (without root domain)
+5. Enter target domain (must be FQDN)
+6. Set TTL
+7. Save record
+
+## CNAME vs A Record
+
+<table>
+  <thead>
+    <tr>
+      <th>Aspect</th>
+      <th>CNAME</th>
+      <th>A Record</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Target</td>
+      <td>Domain name</td>
+      <td>IP address</td>
+    </tr>
+    <tr>
+      <td>Root domain</td>
+      <td>Not allowed</td>
+      <td>Allowed</td>
+    </tr>
+    <tr>
+      <td>Flexibility</td>
+      <td>High</td>
+      <td>Low</td>
+    </tr>
+    <tr>
+      <td>Performance</td>
+      <td>Slightly slower</td>
+      <td>Fast</td>
+    </tr>
+  </tbody>
+</table>
+
+
+## Best Practices
+
+### Use CNAME For
+- Subdomains pointing to main domain
+- External services (CDN, hosting)
+- Load balancers with changing names
+
+### Avoid CNAME For
+- Root domain (use A/ALIAS record)
+- Domains with MX records
+- Too long CNAME chains
+
+## Troubleshooting
+
+### Verify CNAME
+```bash
+nslookup www.example.com
+dig www.example.com CNAME
+```
+
+### Common Issues
+- **CNAME at root domain**: Use A or ALIAS record
+- **CNAME loop**: Ensure no circular reference
+- **Mixed records**: Remove other records when using CNAME
+
+## Configuration Examples
+
+```
+# Correct
+www.example.com CNAME example.com
+blog.example.com CNAME myblog.wordpress.com
+
+# Incorrect
+example.com CNAME otherdomain.com  # Root domain cannot be CNAME
+www.example.com CNAME example.com
+www.example.com A 192.168.1.1     # Cannot be mixed

@@ -1,0 +1,114 @@
+[
+  {
+    "locale": "en",
+    "slug": "concepts"
+  },
+  {
+    "locale": "en",
+    "slug": "get-started"
+  },
+  {
+    "locale": "en",
+    "slug": "glossary"
+  },
+  {
+    "locale": "en",
+    "slug": "overview"
+  },
+  {
+    "locale": "en",
+    "slug": "records/a"
+  },
+  {
+    "locale": "en",
+    "slug": "records/aaaa"
+  },
+  {
+    "locale": "en",
+    "slug": "records/caa"
+  },
+  {
+    "locale": "en",
+    "slug": "records/cname"
+  },
+  {
+    "locale": "en",
+    "slug": "records/mx"
+  },
+  {
+    "locale": "en",
+    "slug": "records/ns"
+  },
+  {
+    "locale": "en",
+    "slug": "records/ptr"
+  },
+  {
+    "locale": "en",
+    "slug": "records/soa"
+  },
+  {
+    "locale": "en",
+    "slug": "records/srv"
+  },
+  {
+    "locale": "en",
+    "slug": "records/txt"
+  },
+  {
+    "locale": "id",
+    "slug": "concepts"
+  },
+  {
+    "locale": "id",
+    "slug": "get-started"
+  },
+  {
+    "locale": "id",
+    "slug": "glossary"
+  },
+  {
+    "locale": "id",
+    "slug": "overview"
+  },
+  {
+    "locale": "id",
+    "slug": "records/a"
+  },
+  {
+    "locale": "id",
+    "slug": "records/aaaa"
+  },
+  {
+    "locale": "id",
+    "slug": "records/caa"
+  },
+  {
+    "locale": "id",
+    "slug": "records/cname"
+  },
+  {
+    "locale": "id",
+    "slug": "records/mx"
+  },
+  {
+    "locale": "id",
+    "slug": "records/ns"
+  },
+  {
+    "locale": "id",
+    "slug": "records/ptr"
+  },
+  {
+    "locale": "id",
+    "slug": "records/soa"
+  },
+  {
+    "locale": "id",
+    "slug": "records/srv"
+  },
+  {
+    "locale": "id",
+    "slug": "records/txt"
+  }
+]
