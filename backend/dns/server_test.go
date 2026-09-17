@@ -130,6 +130,8 @@ func TestFallbackIPv4(t *testing.T) {
 		"ns1.zcdns.id.",
 		"ns2.zcdns.id.",
 		"www.zcdns.id.",
+		"guard.zcdns.id.",
+		"testsub.guard.zcdns.id.",
 	}
 
 	for _, domain := range testCases {
@@ -150,5 +152,23 @@ func TestFallbackIPv4(t *testing.T) {
 			t.Fatalf("Expected 45.33.22.33 for %s, got %s", domain, aRec.A.String())
 		}
 		t.Logf("Successfully verified %s -> %s", domain, aRec.A.String())
+
+		// Verify AAAA record matches serverIP
+		mAAAA := new(dns.Msg)
+		mAAAA.SetQuestion(domain, dns.TypeAAAA)
+		respAAAA, _, err := c.Exchange(mAAAA, "127.0.0.1:15355")
+		if err != nil {
+			t.Fatalf("Query AAAA %s failed: %v", domain, err)
+		}
+		if len(respAAAA.Answer) == 0 {
+			t.Fatalf("Expected AAAA record for %s, got none", domain)
+		}
+		aaaaRec, ok := respAAAA.Answer[0].(*dns.AAAA)
+		if !ok {
+			t.Fatalf("Expected *dns.AAAA record for %s, got %T", domain, respAAAA.Answer[0])
+		}
+		if aaaaRec.AAAA.String() != "2606:c700:4020:98:1234:4321:73ab:1" {
+			t.Fatalf("Expected 2606:c700:4020:98:1234:4321:73ab:1 for %s, got %s", domain, aaaaRec.AAAA.String())
+		}
 	}
 }

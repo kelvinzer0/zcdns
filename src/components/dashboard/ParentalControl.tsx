@@ -45,8 +45,8 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
   // Setup tab state: 'android' | 'browser' | 'ios' | 'router'
   const [setupTab, setSetupTab] = useState<'android' | 'browser' | 'ios' | 'router'>('android');
 
-  const fullDomain = `${subdomain}.${baseDomain}`;
-  const dohUrl = `https://${baseDomain}/dns-query/${subdomain}`;
+  const guardDomain = `${subdomain}.guard.${baseDomain}`;
+  const dohUrl = `https://${baseDomain}/dns-query/guard/${subdomain}`;
 
   useEffect(() => {
     loadConfig();
@@ -220,11 +220,11 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
               <span className="text-[10px] font-semibold text-gray-500 uppercase block">
                 Private DNS Hostname (Android / TLS)
               </span>
-              <code className="text-xs sm:text-sm font-bold text-gray-900 font-mono truncate block">{fullDomain}</code>
+              <code className="text-xs sm:text-sm font-bold text-gray-900 font-mono truncate block">{guardDomain}</code>
             </div>
             <button
               type="button"
-              onClick={() => copyText(fullDomain, setCopiedDot)}
+              onClick={() => copyText(guardDomain, setCopiedDot)}
               className="p-1.5 text-gray-500 hover:text-green-700 rounded-none hover:bg-gray-200 transition-colors flex-shrink-0 ml-2"
               title="Salin Hostname"
             >
@@ -707,7 +707,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
                 <li>
                   {t('parental-setup-android-4')}{' '}
                   <code className="bg-white px-1.5 py-0.5 rounded-none border border-gray-300 font-bold text-green-700 font-mono">
-                    {fullDomain}
+                    {guardDomain}
                   </code>
                 </li>
                 <li>{t('parental-setup-android-5')}</li>

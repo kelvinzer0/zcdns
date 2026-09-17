@@ -75,6 +75,8 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dns-query", h.handleDoH)
 	mux.HandleFunc("GET /dns-query/{subdomain}", h.handleDoH)
 	mux.HandleFunc("POST /dns-query/{subdomain}", h.handleDoH)
+	mux.HandleFunc("GET /dns-query/guard/{subdomain}", h.handleDoH)
+	mux.HandleFunc("POST /dns-query/guard/{subdomain}", h.handleDoH)
 
 	mux.HandleFunc("GET /api/requeststream", h.handleWebSocketStream)
 	// In addition, support /requeststream/{subdomain} or query param
@@ -112,21 +114,42 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 func (h *APIHandler) getSubdomain(r *http.Request) string {
+	cleanSub := func(s string) string {
+		s = strings.ToLower(strings.TrimSpace(s))
+		s = strings.TrimSuffix(s, ".guard")
+		return s
+	}
+
 	// 1. Path value (if route has {subdomain})
 	if sub := r.PathValue("subdomain"); sub != "" {
-		return strings.ToLower(sub)
+		return cleanSub(sub)
 	}
 	// 2. Query param
 	if sub := r.URL.Query().Get("subdomain"); sub != "" {
-		return strings.ToLower(sub)
+		return cleanSub(sub)
 	}
 	// 3. Header
 	if sub := r.Header.Get("X-Subdomain"); sub != "" {
-		return strings.ToLower(sub)
+		return cleanSub(sub)
 	}
-	// 4. Cookie
+	// 4. Host header (e.g. fox42.guard.zcdns.id)
+	if host := r.Host; host != "" {
+		cleanHost := strings.ToLower(host)
+		if idx := strings.Index(cleanHost, ":"); idx != -1 {
+			cleanHost = cleanHost[:idx]
+		}
+		base := strings.ToLower(h.cfg.BaseDomain)
+		guardSuffix := ".guard." + base
+		if strings.HasSuffix(cleanHost, guardSuffix) {
+			sub := strings.TrimSuffix(cleanHost, guardSuffix)
+			if sub != "" && !strings.Contains(sub, ".") {
+				return sub
+			}
+		}
+	}
+	// 5. Cookie
 	if c, err := r.Cookie("zcdns_subdomain"); err == nil && c.Value != "" {
-		return strings.ToLower(c.Value)
+		return cleanSub(c.Value)
 	}
 	return ""
 }

@@ -284,6 +284,13 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
+	// Handle queries directly targeted at parental control guard domains (*.guard.zcdns.id / guard.zcdns.id)
+	if subdomain == "guard" {
+		s.handleNameserverDomain(m, q, strings.TrimSuffix(qName, "."))
+		_ = w.WriteMsg(m)
+		return
+	}
+
 	// Check if subdomain is blocked due to abuse
 	if blocked, _ := s.db.IsSubdomainBlocked(subdomain); blocked {
 		m.SetRcode(r, dns.RcodeRefused)
@@ -485,6 +492,8 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns1.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
 		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns2.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
 		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("www.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
+		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("guard.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
+		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.guard.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
 		// Wildcard AAAA: prevents HE.net slave from replying NXDOMAIN for active subdomains
 		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 60}, AAAA: serverIP},
 	)
@@ -495,6 +504,8 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns1.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns2.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("www.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
+			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("guard.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
+			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.guard.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: fallbackIP},
 		)
 	}
@@ -565,6 +576,17 @@ func (s *Server) handleNameserverDomain(m *dns.Msg, q dns.Question, name string)
 		})
 	default:
 		m.SetRcode(m, dns.RcodeSuccess)
+		base := dns.Fqdn(s.cfg.BaseDomain)
+		m.Ns = append(m.Ns, &dns.SOA{
+			Hdr:     dns.RR_Header{Name: base, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 3600},
+			Ns:      fmt.Sprintf("ns1.%s", base),
+			Mbox:    fmt.Sprintf("hostmaster.%s", base),
+			Serial:  s.GetZoneSerial(),
+			Refresh: 300,
+			Retry:   120,
+			Expire:  1209600,
+			Minttl:  60,
+		})
 	}
 }
 
