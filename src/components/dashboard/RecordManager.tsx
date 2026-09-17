@@ -3,6 +3,7 @@ import { Plus, Trash2, Edit2, AlertCircle, Check, Copy, Info } from 'lucide-reac
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import type { DnsRecord, RecordType } from './types';
+import { useTranslations } from '../../lib/useTranslations';
 
 interface Props {
   subdomain: string;
@@ -66,6 +67,7 @@ export const RecordManager: React.FC<Props> = ({
   onDeleteRecord,
   onClearAll,
 }) => {
+  const t = useTranslations('Dashboard');
   const [type, setType] = useState<RecordType>('A');
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
@@ -171,7 +173,7 @@ export const RecordManager: React.FC<Props> = ({
             <div className="w-8 h-8 bg-green-100 text-green-700 flex items-center justify-center font-bold">
               <Plus className="w-4 h-4" />
             </div>
-            <h2 className="text-base sm:text-lg font-bold text-gray-900">Tambah DNS Record</h2>
+            <h2 className="text-base sm:text-lg font-bold text-gray-900">{t('records-title')}</h2>
           </div>
         </div>
 
@@ -186,7 +188,7 @@ export const RecordManager: React.FC<Props> = ({
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4">
             {/* Type */}
             <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Tipe</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">{t('col-type')}</label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value as RecordType)}
@@ -203,11 +205,11 @@ export const RecordManager: React.FC<Props> = ({
             {/* Name / Subdomain */}
             <div className="sm:col-span-4">
               <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">
-                Nama Host <span className="text-gray-400 font-normal">(@ untuk root)</span>
+                {t('col-name')} <span className="text-gray-400 font-normal">(@)</span>
               </label>
               <Input
                 type="text"
-                placeholder="@ atau sub (contoh: api, www)"
+                placeholder={t('name-placeholder')}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="h-10 text-sm font-mono rounded-none"
@@ -219,7 +221,7 @@ export const RecordManager: React.FC<Props> = ({
 
             {/* Value */}
             <div className="sm:col-span-4">
-              <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Nilai / Target</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">{t('col-value')}</label>
               <Input
                 type="text"
                 placeholder={TYPE_DESCRIPTIONS[type].placeholder}
@@ -234,17 +236,17 @@ export const RecordManager: React.FC<Props> = ({
 
             {/* TTL */}
             <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">TTL (Detik)</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">{t('col-ttl')}</label>
               <select
                 value={ttl}
                 onChange={(e) => setTtl(Number(e.target.value))}
                 className="w-full h-10 px-3 border border-gray-300 text-sm bg-white focus:ring-2 focus:ring-green-500 font-mono rounded-none"
               >
-                <option value={5}>5s (Instan)</option>
-                <option value={60}>60s (Disarankan)</option>
-                <option value={300}>300s (5m)</option>
-                <option value={3600}>3600s (1j)</option>
-                <option value={86400}>86400s (1h)</option>
+                <option value={5}>5s</option>
+                <option value={60}>60s</option>
+                <option value={300}>300s</option>
+                <option value={3600}>3600s</option>
+                <option value={86400}>86400s</option>
               </select>
             </div>
           </div>
@@ -256,7 +258,7 @@ export const RecordManager: React.FC<Props> = ({
               className="bg-[#012241] hover:bg-[#02365f] text-white px-6 font-medium rounded-none h-10 w-full sm:w-auto"
             >
               <Plus className="w-4 h-4 mr-1.5" />
-              {isSubmitting ? 'Menyimpan...' : 'Tambah Record'}
+              {isSubmitting ? '...' : t('records-add-btn')}
             </Button>
           </div>
         </form>
@@ -265,7 +267,7 @@ export const RecordManager: React.FC<Props> = ({
       <div className="bg-white border border-gray-200 shadow-xs">
         <div className="p-4 sm:p-5 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-2">
-            <h2 className="text-base sm:text-lg font-bold text-gray-900">Daftar DNS Records</h2>
+            <h2 className="text-base sm:text-lg font-bold text-gray-900">{t('records-title')}</h2>
             <span className="text-xs bg-gray-100 text-gray-700 font-mono font-bold px-2 py-0.5 border border-gray-200">
               {records.length}
             </span>
@@ -279,33 +281,30 @@ export const RecordManager: React.FC<Props> = ({
               className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300 rounded-none h-8 text-xs"
             >
               <Trash2 className="w-3.5 h-3.5 mr-1" />
-              Hapus Semua
+              {t('btn-delete')}
             </Button>
           )}
         </div>
 
         {isLoading ? (
-          <div className="p-10 text-center text-gray-500 text-sm font-mono">Memuat DNS records...</div>
+          <div className="p-10 text-center text-gray-500 text-sm font-mono">{t('loading')}</div>
         ) : records.length === 0 ? (
           <div className="p-8 sm:p-12 text-center">
             <div className="w-10 h-10 bg-gray-100 text-gray-400 mx-auto flex items-center justify-center mb-2">
               <Info className="w-5 h-5" />
             </div>
-            <h3 className="text-sm font-bold text-gray-800 mb-1">Belum ada record DNS</h3>
-            <p className="text-xs text-gray-500 max-w-sm mx-auto">
-              Gunakan formulir di atas untuk menambahkan record A, AAAA, CNAME, atau TXT pertama Anda.
-            </p>
+            <h3 className="text-sm font-bold text-gray-800 mb-1">{t('records-empty')}</h3>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs sm:text-sm">
               <thead className="bg-gray-50 border-b border-gray-200 text-[11px] font-bold text-gray-600 uppercase tracking-wider font-mono">
                 <tr>
-                  <th className="py-2.5 px-3 sm:px-5">Host / FQDN</th>
-                  <th className="py-2.5 px-2 sm:px-3">Tipe</th>
-                  <th className="py-2.5 px-3 sm:px-5">Nilai / Target</th>
-                  <th className="py-2.5 px-2 sm:px-3">TTL</th>
-                  <th className="py-2.5 px-3 sm:px-5 text-right">Aksi</th>
+                  <th className="py-2.5 px-3 sm:px-5">{t('col-name')}</th>
+                  <th className="py-2.5 px-2 sm:px-3">{t('col-type')}</th>
+                  <th className="py-2.5 px-3 sm:px-5">{t('col-value')}</th>
+                  <th className="py-2.5 px-2 sm:px-3">{t('col-ttl')}</th>
+                  <th className="py-2.5 px-3 sm:px-5 text-right">{t('col-actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 font-mono">

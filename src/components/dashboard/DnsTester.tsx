@@ -4,6 +4,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import type { TestQueryResult } from './types';
 import { dashboardApi } from './api';
+import { useTranslations } from '../../lib/useTranslations';
 
 interface Props {
   subdomain: string;
@@ -13,6 +14,7 @@ interface Props {
 const QUERY_TYPES = ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS', 'PTR', 'CAA', 'SRV', 'SOA', 'ANY'];
 
 export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
+  const t = useTranslations('Dashboard');
   const fullDomain = `${subdomain}.${baseDomain}`;
   const [queryName, setQueryName] = useState(fullDomain);
   const [queryType, setQueryType] = useState('A');
@@ -58,7 +60,7 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
           <div className="w-8 h-8 bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
             <Terminal className="w-4 h-4" />
           </div>
-          <h2 className="text-base sm:text-lg font-bold text-gray-900">Web Dig (DNS Resolver)</h2>
+          <h2 className="text-base sm:text-lg font-bold text-gray-900">{t('tester-title')}</h2>
         </div>
       </div>
 
@@ -92,13 +94,13 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
           className="bg-[#012241] hover:bg-[#02365f] text-white px-5 font-medium h-10 rounded-none w-full sm:w-auto"
         >
           <Send className="w-4 h-4 mr-1.5" />
-          {isLoading ? 'Menguji...' : 'Kirim Query'}
+          {isLoading ? t('tester-querying') : t('tester-query-btn')}
         </Button>
       </form>
 
       {/* Quick Suggestions */}
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
-        <span className="font-bold text-gray-700">Uji cepat:</span>
+        <span className="font-bold text-gray-700">{t('tester-quick-label')}</span>
         <button
           type="button"
           onClick={() => {
@@ -226,7 +228,7 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
           {/* Raw Output Terminal Box */}
           <div className="border border-gray-800 rounded-none overflow-hidden">
             <div className="flex items-center justify-between bg-gray-800 text-gray-300 px-3 py-1.5 text-xs font-mono">
-              <span>dig output</span>
+              <span>{t('tester-raw-output')}</span>
               <button
                 type="button"
                 onClick={copyRaw}
@@ -235,12 +237,12 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
                 {copiedRaw ? (
                   <>
                     <Check className="w-3 h-3 text-green-400" />
-                    <span className="text-green-400">Tersalin</span>
+                    <span className="text-green-400">{t('btn-copied')}</span>
                   </>
                 ) : (
                   <>
                     <Copy className="w-3 h-3" />
-                    <span>Salin</span>
+                    <span>{t('btn-copy')}</span>
                   </>
                 )}
               </button>

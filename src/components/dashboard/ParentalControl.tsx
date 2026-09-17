@@ -17,6 +17,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import type { ParentalConfig, TestQueryResult } from './types';
 import { dashboardApi } from './api';
+import { useTranslations } from '../../lib/useTranslations';
 
 interface Props {
   subdomain: string;
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export function ParentalControl({ subdomain, baseDomain }: Props) {
+  const t = useTranslations('Dashboard');
   const [config, setConfig] = useState<ParentalConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -76,9 +78,9 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
     try {
       const saved = await dashboardApi.saveParentalConfig(subdomain, config);
       setConfig(saved);
-      alert('Pengaturan Parental Control berhasil disimpan!');
+      alert(t('parental-save-success'));
     } catch (err: any) {
-      alert(err.message || 'Gagal menyimpan pengaturan');
+      alert(err.message || t('parental-save-failed'));
     } finally {
       setIsSaving(false);
     }
@@ -130,7 +132,6 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
     if (!testDomain.trim()) return;
     setIsTesting(true);
     try {
-      // First save current config so the engine tests against latest rules
       if (config) {
         await dashboardApi.saveParentalConfig(subdomain, config);
       }
@@ -151,8 +152,8 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
 
   if (isLoading || !config) {
     return (
-      <div className="p-12 text-center text-gray-500 text-sm">
-        Memuat konfigurasi Parental Control & Web Blocker...
+      <div className="p-12 text-center text-gray-500 text-sm font-mono">
+        {t('loading')}
       </div>
     );
   }
@@ -172,17 +173,17 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h2 className="text-base sm:text-lg font-bold text-gray-900">Parental Control & Web Blocker</h2>
+                <h2 className="text-base sm:text-lg font-bold text-gray-900">{t('parental-title')}</h2>
                 <span
                   className={`text-[10px] font-bold px-1.5 py-0.5 rounded-none border uppercase ${
                     config.enabled ? 'bg-green-50 text-green-800 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'
                   }`}
                 >
-                  {config.enabled ? 'AKTIF' : 'NONAKTIF'}
+                  {config.enabled ? t('parental-status-active') : t('parental-status-inactive')}
                 </span>
               </div>
               <p className="text-xs text-gray-600 mt-1 max-w-2xl">
-                DNS Resolver penyaring konten berbahaya, situs judi, pornografi, iklan, dan pembatasan web.
+                {t('parental-desc')}
               </p>
             </div>
           </div>
@@ -207,7 +208,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
               className="bg-[#012241] hover:bg-[#02365f] text-white flex items-center space-x-1.5 px-3.5 h-8 text-xs font-semibold rounded-none"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{isSaving ? 'Menyimpan...' : 'Simpan'}</span>
+              <span>{isSaving ? t('parental-btn-saving') : t('parental-btn-save')}</span>
             </Button>
           </div>
         </div>
@@ -257,10 +258,10 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
         <div>
           <h3 className="text-base font-bold text-gray-900 flex items-center space-x-2">
             <Shield className="w-4 h-4 text-green-600" />
-            <span>Kategori Pemblokiran Otomatis</span>
+            <span>{t('parental-cat-title')}</span>
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Filter otomatis berdasarkan kategori keamanan dan konten
+            {t('parental-cat-desc')}
           </p>
         </div>
 
@@ -281,11 +282,11 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
                   config.block_adult ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-600 border-gray-300'
                 }`}
               >
-                {config.block_adult ? 'BLOKIR' : 'IZIN'}
+                {config.block_adult ? t('parental-badge-block') : t('parental-badge-allow')}
               </span>
             </div>
-            <h4 className="font-bold text-xs sm:text-sm text-gray-900">Konten Dewasa (18+)</h4>
-            <p className="text-[11px] text-gray-500 mt-0.5">Pornografi & konten eksplisit</p>
+            <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-adult-title')}</h4>
+            <p className="text-[11px] text-gray-500 mt-0.5">{t('parental-adult-desc')}</p>
           </div>
 
           {/* Gambling */}
@@ -304,11 +305,11 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
                   config.block_gambling ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-600 border-gray-300'
                 }`}
               >
-                {config.block_gambling ? 'BLOKIR' : 'IZIN'}
+                {config.block_gambling ? t('parental-badge-block') : t('parental-badge-allow')}
               </span>
             </div>
-            <h4 className="font-bold text-xs sm:text-sm text-gray-900">Judi & Kasino Online</h4>
-            <p className="text-[11px] text-gray-500 mt-0.5">Situs taruhan, agen slot, togel</p>
+            <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-gambling-title')}</h4>
+            <p className="text-[11px] text-gray-500 mt-0.5">{t('parental-gambling-desc')}</p>
           </div>
 
           {/* Malware & Phishing */}
@@ -327,11 +328,11 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
                   config.block_malware ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-600 border-gray-300'
                 }`}
               >
-                {config.block_malware ? 'BLOKIR' : 'IZIN'}
+                {config.block_malware ? t('parental-badge-block') : t('parental-badge-allow')}
               </span>
             </div>
-            <h4 className="font-bold text-xs sm:text-sm text-gray-900">Malware & Phishing</h4>
-            <p className="text-[11px] text-gray-500 mt-0.5">Link penipuan, scam, malware host</p>
+            <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-malware-title')}</h4>
+            <p className="text-[11px] text-gray-500 mt-0.5">{t('parental-malware-desc')}</p>
           </div>
 
           {/* Ads & Trackers */}
@@ -350,11 +351,11 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
                   config.block_ads ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-600 border-gray-300'
                 }`}
               >
-                {config.block_ads ? 'BLOKIR' : 'IZIN'}
+                {config.block_ads ? t('parental-badge-block') : t('parental-badge-allow')}
               </span>
             </div>
-            <h4 className="font-bold text-xs sm:text-sm text-gray-900">Iklan & Pelacak (AdBlock)</h4>
-            <p className="text-[11px] text-gray-500 mt-0.5">Pop-up iklan & tracker analytics</p>
+            <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-ads-title')}</h4>
+            <p className="text-[11px] text-gray-500 mt-0.5">{t('parental-ads-desc')}</p>
           </div>
 
           {/* Social Media */}
@@ -373,11 +374,11 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
                   config.block_social ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-600 border-gray-300'
                 }`}
               >
-                {config.block_social ? 'BLOKIR' : 'IZIN'}
+                {config.block_social ? t('parental-badge-block') : t('parental-badge-allow')}
               </span>
             </div>
-            <h4 className="font-bold text-xs sm:text-sm text-gray-900">Media Sosial</h4>
-            <p className="text-[11px] text-gray-500 mt-0.5">TikTok, Instagram, Facebook, X</p>
+            <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-social-title')}</h4>
+            <p className="text-[11px] text-gray-500 mt-0.5">{t('parental-social-desc')}</p>
           </div>
 
           {/* Gaming Platforms */}
@@ -396,11 +397,11 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
                   config.block_gaming ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-600 border-gray-300'
                 }`}
               >
-                {config.block_gaming ? 'BLOKIR' : 'IZIN'}
+                {config.block_gaming ? t('parental-badge-block') : t('parental-badge-allow')}
               </span>
             </div>
-            <h4 className="font-bold text-xs sm:text-sm text-gray-900">Game Online</h4>
-            <p className="text-[11px] text-gray-500 mt-0.5">Roblox, Steam, platform game</p>
+            <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-gaming-title')}</h4>
+            <p className="text-[11px] text-gray-500 mt-0.5">{t('parental-gaming-desc')}</p>
           </div>
         </div>
 
@@ -408,9 +409,9 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
         <div className="pt-3 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="flex items-center justify-between p-3 rounded-none bg-gray-50 border border-gray-200">
             <div>
-              <h4 className="font-bold text-xs sm:text-sm text-gray-900">Paksa SafeSearch</h4>
+              <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-safesearch-title')}</h4>
               <p className="text-[11px] text-gray-500">
-                Pencarian aman Google, YouTube, Bing
+                {t('parental-safesearch-desc')}
               </p>
             </div>
             <button
@@ -430,9 +431,9 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
 
           <div className="flex items-center justify-between p-3 rounded-none bg-gray-50 border border-gray-200">
             <div>
-              <h4 className="font-bold text-xs sm:text-sm text-gray-900">Metode Sinkhole</h4>
+              <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-sinkhole-title')}</h4>
               <p className="text-[11px] text-gray-500">
-                Respon balik domain terblokir
+                {t('parental-sinkhole-desc')}
               </p>
             </div>
             <select
@@ -454,33 +455,33 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm sm:text-base text-gray-900 flex items-center space-x-1.5">
               <span>🚫</span>
-              <span>Daftar Blokir Kustom (Blacklist)</span>
+              <span>{t('parental-custom-block-title')}</span>
             </h3>
             <span className="text-xs bg-red-50 text-red-700 font-semibold px-2 py-0.5 border border-red-200 rounded-none">
               {config.custom_blocked.length}
             </span>
           </div>
           <p className="text-xs text-gray-500">
-            Domain spesifik yang selalu diblokir
+            {t('parental-custom-block-desc')}
           </p>
 
           <form onSubmit={handleAddBlocked} className="flex gap-2">
             <Input
               type="text"
-              placeholder="contoh: roblox.com atau reddit.com"
+              placeholder={t('parental-custom-block-placeholder')}
               value={newBlocked}
               onChange={(e) => setNewBlocked(e.target.value)}
               className="h-8 text-xs font-mono rounded-none"
             />
             <Button type="submit" size="sm" className="bg-red-600 hover:bg-red-700 text-white h-8 px-3 rounded-none text-xs font-semibold">
               <Plus className="w-3.5 h-3.5 mr-1" />
-              Blokir
+              {t('parental-badge-block')}
             </Button>
           </form>
 
           <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pt-1">
             {config.custom_blocked.length === 0 ? (
-              <span className="text-xs text-gray-400 italic">Belum ada domain blacklist kustom.</span>
+              <span className="text-xs text-gray-400 italic">{t('parental-empty-blacklist')}</span>
             ) : (
               config.custom_blocked.map((dom) => (
                 <span
@@ -506,33 +507,33 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm sm:text-base text-gray-900 flex items-center space-x-1.5">
               <span>✅</span>
-              <span>Daftar Pengecualian (Whitelist)</span>
+              <span>{t('parental-custom-allow-title')}</span>
             </h3>
             <span className="text-xs bg-green-50 text-green-700 font-semibold px-2 py-0.5 border border-green-200 rounded-none">
               {config.custom_allowed.length}
             </span>
           </div>
           <p className="text-xs text-gray-500">
-            Domain yang diizinkan meskipun tergolong kategori filter
+            {t('parental-custom-allow-desc')}
           </p>
 
           <form onSubmit={handleAddAllowed} className="flex gap-2">
             <Input
               type="text"
-              placeholder="contoh: wikipedia.org"
+              placeholder={t('parental-custom-allow-placeholder')}
               value={newAllowed}
               onChange={(e) => setNewAllowed(e.target.value)}
               className="h-8 text-xs font-mono rounded-none"
             />
             <Button type="submit" size="sm" className="bg-green-600 hover:bg-green-700 text-white h-8 px-3 rounded-none text-xs font-semibold">
               <Plus className="w-3.5 h-3.5 mr-1" />
-              Izinkan
+              {t('parental-badge-allow')}
             </Button>
           </form>
 
           <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pt-1">
             {config.custom_allowed.length === 0 ? (
-              <span className="text-xs text-gray-400 italic">Belum ada domain whitelist.</span>
+              <span className="text-xs text-gray-400 italic">{t('parental-empty-whitelist')}</span>
             ) : (
               config.custom_allowed.map((dom) => (
                 <span
@@ -558,16 +559,16 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
       <div className="bg-white border border-gray-200 p-4 sm:p-5 space-y-3 rounded-none">
         <h3 className="font-bold text-sm sm:text-base text-gray-900 flex items-center space-x-2">
           <Zap className="w-4 h-4 text-amber-500" />
-          <span>Uji Coba Resolusi Filter</span>
+          <span>{t('parental-test-title')}</span>
         </h3>
         <p className="text-xs text-gray-500">
-          Uji coba query domain langsung di server DNS Parental Control Anda
+          {t('parental-test-desc')}
         </p>
 
         <div className="flex flex-col sm:flex-row gap-2">
           <Input
             type="text"
-            placeholder="misal: pornhub.com, tiktok.com, google.com"
+            placeholder={t('parental-test-placeholder')}
             value={testDomain}
             onChange={(e) => setTestDomain(e.target.value)}
             className="h-9 text-xs sm:text-sm font-mono rounded-none"
@@ -577,7 +578,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
             disabled={isTesting}
             className="bg-[#012241] hover:bg-[#02365f] text-white px-5 font-medium h-9 rounded-none text-xs whitespace-nowrap"
           >
-            {isTesting ? 'Menguji...' : 'Uji Domain'}
+            {isTesting ? t('parental-test-testing') : t('parental-test-btn')}
           </Button>
         </div>
 
@@ -594,8 +595,8 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
               <span>
                 {testResult.answers && testResult.answers.some((a) => a.includes('0.0.0.0')) ||
                 testResult.rcode === 'NXDOMAIN'
-                  ? '🛑 STATUS: DIBLOKIR / SINKHOLE'
-                  : '✅ STATUS: DIIZINKAN (FORWARDED)'}
+                  ? `🛑 ${t('parental-test-blocked')}`
+                  : `✅ ${t('parental-test-allowed')}`}
               </span>
               <span>{testResult.rcode} ({testResult.response_time_ms} ms)</span>
             </div>
@@ -604,7 +605,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
               {testResult.answers && testResult.answers.length > 0 ? (
                 testResult.answers.join(', ')
               ) : (
-                <span className="italic">Kosong</span>
+                <span className="italic">{t('parental-test-empty-answers')}</span>
               )}
             </div>
           </div>
@@ -616,10 +617,10 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
         <div>
           <h3 className="text-base font-bold text-gray-900 flex items-center space-x-2">
             <Globe className="w-4 h-4 text-blue-600" />
-            <span>Petunjuk Setup Perangkat</span>
+            <span>{t('parental-setup-title')}</span>
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Panduan konfigurasi Private DNS & DoH di perangkat
+            {t('parental-setup-desc')}
           </p>
         </div>
 
@@ -632,7 +633,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
             }`}
           >
             <Smartphone className="w-3.5 h-3.5" />
-            <span>Android</span>
+            <span>{t('parental-tab-android')}</span>
           </button>
           <button
             type="button"
@@ -642,7 +643,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
             }`}
           >
             <Laptop className="w-3.5 h-3.5" />
-            <span>Browser</span>
+            <span>{t('parental-tab-browser')}</span>
           </button>
           <button
             type="button"
@@ -651,7 +652,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
               setupTab === 'ios' ? 'border-[#012241] text-[#012241] bg-gray-50' : 'border-transparent text-gray-600 hover:text-gray-900'
             }`}
           >
-            <span>Apple iOS / macOS</span>
+            <span>{t('parental-tab-ios')}</span>
           </button>
           <button
             type="button"
@@ -661,38 +662,38 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
             }`}
           >
             <Wifi className="w-3.5 h-3.5" />
-            <span>Router WiFi</span>
+            <span>{t('parental-tab-router')}</span>
           </button>
         </div>
 
         <div className="text-xs text-gray-700 leading-relaxed bg-gray-50 p-4 border border-gray-200 rounded-none">
           {setupTab === 'android' && (
             <div className="space-y-2">
-              <h4 className="font-bold text-xs sm:text-sm text-gray-900">Pengaturan Android (Private DNS):</h4>
+              <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-setup-android-title')}</h4>
               <ol className="list-decimal list-inside space-y-1 font-medium text-gray-700">
-                <li>Buka <strong>Setelan</strong> &gt; <strong>Koneksi & Berbagi</strong> (atau Jaringan).</li>
-                <li>Pilih <strong>Private DNS</strong> (DNS Pribadi).</li>
-                <li>Pilih opsi <strong>Private DNS provider hostname</strong>.</li>
+                <li>{t('parental-setup-android-1')}</li>
+                <li>{t('parental-setup-android-2')}</li>
+                <li>{t('parental-setup-android-3')}</li>
                 <li>
-                  Ketik subdomain Anda:{' '}
+                  {t('parental-setup-android-4')}{' '}
                   <code className="bg-white px-1.5 py-0.5 rounded-none border border-gray-300 font-bold text-green-700 font-mono">
                     {fullDomain}
                   </code>
                 </li>
-                <li>Klik <strong>Simpan</strong>.</li>
+                <li>{t('parental-setup-android-5')}</li>
               </ol>
             </div>
           )}
 
           {setupTab === 'browser' && (
             <div className="space-y-2">
-              <h4 className="font-bold text-xs sm:text-sm text-gray-900">Pengaturan Chrome / Edge / Brave:</h4>
+              <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-setup-browser-title')}</h4>
               <ol className="list-decimal list-inside space-y-1 font-medium text-gray-700">
-                <li>Buka menu <strong>Settings</strong> &gt; <strong>Privacy and Security</strong> &gt; <strong>Security</strong>.</li>
-                <li>Aktifkan <strong>Use Secure DNS</strong>.</li>
-                <li>Pilih <strong>Custom</strong>.</li>
+                <li>{t('parental-setup-browser-1')}</li>
+                <li>{t('parental-setup-browser-2')}</li>
+                <li>{t('parental-setup-browser-3')}</li>
                 <li>
-                  Masukkan URL DoH:{' '}
+                  {t('parental-setup-browser-4')}{' '}
                   <code className="bg-white px-1.5 py-0.5 rounded-none border border-gray-300 font-bold text-green-700 font-mono break-all">
                     {dohUrl}
                   </code>
@@ -703,9 +704,9 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
 
           {setupTab === 'ios' && (
             <div className="space-y-2">
-              <h4 className="font-bold text-xs sm:text-sm text-gray-900">Pengaturan Apple iOS / macOS:</h4>
+              <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-setup-ios-title')}</h4>
               <p>
-                Gunakan aplikasi profil DNS (seperti DNSCloak atau Apple Configurator) dan masukkan DoH URL:
+                {t('parental-setup-ios-desc')}
               </p>
               <code className="block bg-white p-2 rounded-none border border-gray-300 font-bold text-green-700 font-mono break-all">
                 {dohUrl}
@@ -715,17 +716,17 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
 
           {setupTab === 'router' && (
             <div className="space-y-2">
-              <h4 className="font-bold text-xs sm:text-sm text-gray-900">Pengaturan Router WiFi:</h4>
+              <h4 className="font-bold text-xs sm:text-sm text-gray-900">{t('parental-setup-router-title')}</h4>
               <ol className="list-decimal list-inside space-y-1 font-medium text-gray-700">
-                <li>Buka dashboard admin router (biasanya <code>192.168.1.1</code>).</li>
-                <li>Masuk ke pengaturan <strong>DHCP Server</strong> atau <strong>WAN DNS</strong>.</li>
+                <li>{t('parental-setup-router-1')}</li>
+                <li>{t('parental-setup-router-2')}</li>
                 <li>
-                  Set Primary DNS IPv6 / IPv4:
+                  {t('parental-setup-router-3')}
                   <code className="block mt-1 p-1.5 bg-white rounded-none border border-gray-300 font-mono text-[11px] text-green-800 break-all">
                     2606:c700:4020:0098:1234:4321:73ab:0001 (ns1.{baseDomain})
                   </code>
                 </li>
-                <li>Simpan konfigurasi router.</li>
+                <li>{t('parental-setup-router-4')}</li>
               </ol>
             </div>
           )}

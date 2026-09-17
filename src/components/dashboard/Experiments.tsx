@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Sparkles, ArrowRight, Check, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '../ui/button';
 import type { Experiment } from './types';
+import { useTranslations } from '../../lib/useTranslations';
 
 interface Props {
   subdomain: string;
@@ -128,6 +129,7 @@ export const Experiments: React.FC<Props> = ({
   dnsPort,
   onSelectExperiment,
 }) => {
+  const t = useTranslations('Dashboard');
   const [expandedId, setExpandedId] = useState<string | null>('a-record-basics');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -146,9 +148,9 @@ export const Experiments: React.FC<Props> = ({
           <Sparkles className="w-4 h-4" />
         </div>
         <div>
-          <h2 className="text-base sm:text-lg font-bold text-gray-900">Eksperimen DNS</h2>
+          <h2 className="text-base sm:text-lg font-bold text-gray-900">{t('exp-title')}</h2>
           <p className="text-xs text-gray-500">
-            Skenario interaktif memahami cara kerja DNS record dan resolusi
+            {t('exp-desc')}
           </p>
         </div>
       </div>
@@ -201,7 +203,7 @@ export const Experiments: React.FC<Props> = ({
 
                   <div className="bg-white p-3 border border-gray-200 space-y-1.5 rounded-none">
                     <span className="font-bold text-gray-700 block uppercase tracking-wider text-[11px]">
-                      Langkah Eksperimen:
+                      {t('exp-steps-label')}
                     </span>
                     <ol className="list-decimal list-inside space-y-1 text-gray-600 font-medium">
                       {exp.steps.map((step, sIdx) => (
@@ -211,7 +213,7 @@ export const Experiments: React.FC<Props> = ({
                   </div>
 
                   <div className="p-3 bg-blue-50/50 border border-blue-200 text-blue-950 leading-relaxed rounded-none">
-                    <span className="font-bold block mb-1">Penjelasan:</span>
+                    <span className="font-bold block mb-1">{t('exp-explanation-label')}</span>
                     {exp.explanation}
                   </div>
 
@@ -226,12 +228,12 @@ export const Experiments: React.FC<Props> = ({
                       {copiedId === exp.id ? (
                         <>
                           <Check className="w-3.5 h-3.5 text-green-400" />
-                          <span>Tersalin</span>
+                          <span>{t('btn-copied')}</span>
                         </>
                       ) : (
                         <>
                           <Copy className="w-3.5 h-3.5" />
-                          <span>Salin</span>
+                          <span>{t('btn-copy')}</span>
                         </>
                       )}
                     </button>
@@ -243,7 +245,7 @@ export const Experiments: React.FC<Props> = ({
                       onClick={() => onSelectExperiment(exp)}
                       className="bg-[#012241] hover:bg-[#02365f] text-white rounded-none h-8 text-xs font-semibold"
                     >
-                      Coba Eksperimen
+                      {t('exp-try-btn')}
                       <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                     </Button>
                   </div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Copy, Check, RefreshCw, Terminal, Globe, LogOut } from 'lucide-react';
 import { Button } from '../ui/button';
 import type { UserSession } from './types';
+import { useTranslations } from '../../lib/useTranslations';
 
 interface Props {
   session: UserSession;
@@ -16,6 +17,7 @@ export const DashboardHeader: React.FC<Props> = ({
   onNewSession,
   onLogout,
 }) => {
+  const t = useTranslations('Dashboard');
   const [copiedDomain, setCopiedDomain] = useState(false);
   const [copiedDig, setCopiedDig] = useState(false);
 
@@ -38,7 +40,7 @@ export const DashboardHeader: React.FC<Props> = ({
         <div className="space-y-2">
           <div className="flex items-center space-x-2">
             <span className="text-[11px] font-bold uppercase tracking-wider text-green-700 bg-green-50 px-2 py-0.5 border border-green-200">
-              Live DNS Sandbox
+              {t('playground-badge')}
             </span>
             <div className="flex items-center space-x-1.5 ml-2">
               <span
@@ -73,12 +75,12 @@ export const DashboardHeader: React.FC<Props> = ({
               {copiedDomain ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-green-600" />
-                  <span className="text-green-700">Tersalin</span>
+                  <span className="text-green-700">{t('btn-copied')}</span>
                 </>
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5 text-gray-500" />
-                  <span>Salin</span>
+                  <span>{t('btn-copy')}</span>
                 </>
               )}
             </button>
@@ -94,7 +96,7 @@ export const DashboardHeader: React.FC<Props> = ({
             className="border-gray-300 text-gray-700 hover:text-green-600 hover:border-green-400 rounded-none h-9 text-xs sm:text-sm"
           >
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-            Subdomain Baru
+            {t('btn-new-subdomain')}
           </Button>
           <Button
             variant="ghost"
@@ -103,7 +105,7 @@ export const DashboardHeader: React.FC<Props> = ({
             className="text-gray-500 hover:text-red-600 rounded-none h-9 text-xs sm:text-sm"
           >
             <LogOut className="w-3.5 h-3.5 mr-1.5" />
-            Keluar
+            Logout
           </Button>
         </div>
       </div>
@@ -123,12 +125,12 @@ export const DashboardHeader: React.FC<Props> = ({
           {copiedDig ? (
             <>
               <Check className="w-3.5 h-3.5 text-green-600" />
-              <span>Tersalin</span>
+              <span>{t('btn-copied')}</span>
             </>
           ) : (
             <>
               <Copy className="w-3.5 h-3.5" />
-              <span>Salin Dig</span>
+              <span>{t('btn-copy')}</span>
             </>
           )}
         </button>
