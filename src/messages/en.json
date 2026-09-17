@@ -322,6 +322,6 @@
     "parental-setup-router-2": "Navigate to DHCP Server or WAN DNS settings.",
     "parental-setup-router-3": "Set Primary DNS IPv6 / IPv4:",
     "parental-setup-router-4": "Save router configuration.",
-    "parental-dot-ipv6-note": "Please note that Private DNS only works if you are on an IPv6 network. As an alternative, please use DoH."
+    "parental-dot-ipv6-note": "Private DNS (DoT) is now fully supported on port 853. Works on any network — IPv4 or IPv6. For browsers & iOS, use the DoH URL instead."
   }
 }

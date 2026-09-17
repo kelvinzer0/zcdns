@@ -99,17 +99,19 @@ jobs:
           sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
             mv -f /opt/zcdns/zcdns-server.new /opt/zcdns/zcdns-server &&
             chmod +x /opt/zcdns/zcdns-server &&
-            (which ufw >/dev/null 2>&1 && (ufw allow 53/tcp; ufw allow 53/udp) || true) &&
-            (which ip6tables >/dev/null 2>&1 && (ip6tables -I INPUT -p tcp --dport 53 -j ACCEPT; ip6tables -I INPUT -p udp --dport 53 -j ACCEPT) || true) &&
-            (which iptables >/dev/null 2>&1 && (iptables -I INPUT -p tcp --dport 53 -j ACCEPT; iptables -I INPUT -p udp --dport 53 -j ACCEPT) || true) &&
+            (which ufw >/dev/null 2>&1 && (ufw allow 53/tcp; ufw allow 53/udp; ufw allow 853/tcp) || true) &&
+            (which ip6tables >/dev/null 2>&1 && (ip6tables -I INPUT -p tcp --dport 53 -j ACCEPT; ip6tables -I INPUT -p udp --dport 53 -j ACCEPT; ip6tables -I INPUT -p tcp --dport 853 -j ACCEPT) || true) &&
+            (which iptables >/dev/null 2>&1 && (iptables -I INPUT -p tcp --dport 53 -j ACCEPT; iptables -I INPUT -p udp --dport 53 -j ACCEPT; iptables -I INPUT -p tcp --dport 853 -j ACCEPT) || true) &&
             # Configure shared-ip DNS mappings so port 53 traffic for zcdns.id routes to zcdns-server
             shared-ip add zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
             shared-ip add ns2.zcdns.id --localport=53 --localipv4=10.0.0.11 --localipv6=fd00::11 || true &&
+            # Configure shared-ip DoT mapping so port 853 traffic for guard.zcdns.id routes to zcdns-server
+            shared-ip add guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
             systemctl restart zcdns &&
             systemctl is-active zcdns &&
             systemctl restart shared-ip &&
             systemctl is-active shared-ip &&
-            ss -tulpn | grep 53 || true
+            ss -tulpn | grep -E '53|853' || true
           "
 
       - name: Verify and Test Remote DNS and AXFR

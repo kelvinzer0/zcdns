@@ -18,6 +18,11 @@ type Config struct {
 	CleanInterval int // in minutes
 	RecordTTLMax  int
 	AdminKey      string
+
+	// DoT (DNS-over-TLS) — used for *.guard.<BaseDomain> Private DNS on Android
+	DoTPort     int
+	TLSCertFile string
+	TLSKeyFile  string
 }
 
 func LoadConfig() *Config {
@@ -58,6 +63,12 @@ func LoadConfig() *Config {
 	dbPath := getEnv("DB_PATH", "./zcdns.sqlite")
 	staticDir := getEnv("STATIC_DIR", "")
 
+	dotPortStr := getEnv("DOT_PORT", "853")
+	dotPort, err := strconv.Atoi(dotPortStr)
+	if err != nil {
+		dotPort = 853
+	}
+
 	return &Config{
 		HTTPPort:      httpPort,
 		DNSPort:       dnsPort,
@@ -68,6 +79,9 @@ func LoadConfig() *Config {
 		CleanInterval: 60,
 		RecordTTLMax:  86400,
 		AdminKey:      getEnv("ADMIN_KEY", "@Kelvin123"),
+		DoTPort:       dotPort,
+		TLSCertFile:   getEnv("TLS_CERT_FILE", "/etc/letsencrypt/live/guard.zcdns.id/fullchain.pem"),
+		TLSKeyFile:    getEnv("TLS_KEY_FILE", "/etc/letsencrypt/live/guard.zcdns.id/privkey.pem"),
 	}
 }
 

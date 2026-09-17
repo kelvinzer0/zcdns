@@ -232,8 +232,8 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
                 {copiedDot ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
-            <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 leading-snug">
-              ⚠️ {t('parental-dot-ipv6-note')}
+            <p className="mt-2 text-[11px] text-green-800 bg-green-50 border border-green-200 px-2 py-1 leading-snug">
+              ✅ {t('parental-dot-ipv6-note')}
             </p>
           </div>
 
@@ -717,8 +717,8 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
                 </li>
                 <li>{t('parental-setup-android-5')}</li>
               </ol>
-              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1.5 leading-snug">
-                ⚠️ {t('parental-dot-ipv6-note')}
+              <p className="text-[11px] text-green-800 bg-green-50 border border-green-200 px-2 py-1.5 leading-snug">
+                ✅ {t('parental-dot-ipv6-note')}
               </p>
             </div>
           )}

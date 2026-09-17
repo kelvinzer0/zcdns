@@ -24,6 +24,7 @@ func main() {
 	log.Printf("    Base Domain : *.%s", cfg.BaseDomain)
 	log.Printf("    HTTP Port   : %s", cfg.HTTPPort)
 	log.Printf("    DNS Port    : %d (UDP/TCP)", cfg.DNSPort)
+	log.Printf("    DoT Port    : %d (TCP-TLS)", cfg.DoTPort)
 	log.Printf("    SQLite DB   : %s", cfg.DBPath)
 	log.Printf("==================================================")
 
@@ -46,6 +47,9 @@ func main() {
 		log.Printf("[WARN] Failed to start DNS server on port %d: %v", cfg.DNSPort, err)
 	} else {
 		log.Printf("[DNS] DNS Server listening on %v", cfg.DNSAddrs)
+	}
+	if err := dnsServer.StartDoT(); err != nil {
+		log.Printf("[WARN] Failed to start DoT server on port %d: %v", cfg.DoTPort, err)
 	}
 	defer dnsServer.Stop()
 
