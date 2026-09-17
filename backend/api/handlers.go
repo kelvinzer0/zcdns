@@ -102,6 +102,9 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/blocked-subdomains", h.requireAdmin(h.handleAdminGetBlockedSubdomains))
 	mux.HandleFunc("POST /api/admin/blocked-subdomains", h.requireAdmin(h.handleAdminBlockSubdomain))
 	mux.HandleFunc("DELETE /api/admin/blocked-subdomains/{subdomain}", h.requireAdmin(h.handleAdminUnblockSubdomain))
+	mux.HandleFunc("GET /api/admin/txt-records", h.requireAdmin(h.handleAdminGetTXTRecords))
+	mux.HandleFunc("POST /api/admin/txt-records", h.requireAdmin(h.handleAdminCreateTXTRecord))
+	mux.HandleFunc("DELETE /api/admin/txt-records/{id}", h.requireAdmin(h.handleAdminDeleteTXTRecord))
 
 	// Static SPA file server
 	if h.cfg.StaticDir != "" {
@@ -1009,4 +1012,79 @@ func (h *APIHandler) handleGetAcmeChallenges(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, records)
+}
+
+func (h *APIHandler) handleAdminGetTXTRecords(w http.ResponseWriter, r *http.Request) {
+	records, err := h.db.GetAllTXTRecords()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, records)
+}
+
+type AdminTXTRequest struct {
+	Subdomain string `json:"subdomain"`
+	Name      string `json:"name"`
+	Value     string `json:"value"`
+	TTL       int    `json:"ttl"`
+}
+
+func (h *APIHandler) handleAdminCreateTXTRecord(w http.ResponseWriter, r *http.Request) {
+	var req AdminTXTRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	sub := strings.ToLower(strings.TrimSpace(req.Subdomain))
+	if sub == "" {
+		sub = "guard"
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = "_acme-challenge"
+	}
+	val := strings.Trim(strings.TrimSpace(req.Value), "\"")
+	if val == "" {
+		writeJSONError(w, http.StatusBadRequest, "TXT value is required")
+		return
+	}
+	ttl := req.TTL
+	if ttl <= 0 {
+		ttl = 60
+	}
+
+	record := &db.Record{
+		ID:        uuid.New().String(),
+		Subdomain: sub,
+		Name:      name,
+		Type:      "TXT",
+		Value:     val,
+		TTL:       ttl,
+	}
+
+	if err := h.db.AddRecord(record); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to save TXT record: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, record)
+	h.triggerRecordChanged()
+}
+
+func (h *APIHandler) handleAdminDeleteTXTRecord(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSONError(w, http.StatusBadRequest, "Record ID is required")
+		return
+	}
+
+	if err := h.db.DeleteRecordByID(id); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to delete TXT record: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	h.triggerRecordChanged()
 }

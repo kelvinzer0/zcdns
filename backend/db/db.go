@@ -303,6 +303,31 @@ func (d *DB) DeleteRecord(subdomain, id string) error {
 	return err
 }
 
+func (d *DB) DeleteRecordByID(id string) error {
+	_, err := d.conn.Exec("DELETE FROM records WHERE id = ?", id)
+	return err
+}
+
+func (d *DB) GetAllTXTRecords() ([]Record, error) {
+	rows, err := d.conn.Query(
+		"SELECT id, subdomain, name, type, value, ttl, created_at, updated_at FROM records WHERE type = 'TXT' ORDER BY subdomain ASC, name ASC",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := make([]Record, 0)
+	for rows.Next() {
+		var r Record
+		if err := rows.Scan(&r.ID, &r.Subdomain, &r.Name, &r.Type, &r.Value, &r.TTL, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
+}
+
 func (d *DB) DeleteAllRecords(subdomain string) error {
 	_, err := d.conn.Exec("DELETE FROM records WHERE subdomain = ?", subdomain)
 	return err

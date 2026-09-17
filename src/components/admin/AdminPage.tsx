@@ -16,9 +16,21 @@ import {
   Eye,
   X,
   Server,
+  Plus,
 } from "lucide-react";
 import { Seo } from "../Seo";
 import { useTranslations } from "../../lib/useTranslations";
+
+interface TXTRecord {
+  id: string;
+  subdomain: string;
+  name: string;
+  type: string;
+  value: string;
+  ttl: number;
+  created_at: string;
+  updated_at: string;
+}
 
 interface AbuseReport {
   id: string;
@@ -60,11 +72,19 @@ export function AdminPage() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Dashboard state
-  const [activeTab, setActiveTab] = useState<"reports" | "blocked" | "stats">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "blocked" | "stats" | "txt">("reports");
   const [reports, setReports] = useState<AbuseReport[]>([]);
   const [blockedList, setBlockedList] = useState<BlockedSubdomain[]>([]);
   const [growthStats, setGrowthStats] = useState<GrowthStats | null>(null);
+  const [txtList, setTxtList] = useState<TXTRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Form for new TXT record
+  const [txtSubdomain, setTxtSubdomain] = useState("guard");
+  const [txtName, setTxtName] = useState("_acme-challenge");
+  const [txtValue, setTxtValue] = useState("");
+  const [txtTTL, setTxtTTL] = useState(60);
+  const [isSavingTxt, setIsSavingTxt] = useState(false);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -85,10 +105,11 @@ export function AdminPage() {
     try {
       const headers = { "X-Admin-Key": token };
 
-      const [reportsRes, blockedRes, statsRes] = await Promise.all([
+      const [reportsRes, blockedRes, statsRes, txtRes] = await Promise.all([
         fetch("/api/admin/abuse-reports", { headers }),
         fetch("/api/admin/blocked-subdomains", { headers }),
         fetch("/api/admin/stats", { headers }),
+        fetch("/api/admin/txt-records", { headers }),
       ]);
 
       if (reportsRes.status === 401 || blockedRes.status === 401) {
@@ -109,6 +130,11 @@ export function AdminPage() {
       if (statsRes.ok) {
         const data = await statsRes.json();
         setGrowthStats(data.growth);
+      }
+
+      if (txtRes.ok) {
+        const data = await txtRes.json();
+        setTxtList(data);
       }
     } catch (err) {
       console.error("Error fetching admin data:", err);
@@ -262,6 +288,60 @@ export function AdminPage() {
       }
     } catch (err) {
       console.error("Failed to unblock subdomain:", err);
+    }
+  };
+
+  const handleCreateTXT = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminToken || !txtValue.trim()) return;
+    setIsSavingTxt(true);
+    try {
+      const res = await fetch("/api/admin/txt-records", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Key": adminToken,
+        },
+        body: JSON.stringify({
+          subdomain: txtSubdomain.trim() || "guard",
+          name: txtName.trim() || "_acme-challenge",
+          value: txtValue.trim(),
+          ttl: Number(txtTTL) || 60,
+        }),
+      });
+
+      if (res.ok) {
+        setActionSuccess("Record TXT berhasil ditambahkan & disinkronkan ke DNS!");
+        setTxtValue("");
+        fetchAdminData();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Gagal menyimpan record TXT");
+      }
+    } catch (err) {
+      console.error("Failed to create TXT record:", err);
+      alert("Terjadi kesalahan koneksi");
+    } finally {
+      setIsSavingTxt(false);
+    }
+  };
+
+  const handleDeleteTXT = async (id: string) => {
+    if (!adminToken) return;
+    if (!confirm("Hapus record TXT ini dari DNS?")) return;
+
+    try {
+      const res = await fetch(`/api/admin/txt-records/${id}`, {
+        method: "DELETE",
+        headers: { "X-Admin-Key": adminToken },
+      });
+
+      if (res.ok) {
+        setActionSuccess("Record TXT berhasil dihapus dari DNS!");
+        fetchAdminData();
+      }
+    } catch (err) {
+      console.error("Failed to delete TXT record:", err);
     }
   };
 
@@ -451,6 +531,17 @@ export function AdminPage() {
           >
             <Server className="w-4 h-4" />
             {t("tab-stats")}
+          </button>
+          <button
+            onClick={() => setActiveTab("txt")}
+            className={`pb-3 px-4 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+              activeTab === "txt"
+                ? "border-red-600 text-red-600"
+                : "border-transparent text-gray-500 hover:text-gray-900"
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            TXT & ACME ({txtList.length})
           </button>
         </div>
 
@@ -751,6 +842,177 @@ export function AdminPage() {
                   {t("stats-enforcement-note")}
                 </p>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 4: TXT & ACME Challenges */}
+        {activeTab === "txt" && (
+          <div className="space-y-6">
+            {/* Create TXT Form */}
+            <div className="bg-white p-6 rounded-none border border-gray-200 shadow-none">
+              <div className="flex items-center gap-2 mb-2 text-gray-900 font-bold text-base">
+                <Plus className="w-5 h-5 text-red-600" />
+                <span>Tambah / Edit Record TXT (ACME Challenge / Verification)</span>
+              </div>
+              <p className="text-xs text-gray-500 mb-5">
+                Record TXT yang disimpan di sini akan langsung di-load ke nameserver lokal dan otomatis disinkronkan ke slave nameserver (HE.net) via AXFR secara instan tanpa perlu restart service atau rebuild container.
+              </p>
+
+              <form onSubmit={handleCreateTXT} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                      Subdomain
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={txtSubdomain}
+                      onChange={(e) => setTxtSubdomain(e.target.value)}
+                      placeholder="guard (atau nama subdomain)"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-none focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
+                    />
+                    <span className="text-[10px] text-gray-400 mt-0.5 block">Contoh: guard</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                      Nama Record (Host)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={txtName}
+                      onChange={(e) => setTxtName(e.target.value)}
+                      placeholder="_acme-challenge (atau @)"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-none focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
+                    />
+                    <span className="text-[10px] text-gray-400 mt-0.5 block">Contoh: _acme-challenge</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                      TTL (Detik)
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={10}
+                      max={86400}
+                      value={txtTTL}
+                      onChange={(e) => setTxtTTL(Number(e.target.value))}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-none focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
+                    />
+                    <span className="text-[10px] text-gray-400 mt-0.5 block">Rekomendasi: 60 detik</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                    Nilai Record TXT (Token Certbot / Challenge String)
+                  </label>
+                  <textarea
+                    required
+                    rows={2}
+                    value={txtValue}
+                    onChange={(e) => setTxtValue(e.target.value)}
+                    placeholder="Contoh: Iu6XSSqIx5-IKIceXWVoT4Z54S9DwsMewAo781Pk-DE"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-none focus:outline-none focus:ring-2 focus:ring-red-500 font-mono resize-none"
+                  />
+                  <div className="flex items-center justify-between text-[11px] text-gray-500 mt-1">
+                    <span>
+                      Domain FQDN yang terbentuk:{" "}
+                      <code className="text-red-700 font-bold font-mono">
+                        {txtName ? `${txtName}.` : ""}{txtSubdomain}.zcdns.id.
+                      </code>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="submit"
+                    disabled={isSavingTxt || !txtValue.trim()}
+                    className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-none font-semibold text-xs transition-colors flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {isSavingTxt ? "Menyimpan ke DNS..." : "Simpan Record TXT ke DNS"}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* List of TXT Records */}
+            <div className="bg-white border border-gray-200 rounded-none shadow-none overflow-hidden">
+              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-gray-900 text-sm">
+                    Daftar Record TXT Aktif ({txtList.length})
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Semua record TXT tersimpan langsung aktif di port 53 & disinkronkan ke slave DNS
+                  </p>
+                </div>
+                <button
+                  onClick={() => fetchAdminData()}
+                  className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-none transition-colors"
+                  title="Segarkan data"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+                </button>
+              </div>
+
+              {txtList.length === 0 ? (
+                <div className="p-8 text-center text-gray-500 text-sm">
+                  Belum ada record TXT yang disimpan di database.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 font-semibold uppercase tracking-wider">
+                      <tr>
+                        <th className="p-3">FQDN Host</th>
+                        <th className="p-3">Subdomain</th>
+                        <th className="p-3">Nama</th>
+                        <th className="p-3">Nilai TXT</th>
+                        <th className="p-3">TTL</th>
+                        <th className="p-3 text-right">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 font-mono">
+                      {txtList.map((rec) => {
+                        const fqdn =
+                          rec.name && rec.name !== "@"
+                            ? `${rec.name}.${rec.subdomain}.zcdns.id`
+                            : `${rec.subdomain}.zcdns.id`;
+                        return (
+                          <tr key={rec.id} className="hover:bg-gray-50">
+                            <td className="p-3 font-bold text-gray-900">{fqdn}</td>
+                            <td className="p-3 text-gray-600">{rec.subdomain}</td>
+                            <td className="p-3 text-red-700">{rec.name}</td>
+                            <td className="p-3 text-gray-800 break-all max-w-md">
+                              <span className="bg-gray-100 px-2 py-0.5 rounded-none border border-gray-200 select-all">
+                                {rec.value}
+                              </span>
+                            </td>
+                            <td className="p-3 text-gray-500">{rec.ttl}s</td>
+                            <td className="p-3 text-right font-sans">
+                              <button
+                                onClick={() => handleDeleteTXT(rec.id)}
+                                className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
+                                title="Hapus Record TXT"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
