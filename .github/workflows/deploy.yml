@@ -116,20 +116,22 @@ jobs:
           export SSHPASS="$SSH_PASSWORD"
           echo "=== 1. DIAGNOSTICS ON REMOTE SERVER ==="
           sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
-            echo '--- ZCDNS SERVICE DEFINITION ---'
-            systemctl cat zcdns || true
-            echo '--- ZCDNS LOGS ---'
-            journalctl -u zcdns -n 35 --no-pager || true
-            echo '--- LISTENING PORTS (ss -tulpn) ---'
-            ss -tulpn || true
-            echo '--- SHARED-IP INFO ---'
-            ps aux | grep shared-ip || true
-            echo '--- LOCAL DIG SOA UDP ---'
-            dig @127.0.0.1 zcdns.id SOA +time=2 +tries=1 || true
-            echo '--- LOCAL DIG SOA TCP ---'
-            dig @127.0.0.1 zcdns.id SOA +tcp +time=2 +tries=1 || true
-            echo '--- LOCAL DIG AXFR ---'
-            dig @127.0.0.1 zcdns.id AXFR +time=2 +tries=1 || true
+            echo '--- SHARED-IP LIST ---'
+            shared-ip list || true
+            echo '--- SHARED-IP SHOW (zcdns.id) ---'
+            shared-ip show zcdns.id --localport=53 || true
+            shared-ip show zcdns.id --localport=443 || true
+            echo '--- SHARED-IP LOGS ---'
+            journalctl -u shared-ip -n 40 --no-pager || true
+            echo '--- INSTALL DNSUTILS ON REMOTE ---'
+            which dig >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq dnsutils) || true
+            echo '--- LOCAL DIG SOA DIRECT TO BACKEND (10.0.0.10) ---'
+            dig @10.0.0.10 zcdns.id SOA +time=2 +tries=1 || true
+            dig @10.0.0.10 zcdns.id SOA +tcp +time=2 +tries=1 || true
+            echo '--- LOCAL DIG AXFR DIRECT TO BACKEND (10.0.0.10) ---'
+            dig @10.0.0.10 zcdns.id AXFR +time=2 +tries=1 || true
+            echo '--- LOCAL DIG AXFR VIA SHARED-IP (10.46.0.214) ---'
+            dig @10.46.0.214 zcdns.id AXFR +time=2 +tries=1 || true
           "
           echo "=== 2. TEST FROM RUNNER OVER EXTERNAL IPV6 ==="
           sudo apt-get install -y dnsutils
