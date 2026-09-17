@@ -21,14 +21,18 @@ type QueryBroadcaster interface {
 	BroadcastRequest(subdomain string, req *db.RequestLog)
 }
 
+const FallbackHost = "2606-0c70-0020-0098-1234-4321-73ab-0001.withfallback.com"
+
 type Server struct {
-	cfg         *config.Config
-	db          *db.DB
-	broadcaster QueryBroadcaster
-	parental    *parental.Engine
-	servers     []*dns.Server
-	mu          sync.RWMutex
-	zoneSerial  uint32
+	cfg          *config.Config
+	db           *db.DB
+	broadcaster  QueryBroadcaster
+	parental     *parental.Engine
+	servers      []*dns.Server
+	mu           sync.RWMutex
+	zoneSerial   uint32
+	fallbackIPv4 net.IP
+	stopChan     chan struct{}
 }
 
 func NewServer(cfg *config.Config, database *db.DB, broadcaster QueryBroadcaster, pe *parental.Engine) *Server {
@@ -38,7 +42,96 @@ func NewServer(cfg *config.Config, database *db.DB, broadcaster QueryBroadcaster
 		broadcaster: broadcaster,
 		parental:    pe,
 		zoneSerial:  uint32(time.Now().Unix()),
+		stopChan:    make(chan struct{}),
 	}
+}
+
+func (s *Server) GetFallbackIPv4() net.IP {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.fallbackIPv4
+}
+
+func (s *Server) SetFallbackIPv4(ip net.IP) {
+	s.mu.Lock()
+	s.fallbackIPv4 = ip
+	s.mu.Unlock()
+}
+
+func resolveFallbackIPv4(hostname string) (net.IP, error) {
+	resolvers := []string{
+		"[2606:4700:4700::1111]:53",
+		"[2001:4860:4860::8888]:53",
+		"1.1.1.1:53",
+		"8.8.8.8:53",
+	}
+
+	client := &dns.Client{Timeout: 3 * time.Second}
+	m := new(dns.Msg)
+	m.SetQuestion(dns.Fqdn(hostname), dns.TypeA)
+
+	for _, res := range resolvers {
+		resp, _, err := client.Exchange(m, res)
+		if err == nil && resp != nil && len(resp.Answer) > 0 {
+			for _, ans := range resp.Answer {
+				if a, ok := ans.(*dns.A); ok && a.A != nil {
+					return a.A, nil
+				}
+			}
+		}
+	}
+
+	ips, err := net.LookupIP(hostname)
+	if err == nil {
+		for _, ip := range ips {
+			if v4 := ip.To4(); v4 != nil {
+				return v4, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("unable to resolve IPv4 A record for %s", hostname)
+}
+
+func (s *Server) updateFallbackIPv4() {
+	newIP, err := resolveFallbackIPv4(FallbackHost)
+	if err != nil {
+		log.Printf("[DNS-FALLBACK] Failed to resolve %s: %v", FallbackHost, err)
+		return
+	}
+
+	s.mu.Lock()
+	oldIP := s.fallbackIPv4
+	changed := oldIP == nil || !oldIP.Equal(newIP)
+	if changed {
+		s.fallbackIPv4 = newIP
+		s.zoneSerial++
+	}
+	serial := s.zoneSerial
+	s.mu.Unlock()
+
+	if changed {
+		log.Printf("[DNS-FALLBACK] Updated fallback IPv4 to %s (old: %v, Serial: %d)", newIP.String(), oldIP, serial)
+		s.NotifySlaves()
+	}
+}
+
+func (s *Server) startFallbackUpdater() {
+	go s.updateFallbackIPv4()
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				s.updateFallbackIPv4()
+			case <-s.stopChan:
+				return
+			}
+		}
+	}()
 }
 
 func (s *Server) GetZoneSerial() uint32 {
@@ -109,11 +202,17 @@ func (s *Server) Start() error {
 	case err := <-errChan:
 		return err
 	case <-time.After(150 * time.Millisecond):
+		s.startFallbackUpdater()
 		return nil
 	}
 }
 
 func (s *Server) Stop() {
+	select {
+	case <-s.stopChan:
+	default:
+		close(s.stopChan)
+	}
 	for _, srv := range s.servers {
 		_ = srv.Shutdown()
 	}
@@ -178,8 +277,8 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	// Handle queries directly targeted at authoritative nameservers (ns1.zcdns.id / ns2.zcdns.id)
-	if (subdomain == "ns1" || subdomain == "ns2") && (recordName == "@" || recordName == "") {
+	// Handle queries directly targeted at authoritative nameservers (ns1.zcdns.id / ns2.zcdns.id) or www
+	if (subdomain == "ns1" || subdomain == "ns2" || subdomain == "www") && (recordName == "@" || recordName == "") {
 		s.handleNameserverDomain(m, q, strings.TrimSuffix(qName, "."))
 		_ = w.WriteMsg(m)
 		return
@@ -284,17 +383,36 @@ func (s *Server) handleBaseDomain(m *dns.Msg, q dns.Question) {
 		AAAA: net.ParseIP("2606:c700:4020:0098:1234:4321:73ab:0001"),
 	}
 
+	fallbackIP := s.GetFallbackIPv4()
+	var aRecord *dns.A
+	if fallbackIP != nil {
+		aRecord = &dns.A{
+			Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+			A:   fallbackIP,
+		}
+	}
+
 	switch q.Qtype {
 	case dns.TypeNS:
 		m.Answer = append(m.Answer, nsRecords...)
 	case dns.TypeSOA:
 		m.Answer = append(m.Answer, soa)
 		m.Ns = append(m.Ns, nsRecords...)
+	case dns.TypeA:
+		if aRecord != nil {
+			m.Answer = append(m.Answer, aRecord)
+		} else {
+			m.Rcode = dns.RcodeSuccess
+			m.Ns = append(m.Ns, soa)
+		}
 	case dns.TypeAAAA:
 		m.Answer = append(m.Answer, aaaaRecord)
 	case dns.TypeANY:
 		m.Answer = append(m.Answer, soa)
 		m.Answer = append(m.Answer, nsRecords...)
+		if aRecord != nil {
+			m.Answer = append(m.Answer, aRecord)
+		}
 		m.Answer = append(m.Answer, aaaaRecord)
 	default:
 		// NODATA: return NOERROR with SOA in Authority section
@@ -371,6 +489,16 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 60}, AAAA: serverIP},
 	)
 
+	if fallbackIP := s.GetFallbackIPv4(); fallbackIP != nil {
+		records = append(records,
+			&dns.A{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
+			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns1.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
+			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns2.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
+			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("www.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
+			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: fallbackIP},
+		)
+	}
+
 	// 4. All active user records from database
 	dbRecords, err := s.db.GetAllActiveRecords()
 	if err == nil {
@@ -404,11 +532,36 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 
 func (s *Server) handleNameserverDomain(m *dns.Msg, q dns.Question, name string) {
 	target := dns.Fqdn(name)
+	serverIP := net.ParseIP("2606:c700:4020:0098:1234:4321:73ab:0001")
+	fallbackIP := s.GetFallbackIPv4()
+
+	var aRecord *dns.A
+	if fallbackIP != nil {
+		aRecord = &dns.A{
+			Hdr: dns.RR_Header{Name: target, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+			A:   fallbackIP,
+		}
+	}
+
 	switch q.Qtype {
+	case dns.TypeA:
+		if aRecord != nil {
+			m.Answer = append(m.Answer, aRecord)
+		} else {
+			m.SetRcode(m, dns.RcodeSuccess)
+		}
 	case dns.TypeAAAA:
 		m.Answer = append(m.Answer, &dns.AAAA{
 			Hdr:  dns.RR_Header{Name: target, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
-			AAAA: net.ParseIP("2606:c700:4020:0098:1234:4321:73ab:0001"),
+			AAAA: serverIP,
+		})
+	case dns.TypeANY:
+		if aRecord != nil {
+			m.Answer = append(m.Answer, aRecord)
+		}
+		m.Answer = append(m.Answer, &dns.AAAA{
+			Hdr:  dns.RR_Header{Name: target, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
+			AAAA: serverIP,
 		})
 	default:
 		m.SetRcode(m, dns.RcodeSuccess)

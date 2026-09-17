@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"net"
 	"os"
 	"testing"
 	"time"
@@ -94,4 +95,60 @@ func TestAXFR(t *testing.T) {
 		t.Fatalf("Expected at least 4 records in AXFR, got %d", count)
 	}
 	t.Logf("AXFR successfully received %d records", count)
+}
+
+func TestFallbackIPv4(t *testing.T) {
+	dbFile := "./test_fallback.sqlite"
+	_ = os.Remove(dbFile)
+	defer os.Remove(dbFile)
+
+	database, err := db.InitDB(dbFile)
+	if err != nil {
+		t.Fatalf("Failed to create db: %v", err)
+	}
+	defer database.Close()
+
+	cfg := &config.Config{
+		DNSAddrs:   []string{"127.0.0.1:15355"},
+		BaseDomain: "zcdns.id",
+	}
+
+	srv := NewServer(cfg, database, nil, nil)
+	srv.SetFallbackIPv4(net.ParseIP("45.33.22.33"))
+	if err := srv.Start(); err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+	defer srv.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	c := new(dns.Client)
+	c.Net = "udp"
+
+	testCases := []string{
+		"zcdns.id.",
+		"ns1.zcdns.id.",
+		"ns2.zcdns.id.",
+		"www.zcdns.id.",
+	}
+
+	for _, domain := range testCases {
+		m := new(dns.Msg)
+		m.SetQuestion(domain, dns.TypeA)
+		resp, _, err := c.Exchange(m, "127.0.0.1:15355")
+		if err != nil {
+			t.Fatalf("Query %s failed: %v", domain, err)
+		}
+		if len(resp.Answer) == 0 {
+			t.Fatalf("Expected A record for %s, got none", domain)
+		}
+		aRec, ok := resp.Answer[0].(*dns.A)
+		if !ok {
+			t.Fatalf("Expected *dns.A record for %s, got %T", domain, resp.Answer[0])
+		}
+		if aRec.A.String() != "45.33.22.33" {
+			t.Fatalf("Expected 45.33.22.33 for %s, got %s", domain, aRec.A.String())
+		}
+		t.Logf("Successfully verified %s -> %s", domain, aRec.A.String())
+	}
 }
