@@ -95,15 +95,20 @@ jobs:
           # Upload frontend dist via compressed stream
           tar -czf - -C dist . | sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "tar -xzf - -C /opt/zcdns/dist"
 
-          # Replace binary, configure firewall for DNS (UDP & TCP 53), and restart service
+          # Replace binary, configure firewall for DNS (UDP & TCP 53), configure shared-ip, and restart services
           sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
             mv -f /opt/zcdns/zcdns-server.new /opt/zcdns/zcdns-server &&
             chmod +x /opt/zcdns/zcdns-server &&
             (which ufw >/dev/null 2>&1 && (ufw allow 53/tcp; ufw allow 53/udp) || true) &&
             (which ip6tables >/dev/null 2>&1 && (ip6tables -I INPUT -p tcp --dport 53 -j ACCEPT; ip6tables -I INPUT -p udp --dport 53 -j ACCEPT) || true) &&
             (which iptables >/dev/null 2>&1 && (iptables -I INPUT -p tcp --dport 53 -j ACCEPT; iptables -I INPUT -p udp --dport 53 -j ACCEPT) || true) &&
+            # Configure shared-ip DNS mappings so port 53 traffic for zcdns.id routes to zcdns-server
+            shared-ip add zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
+            shared-ip add ns2.zcdns.id --localport=53 --localipv4=10.0.0.11 --localipv6=fd00::11 || true &&
             systemctl restart zcdns &&
             systemctl is-active zcdns &&
+            systemctl restart shared-ip &&
+            systemctl is-active shared-ip &&
             ss -tulpn | grep 53 || true
           "
 
@@ -118,20 +123,8 @@ jobs:
           sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
             echo '--- SHARED-IP LIST ---'
             shared-ip list || true
-            echo '--- SHARED-IP SHOW (zcdns.id) ---'
+            echo '--- SHARED-IP SHOW (zcdns.id:53) ---'
             shared-ip show zcdns.id --localport=53 || true
-            shared-ip show zcdns.id --localport=443 || true
-            echo '--- SHARED-IP LOGS ---'
-            journalctl -u shared-ip -n 40 --no-pager || true
-            echo '--- INSTALL DNSUTILS ON REMOTE ---'
-            which dig >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq dnsutils) || true
-            echo '--- LOCAL DIG SOA DIRECT TO BACKEND (10.0.0.10) ---'
-            dig @10.0.0.10 zcdns.id SOA +time=2 +tries=1 || true
-            dig @10.0.0.10 zcdns.id SOA +tcp +time=2 +tries=1 || true
-            echo '--- LOCAL DIG AXFR DIRECT TO BACKEND (10.0.0.10) ---'
-            dig @10.0.0.10 zcdns.id AXFR +time=2 +tries=1 || true
-            echo '--- LOCAL DIG AXFR VIA SHARED-IP (10.46.0.214) ---'
-            dig @10.46.0.214 zcdns.id AXFR +time=2 +tries=1 || true
           "
           echo "=== 2. TEST FROM RUNNER OVER EXTERNAL IPV6 ==="
           sudo apt-get install -y dnsutils
