@@ -163,37 +163,34 @@ export const RecordManager: React.FC<Props> = ({
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Add Record Card */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+      <div className="bg-white border border-gray-200 shadow-xs p-4 sm:p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-green-100 text-green-700 flex items-center justify-center font-bold">
-              <Plus className="w-5 h-5" />
+            <div className="w-8 h-8 bg-green-100 text-green-700 flex items-center justify-center font-bold">
+              <Plus className="w-4 h-4" />
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Add a DNS Record</h2>
-              <p className="text-xs text-gray-500">Configure new routing rule for your sandbox</p>
-            </div>
+            <h2 className="text-base sm:text-lg font-bold text-gray-900">Tambah DNS Record</h2>
           </div>
         </div>
 
         {errorMessage && (
-          <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm flex items-center space-x-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs sm:text-sm flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{errorMessage}</span>
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4">
             {/* Type */}
             <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase">Type</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Tipe</label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value as RecordType)}
-                className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800"
+                className="w-full h-10 px-3 border border-gray-300 text-sm bg-white focus:ring-2 focus:ring-green-500 font-semibold text-gray-800 rounded-none"
               >
                 {RECORD_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -205,30 +202,30 @@ export const RecordManager: React.FC<Props> = ({
 
             {/* Name / Subdomain */}
             <div className="sm:col-span-4">
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase">
-                Name <span className="text-gray-400 font-normal">(@ for root)</span>
+              <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">
+                Nama Host <span className="text-gray-400 font-normal">(@ untuk root)</span>
               </label>
               <Input
                 type="text"
-                placeholder="@ or sub (e.g. api, www)"
+                placeholder="@ atau sub (contoh: api, www)"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="h-10 text-sm font-mono"
+                className="h-10 text-sm font-mono rounded-none"
               />
               <div className="text-[11px] text-gray-500 mt-1 truncate">
-                Preview: <code className="text-green-700 font-semibold">{previewFqdn}</code>
+                FQDN: <code className="text-green-700 font-semibold">{previewFqdn}</code>
               </div>
             </div>
 
             {/* Value */}
             <div className="sm:col-span-4">
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase">Value / Content</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Nilai / Target</label>
               <Input
                 type="text"
                 placeholder={TYPE_DESCRIPTIONS[type].placeholder}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                className="h-10 text-sm font-mono"
+                className="h-10 text-sm font-mono rounded-none"
               />
               <div className="text-[11px] text-gray-500 mt-1 truncate">
                 {TYPE_DESCRIPTIONS[type].hint}
@@ -237,44 +234,41 @@ export const RecordManager: React.FC<Props> = ({
 
             {/* TTL */}
             <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase">TTL (Sec)</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">TTL (Detik)</label>
               <select
                 value={ttl}
                 onChange={(e) => setTtl(Number(e.target.value))}
-                className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500 font-mono"
+                className="w-full h-10 px-3 border border-gray-300 text-sm bg-white focus:ring-2 focus:ring-green-500 font-mono rounded-none"
               >
-                <option value={5}>5s (Instant)</option>
-                <option value={60}>60s (Recommended)</option>
+                <option value={5}>5s (Instan)</option>
+                <option value={60}>60s (Disarankan)</option>
                 <option value={300}>300s (5m)</option>
-                <option value={3600}>3600s (1h)</option>
-                <option value={86400}>86400s (1d)</option>
+                <option value={3600}>3600s (1j)</option>
+                <option value={86400}>86400s (1h)</option>
               </select>
             </div>
           </div>
 
-          <div className="flex justify-end pt-2">
+          <div className="flex justify-end pt-1">
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="bg-[#012241] hover:bg-[#02365f] text-white px-6 font-medium"
+              className="bg-[#012241] hover:bg-[#02365f] text-white px-6 font-medium rounded-none h-10 w-full sm:w-auto"
             >
-              {isSubmitting ? 'Adding...' : 'Add Record'}
+              <Plus className="w-4 h-4 mr-1.5" />
+              {isSubmitting ? 'Menyimpan...' : 'Tambah Record'}
             </Button>
           </div>
         </form>
       </div>
-
       {/* All DNS Records Table */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-gray-200 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900 flex items-center space-x-2">
-              <span>All DNS Records</span>
-              <span className="text-xs bg-gray-100 text-gray-700 font-semibold px-2 py-0.5 rounded-full">
-                {records.length}
-              </span>
-            </h2>
-            <p className="text-xs text-gray-500">Live authoritative zone records stored in your sandbox</p>
+      <div className="bg-white border border-gray-200 shadow-xs">
+        <div className="p-4 sm:p-5 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center space-x-2">
+            <h2 className="text-base sm:text-lg font-bold text-gray-900">Daftar DNS Records</h2>
+            <span className="text-xs bg-gray-100 text-gray-700 font-mono font-bold px-2 py-0.5 border border-gray-200">
+              {records.length}
+            </span>
           </div>
 
           {records.length > 0 && (
@@ -282,58 +276,58 @@ export const RecordManager: React.FC<Props> = ({
               variant="outline"
               size="sm"
               onClick={onClearAll}
-              className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+              className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300 rounded-none h-8 text-xs"
             >
-              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-              Clear All Records
+              <Trash2 className="w-3.5 h-3.5 mr-1" />
+              Hapus Semua
             </Button>
           )}
         </div>
 
         {isLoading ? (
-          <div className="p-12 text-center text-gray-500 text-sm">Loading records...</div>
+          <div className="p-10 text-center text-gray-500 text-sm font-mono">Memuat DNS records...</div>
         ) : records.length === 0 ? (
-          <div className="p-12 text-center">
-            <div className="w-12 h-12 rounded-full bg-gray-100 text-gray-400 mx-auto flex items-center justify-center mb-3">
-              <Info className="w-6 h-6" />
+          <div className="p-8 sm:p-12 text-center">
+            <div className="w-10 h-10 bg-gray-100 text-gray-400 mx-auto flex items-center justify-center mb-2">
+              <Info className="w-5 h-5" />
             </div>
-            <h3 className="text-base font-semibold text-gray-900 mb-1">No DNS records configured</h3>
-            <p className="text-sm text-gray-500 max-w-md mx-auto mb-4">
-              Add your first record using the form above to start testing domain resolution and experimenting with DNS.
+            <h3 className="text-sm font-bold text-gray-800 mb-1">Belum ada record DNS</h3>
+            <p className="text-xs text-gray-500 max-w-sm mx-auto">
+              Gunakan formulir di atas untuk menambahkan record A, AAAA, CNAME, atau TXT pertama Anda.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <table className="w-full text-left text-xs sm:text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200 text-[11px] font-bold text-gray-600 uppercase tracking-wider font-mono">
                 <tr>
-                  <th className="py-3 px-6">Name (FQDN)</th>
-                  <th className="py-3 px-4">Type</th>
-                  <th className="py-3 px-6">Content / Value</th>
-                  <th className="py-3 px-4">TTL</th>
-                  <th className="py-3 px-6 text-right">Actions</th>
+                  <th className="py-2.5 px-3 sm:px-5">Host / FQDN</th>
+                  <th className="py-2.5 px-2 sm:px-3">Tipe</th>
+                  <th className="py-2.5 px-3 sm:px-5">Nilai / Target</th>
+                  <th className="py-2.5 px-2 sm:px-3">TTL</th>
+                  <th className="py-2.5 px-3 sm:px-5 text-right">Aksi</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 font-mono">
                 {records.map((rec) => {
                   const isEditing = editingId === rec.id;
 
                   if (isEditing) {
                     return (
-                      <tr key={rec.id} className="bg-green-50/50">
-                        <td className="py-3 px-6">
+                      <tr key={rec.id} className="bg-green-50/60">
+                        <td className="py-2 px-3 sm:px-5">
                           <Input
                             type="text"
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
-                            className="h-8 text-xs font-mono"
+                            className="h-8 text-xs font-mono rounded-none"
                           />
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-2 px-2 sm:px-3">
                           <select
                             value={editType}
                             onChange={(e) => setEditType(e.target.value as RecordType)}
-                            className="h-8 px-2 border rounded text-xs bg-white font-semibold"
+                            className="h-8 px-1.5 border border-gray-300 text-xs bg-white font-semibold rounded-none"
                           >
                             {RECORD_TYPES.map((t) => (
                               <option key={t} value={t}>
@@ -342,28 +336,28 @@ export const RecordManager: React.FC<Props> = ({
                             ))}
                           </select>
                         </td>
-                        <td className="py-3 px-6">
+                        <td className="py-2 px-3 sm:px-5">
                           <Input
                             type="text"
                             value={editValue}
                             onChange={(e) => setEditValue(e.target.value)}
-                            className="h-8 text-xs font-mono"
+                            className="h-8 text-xs font-mono rounded-none"
                           />
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-2 px-2 sm:px-3">
                           <input
                             type="number"
                             value={editTtl}
                             onChange={(e) => setEditTtl(Number(e.target.value))}
-                            className="h-8 w-20 px-2 border rounded text-xs font-mono bg-white"
+                            className="h-8 w-16 px-1.5 border border-gray-300 text-xs font-mono bg-white rounded-none"
                           />
                         </td>
-                        <td className="py-3 px-6 text-right space-x-2">
-                          <Button size="sm" onClick={handleSaveEdit} className="bg-green-600 hover:bg-green-700 text-white h-7 px-2.5 text-xs">
-                            Save
+                        <td className="py-2 px-3 sm:px-5 text-right space-x-1.5 whitespace-nowrap">
+                          <Button size="sm" onClick={handleSaveEdit} className="bg-green-600 hover:bg-green-700 text-white h-7 px-2 text-xs rounded-none">
+                            Simpan
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setEditingId(null)} className="h-7 px-2 text-xs">
-                            Cancel
+                          <Button size="sm" variant="ghost" onClick={() => setEditingId(null)} className="h-7 px-2 text-xs rounded-none">
+                            Batal
                           </Button>
                         </td>
                       </tr>
@@ -372,26 +366,26 @@ export const RecordManager: React.FC<Props> = ({
 
                   return (
                     <tr key={rec.id} className="hover:bg-gray-50/70 transition-colors">
-                      <td className="py-3.5 px-6 font-mono font-medium text-gray-900">
-                        <span className="text-green-700 font-semibold">{rec.name === '@' ? '@' : rec.name}</span>
+                      <td className="py-2.5 px-3 sm:px-5 font-mono text-gray-900">
+                        <span className="text-green-700 font-bold">{rec.name === '@' ? '@' : rec.name}</span>
                         <span className="text-gray-400 font-normal">.{fullDomain}</span>
                       </td>
-                      <td className="py-3.5 px-4">
+                      <td className="py-2.5 px-2 sm:px-3">
                         <span
-                          className={`inline-block px-2.5 py-0.5 text-xs font-bold rounded-md border ${getTypeBadgeClass(
+                          className={`inline-block px-2 py-0.5 text-[11px] font-bold border rounded-none ${getTypeBadgeClass(
                             rec.type
                           )}`}
                         >
                           {rec.type}
                         </span>
                       </td>
-                      <td className="py-3.5 px-6 font-mono text-gray-800 break-all">
-                        <div className="flex items-center space-x-2">
+                      <td className="py-2.5 px-3 sm:px-5 font-mono text-gray-800 break-all">
+                        <div className="flex items-center space-x-1.5">
                           <span>{rec.value}</span>
                           <button
                             onClick={() => copyRecordValue(rec.id, rec.value)}
                             className="text-gray-400 hover:text-gray-600 transition-colors"
-                            title="Copy value"
+                            title="Salin nilai"
                           >
                             {copiedId === rec.id ? (
                               <Check className="w-3.5 h-3.5 text-green-600" />
@@ -401,21 +395,21 @@ export const RecordManager: React.FC<Props> = ({
                           </button>
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-gray-500 text-xs">{rec.ttl}s</td>
-                      <td className="py-3.5 px-6 text-right space-x-2 whitespace-nowrap">
+                      <td className="py-2.5 px-2 sm:px-3 font-mono text-gray-500 text-xs">{rec.ttl}s</td>
+                      <td className="py-2.5 px-3 sm:px-5 text-right space-x-1 whitespace-nowrap">
                         <button
                           onClick={() => startEdit(rec)}
-                          className="p-1.5 text-gray-500 hover:text-blue-600 rounded hover:bg-blue-50 transition-colors"
-                          title="Edit record"
+                          className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          title="Edit"
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => onDeleteRecord(rec.id)}
-                          className="p-1.5 text-gray-500 hover:text-red-600 rounded hover:bg-red-50 transition-colors"
-                          title="Delete record"
+                          className="p-1 text-gray-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          title="Hapus"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </td>
                     </tr>

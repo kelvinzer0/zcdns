@@ -52,27 +52,22 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-6">
+    <div className="bg-white border border-gray-200 shadow-xs p-4 sm:p-6 space-y-4">
       <div>
         <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-            <Terminal className="w-5 h-5" />
+          <div className="w-8 h-8 bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+            <Terminal className="w-4 h-4" />
           </div>
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">In-Browser DNS Resolver ("Web Dig")</h2>
-            <p className="text-xs text-gray-500">
-              Test queries instantly against your nameserver without leaving the browser
-            </p>
-          </div>
+          <h2 className="text-base sm:text-lg font-bold text-gray-900">Web Dig (DNS Resolver)</h2>
         </div>
       </div>
 
       {/* Query Bar */}
-      <form onSubmit={handleQuery} className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+      <form onSubmit={handleQuery} className="flex flex-col sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center">
         <select
           value={queryType}
           onChange={(e) => setQueryType(e.target.value)}
-          className="h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white font-bold text-gray-800 focus:ring-2 focus:ring-green-500"
+          className="h-10 px-3 border border-gray-300 text-sm bg-white font-bold text-gray-800 focus:ring-2 focus:ring-green-500 rounded-none w-full sm:w-auto"
         >
           {QUERY_TYPES.map((t) => (
             <option key={t} value={t}>
@@ -87,32 +82,52 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
             placeholder={fullDomain}
             value={queryName}
             onChange={(e) => setQueryName(e.target.value)}
-            className="h-10 text-sm font-mono"
+            className="h-10 text-xs sm:text-sm font-mono rounded-none"
           />
         </div>
 
         <Button
           type="submit"
           disabled={isLoading}
-          className="bg-[#012241] hover:bg-[#02365f] text-white px-6 font-medium h-10"
+          className="bg-[#012241] hover:bg-[#02365f] text-white px-5 font-medium h-10 rounded-none w-full sm:w-auto"
         >
-          <Send className="w-4 h-4 mr-2" />
-          {isLoading ? 'Querying...' : 'Resolve Query'}
+          <Send className="w-4 h-4 mr-1.5" />
+          {isLoading ? 'Menguji...' : 'Kirim Query'}
         </Button>
       </form>
 
       {/* Quick Suggestions */}
-      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-        <span className="font-medium text-gray-700">Quick tests:</span>
+      <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+        <span className="font-bold text-gray-700">Uji cepat:</span>
         <button
           type="button"
           onClick={() => {
             setQueryName(fullDomain);
             setQueryType('A');
           }}
-          className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-md font-mono text-gray-700"
+          className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 border border-gray-300 font-mono text-gray-700 rounded-none"
         >
-          Root A record
+          Root A
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setQueryName(fullDomain);
+            setQueryType('AAAA');
+          }}
+          className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 border border-gray-300 font-mono text-gray-700 rounded-none"
+        >
+          Root AAAA
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setQueryName(fullDomain);
+            setQueryType('SOA');
+          }}
+          className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 border border-gray-300 font-mono text-gray-700 rounded-none"
+        >
+          SOA
         </button>
         <button
           type="button"
@@ -120,19 +135,9 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
             setQueryName(`test.${fullDomain}`);
             setQueryType('A');
           }}
-          className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-md font-mono text-gray-700"
+          className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 border border-gray-300 font-mono text-gray-700 rounded-none"
         >
           test.{fullDomain}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setQueryName(fullDomain);
-            setQueryType('TXT');
-          }}
-          className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-md font-mono text-gray-700"
-        >
-          TXT record
         </button>
         <button
           type="button"
@@ -140,57 +145,57 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
             setQueryName(`nonexistent.${fullDomain}`);
             setQueryType('A');
           }}
-          className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-md font-mono text-gray-700"
+          className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 border border-gray-300 font-mono text-gray-700 rounded-none"
         >
-          NXDOMAIN test
+          NXDOMAIN
         </button>
       </div>
 
       {/* Result Display */}
       {result && (
-        <div className="space-y-4 pt-4 border-t border-gray-100">
+        <div className="space-y-3 pt-3 border-t border-gray-200">
           {/* Status bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-gray-50 p-3.5 rounded-xl border border-gray-200 text-xs">
-            <div className="flex items-center space-x-3">
-              <span className="font-semibold text-gray-700">Status:</span>
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 p-2.5 sm:p-3 border border-gray-200 text-xs">
+            <div className="flex items-center space-x-2 font-mono">
+              <span className="font-bold text-gray-700">Status:</span>
               {result.rcode === 'NOERROR' ? (
-                <span className="inline-flex items-center text-green-700 font-bold bg-green-100 px-2 py-0.5 rounded">
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                <span className="inline-flex items-center text-green-700 font-bold bg-green-100 px-1.5 py-0.2 border border-green-200 rounded-none">
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
                   NOERROR
                 </span>
               ) : result.rcode === 'NXDOMAIN' ? (
-                <span className="inline-flex items-center text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded">
-                  <XCircle className="w-3.5 h-3.5 mr-1" />
-                  NXDOMAIN (Non-Existent Domain)
+                <span className="inline-flex items-center text-amber-700 font-bold bg-amber-100 px-1.5 py-0.2 border border-amber-200 rounded-none">
+                  <XCircle className="w-3 h-3 mr-1" />
+                  NXDOMAIN
                 </span>
               ) : (
-                <span className="inline-flex items-center text-red-700 font-bold bg-red-100 px-2 py-0.5 rounded">
-                  <AlertTriangle className="w-3.5 h-3.5 mr-1" />
+                <span className="inline-flex items-center text-red-700 font-bold bg-red-100 px-1.5 py-0.2 border border-red-200 rounded-none">
+                  <AlertTriangle className="w-3 h-3 mr-1" />
                   {result.rcode}
                 </span>
               )}
 
               <span className="text-gray-400">|</span>
-              <span className="text-gray-600 font-mono">Server: {result.server}</span>
+              <span className="text-gray-600">Server: {result.server}</span>
             </div>
 
-            <div className="flex items-center space-x-2 text-gray-500 font-mono">
-              <Clock className="w-3.5 h-3.5" />
+            <div className="flex items-center space-x-1.5 text-gray-500 font-mono">
+              <Clock className="w-3 h-3" />
               <span>{result.response_time_ms} ms</span>
             </div>
           </div>
 
           {/* Answers Visual Cards */}
           {result.answers && result.answers.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Answers ({result.answers.length})
+            <div className="space-y-1.5">
+              <h4 className="text-[11px] font-bold text-gray-700 uppercase tracking-wider font-mono">
+                Jawaban ({result.answers.length})
               </h4>
-              <div className="grid grid-cols-1 gap-2">
+              <div className="grid grid-cols-1 gap-1.5">
                 {result.answers.map((ans, idx) => (
                   <div
                     key={idx}
-                    className="p-3 rounded-lg bg-green-50/60 border border-green-200 text-green-950 font-mono text-xs flex items-center justify-between"
+                    className="p-2.5 bg-green-50/60 border border-green-200 text-green-950 font-mono text-xs flex items-center justify-between rounded-none break-all"
                   >
                     <span>{ans}</span>
                   </div>
@@ -201,15 +206,15 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
 
           {/* Authority Visual Cards */}
           {result.authority && result.authority.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Authority Section ({result.authority.length})
+            <div className="space-y-1.5">
+              <h4 className="text-[11px] font-bold text-gray-700 uppercase tracking-wider font-mono">
+                Authority ({result.authority.length})
               </h4>
-              <div className="grid grid-cols-1 gap-2">
+              <div className="grid grid-cols-1 gap-1.5">
                 {result.authority.map((auth, idx) => (
                   <div
                     key={idx}
-                    className="p-3 rounded-lg bg-blue-50/60 border border-blue-200 text-blue-950 font-mono text-xs"
+                    className="p-2.5 bg-blue-50/60 border border-blue-200 text-blue-950 font-mono text-xs rounded-none break-all"
                   >
                     {auth}
                   </div>
@@ -219,8 +224,8 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
           )}
 
           {/* Raw Output Terminal Box */}
-          <div className="relative">
-            <div className="flex items-center justify-between bg-gray-800 text-gray-300 px-4 py-2 rounded-t-xl text-xs font-mono">
+          <div className="border border-gray-800 rounded-none overflow-hidden">
+            <div className="flex items-center justify-between bg-gray-800 text-gray-300 px-3 py-1.5 text-xs font-mono">
               <span>dig output</span>
               <button
                 type="button"
@@ -229,18 +234,18 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
               >
                 {copiedRaw ? (
                   <>
-                    <Check className="w-3.5 h-3.5 text-green-400" />
-                    <span className="text-green-400">Copied</span>
+                    <Check className="w-3 h-3 text-green-400" />
+                    <span className="text-green-400">Tersalin</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy raw</span>
+                    <Copy className="w-3 h-3" />
+                    <span>Salin</span>
                   </>
                 )}
               </button>
             </div>
-            <pre className="p-4 bg-gray-900 text-green-400 font-mono text-xs rounded-b-xl overflow-x-auto max-h-72 leading-relaxed whitespace-pre-wrap">
+            <pre className="p-3 bg-gray-900 text-green-400 font-mono text-xs overflow-x-auto max-h-64 leading-relaxed whitespace-pre-wrap">
               {result.raw}
             </pre>
           </div>

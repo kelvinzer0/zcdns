@@ -163,63 +163,63 @@ export function DashboardPage() {
         <div className="container mx-auto max-w-4xl">
           {/* Welcome Banner */}
           <div className="text-center space-y-6 mb-16">
-            <div className="inline-flex items-center space-x-2 bg-green-50 border border-green-200 text-green-700 px-4 py-1.5 rounded-full text-xs font-semibold">
-              <Zap className="w-4 h-4 text-green-600" />
-              <span>Interactive DNS Sandbox Playground</span>
+            <div className="inline-flex items-center space-x-2 bg-green-50 border border-green-200 text-green-700 px-3 py-1 rounded-none text-xs font-semibold">
+              <Zap className="w-3.5 h-3.5 text-green-600" />
+              <span>DNS Sandbox Playground</span>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl font-extrabold text-gray-900 tracking-tight leading-tight">
-              Learn DNS by <span className="text-green-600">Experimenting & Breaking Things</span>
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight leading-tight">
+              Eksperimen DNS Langsung di <span className="text-green-600">ZeroCentDNS</span>
             </h1>
 
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto leading-relaxed">
-              Inspired by Julia Evans’ Mess-With-DNS, ZeroCentDNS gives you a free, isolated subdomain backed by a live authoritative DNS server. Add records, test resolvers, and watch queries stream in real-time.
+            <p className="text-base text-gray-600 max-w-2xl mx-auto leading-relaxed">
+              Subdomain terisolasi dengan authoritative DNS server live. Konfigurasi record, uji resolusi, dan pantau kueri secara real-time.
             </p>
 
             <div className="pt-4">
               <Button
                 size="lg"
                 onClick={handleStartSession}
-                className="bg-[#012241] hover:bg-[#02365f] text-white px-8 py-6 text-lg font-bold shadow-xl hover:shadow-2xl transition-all rounded-xl cursor-pointer"
+                className="bg-[#012241] hover:bg-[#02365f] text-white px-6 py-5 sm:px-8 sm:py-6 text-base sm:text-lg font-bold shadow-md hover:shadow-lg transition-all rounded-none cursor-pointer"
               >
-                <span>Start Experimenting Now</span>
+                <span>Mulai Eksperimen DNS</span>
                 <ArrowRight className="w-5 h-5 ml-2.5" />
               </Button>
               <p className="text-xs text-gray-400 mt-2.5">
-                No login or credit card required • Instant ephemeral sandbox allocated
+                Tanpa registrasi kartu kredit • Langsung dialokasikan subdomain aktif
               </p>
             </div>
           </div>
 
           {/* Feature Pillars */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+            <div className="bg-white p-5 sm:p-6 border border-gray-200 shadow-xs space-y-3">
+              <div className="w-9 h-9 bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
                 <Database className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-gray-900 text-base">Full Authoritative Control</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Create A, AAAA, CNAME, TXT, MX, NS, PTR, CAA, and SRV records with custom TTLs and immediate propagation.
+              <h3 className="font-bold text-gray-900 text-base">DNS Authoritative Penuh</h3>
+              <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
+                Kelola record A, AAAA, CNAME, TXT, MX, NS, PTR, CAA, dan SRV dengan TTL fleksibel dan propagasi instan.
               </p>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-green-100 text-green-700 flex items-center justify-center font-bold">
+            <div className="bg-white p-5 sm:p-6 border border-gray-200 shadow-xs space-y-3">
+              <div className="w-9 h-9 bg-green-100 text-green-700 flex items-center justify-center font-bold">
                 <Radio className="w-5 h-5" />
               </div>
               <h3 className="font-bold text-gray-900 text-base">Live Query Stream</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Every query sent to your subdomain over UDP or TCP is broadcast to your dashboard in real-time via WebSocket.
+              <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
+                Setiap kueri DNS ke subdomain Anda disiarkan secara langsung detik itu juga melalui koneksi WebSocket.
               </p>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
+            <div className="bg-white p-5 sm:p-6 border border-gray-200 shadow-xs space-y-3">
+              <div className="w-9 h-9 bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
                 <Sparkles className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-gray-900 text-base">Guided Experiments</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Follow step-by-step hands-on DNS labs explaining CNAME chaining, NXDOMAIN caching, SPF verification, and MX priority.
+              <h3 className="font-bold text-gray-900 text-base">Lab & Eksperimen Interaktif</h3>
+              <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
+                Pelajari cara kerja rantai CNAME, NXDOMAIN caching, verifikasi TXT/SPF, hingga prioritas MX dengan modul terpandu.
               </p>
             </div>
           </div>
@@ -229,7 +229,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen pt-28 pb-24 px-4 sm:px-6 lg:px-8 bg-gray-50/60">
+    <div className="min-h-screen pt-24 sm:pt-28 pb-16 px-3 sm:px-6 lg:px-8 bg-gray-50/60">
       <div className="container mx-auto max-w-6xl">
         {/* Header with Subdomain Info & Status */}
         <DashboardHeader
@@ -239,78 +239,75 @@ export function DashboardPage() {
           onLogout={handleLogout}
         />
 
-        {/* Tab Navigation */}
-        <div className="flex items-center space-x-2 border-b border-gray-200 mb-8 overflow-x-auto pb-px">
+        {/* Tab Navigation - Optimized for Mobile Scroll */}
+        <div className="flex items-center gap-1 border-b border-gray-300 mb-6 overflow-x-auto pb-px scrollbar-none">
           <button
             onClick={() => setActiveTab('records')}
-            className={`flex items-center space-x-2 py-3 px-4 font-semibold text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+            className={`flex items-center space-x-1.5 py-2.5 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'records'
-                ? 'border-green-600 text-green-700 bg-white rounded-t-lg shadow-xs'
+                ? 'border-green-600 text-green-700 bg-white'
                 : 'border-transparent text-gray-500 hover:text-gray-800'
             }`}
           >
             <Database className="w-4 h-4" />
             <span>DNS Records</span>
-            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-bold ml-1">
+            <span className="text-[11px] bg-gray-100 text-gray-600 px-1.5 py-0.2 font-mono font-bold ml-1">
               {records.length}
             </span>
           </button>
 
           <button
             onClick={() => setActiveTab('stream')}
-            className={`flex items-center space-x-2 py-3 px-4 font-semibold text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+            className={`flex items-center space-x-1.5 py-2.5 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'stream'
-                ? 'border-green-600 text-green-700 bg-white rounded-t-lg shadow-xs'
+                ? 'border-green-600 text-green-700 bg-white'
                 : 'border-transparent text-gray-500 hover:text-gray-800'
             }`}
           >
             <Radio className="w-4 h-4" />
-            <span>Live Query Stream</span>
+            <span>Live Stream</span>
             {wsStatus === 'connected' && (
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse ml-1" />
+              <span className="w-1.5 h-1.5 bg-green-500 animate-pulse ml-1" />
             )}
-            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-bold ml-1">
+            <span className="text-[11px] bg-gray-100 text-gray-600 px-1.5 py-0.2 font-mono font-bold ml-1">
               {requests.length}
             </span>
           </button>
 
           <button
             onClick={() => setActiveTab('tester')}
-            className={`flex items-center space-x-2 py-3 px-4 font-semibold text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+            className={`flex items-center space-x-1.5 py-2.5 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'tester'
-                ? 'border-green-600 text-green-700 bg-white rounded-t-lg shadow-xs'
+                ? 'border-green-600 text-green-700 bg-white'
                 : 'border-transparent text-gray-500 hover:text-gray-800'
             }`}
           >
             <Terminal className="w-4 h-4" />
-            <span>DNS Tester ("Web Dig")</span>
+            <span>Web Dig</span>
           </button>
 
           <button
             onClick={() => setActiveTab('experiments')}
-            className={`flex items-center space-x-2 py-3 px-4 font-semibold text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+            className={`flex items-center space-x-1.5 py-2.5 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'experiments'
-                ? 'border-green-600 text-green-700 bg-white rounded-t-lg shadow-xs'
+                ? 'border-green-600 text-green-700 bg-white'
                 : 'border-transparent text-gray-500 hover:text-gray-800'
             }`}
           >
             <Sparkles className="w-4 h-4 text-purple-600" />
-            <span>Experiments & Labs</span>
+            <span>Eksperimen</span>
           </button>
 
           <button
             onClick={() => setActiveTab('parental')}
-            className={`flex items-center space-x-2 py-3 px-4 font-semibold text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+            className={`flex items-center space-x-1.5 py-2.5 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'parental'
-                ? 'border-green-600 text-green-700 bg-white rounded-t-lg shadow-xs'
+                ? 'border-green-600 text-green-700 bg-white'
                 : 'border-transparent text-gray-500 hover:text-gray-800'
             }`}
           >
             <Shield className="w-4 h-4 text-emerald-600" />
-            <span>Parental Control & Blocker</span>
-            <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold ml-1 uppercase">
-              New
-            </span>
+            <span>Parental Control</span>
           </button>
         </div>
 
@@ -348,7 +345,7 @@ export function DashboardPage() {
             <Experiments
               subdomain={session.subdomain!}
               baseDomain={session.baseDomain || 'zcdns.id'}
-              dnsPort={session.dnsPort || 5354}
+              dnsPort={session.dnsPort || 53}
               onSelectExperiment={handleSelectExperiment}
             />
           )}
@@ -357,7 +354,7 @@ export function DashboardPage() {
             <ParentalControl
               subdomain={session.subdomain!}
               baseDomain={session.baseDomain || 'zcdns.id'}
-              dnsPort={session.dnsPort || 5354}
+              dnsPort={session.dnsPort || 53}
             />
           )}
         </div>

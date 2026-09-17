@@ -32,17 +32,17 @@ export const DashboardHeader: React.FC<Props> = ({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-8">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+    <div className="bg-white border border-gray-200 shadow-xs p-4 sm:p-6 mb-6">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         {/* Subdomain Info */}
         <div className="space-y-2">
           <div className="flex items-center space-x-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-green-700 bg-green-50 px-2.5 py-1 rounded-full border border-green-200">
-              Active Delegated Sandbox
+            <span className="text-[11px] font-bold uppercase tracking-wider text-green-700 bg-green-50 px-2 py-0.5 border border-green-200">
+              Live DNS Sandbox
             </span>
             <div className="flex items-center space-x-1.5 ml-2">
               <span
-                className={`w-2.5 h-2.5 rounded-full ${
+                className={`w-2 h-2 ${
                   wsStatus === 'connected'
                     ? 'bg-green-500 animate-pulse'
                     : wsStatus === 'connecting'
@@ -50,9 +50,9 @@ export const DashboardHeader: React.FC<Props> = ({
                     : 'bg-red-400'
                 }`}
               />
-              <span className="text-xs text-gray-500 font-medium">
+              <span className="text-xs text-gray-500 font-mono">
                 {wsStatus === 'connected'
-                  ? 'Real-Time Stream Active'
+                  ? 'Stream Online'
                   : wsStatus === 'connecting'
                   ? 'Connecting...'
                   : 'Offline'}
@@ -60,79 +60,75 @@ export const DashboardHeader: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="flex items-center flex-wrap gap-3">
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center font-mono">
-              <Globe className="w-6 h-6 mr-2.5 text-green-600 inline" />
+          <div className="flex items-center flex-wrap gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center font-mono break-all">
+              <Globe className="w-5 h-5 mr-2 text-green-600 shrink-0" />
               {fullDomain}
             </h1>
             <button
               onClick={() => copyToClipboard(fullDomain, setCopiedDomain)}
-              className="inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors border border-gray-200"
+              className="inline-flex items-center space-x-1 px-2.5 py-1 text-xs font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-300"
               title="Copy subdomain"
             >
               {copiedDomain ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-green-600" />
-                  <span className="text-green-700">Copied!</span>
+                  <span className="text-green-700">Tersalin</span>
                 </>
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5 text-gray-500" />
-                  <span>Copy Domain</span>
+                  <span>Salin</span>
                 </>
               )}
             </button>
           </div>
-          <p className="text-sm text-gray-600 max-w-2xl">
-            You have full authoritative DNS control over this subdomain. Any queries sent to this domain will resolve according to your records and appear in the live requests feed below.
-          </p>
         </div>
 
         {/* Actions */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={onNewSession}
-            className="text-gray-700 hover:text-green-600 hover:border-green-300"
+            className="border-gray-300 text-gray-700 hover:text-green-600 hover:border-green-400 rounded-none h-9 text-xs sm:text-sm"
           >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            New Subdomain
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+            Subdomain Baru
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={onLogout}
-            className="text-gray-500 hover:text-red-600"
+            className="text-gray-500 hover:text-red-600 rounded-none h-9 text-xs sm:text-sm"
           >
-            <LogOut className="w-4 h-4 mr-1.5" />
-            Exit
+            <LogOut className="w-3.5 h-3.5 mr-1.5" />
+            Keluar
           </Button>
         </div>
       </div>
 
       {/* Terminal Quick Hint */}
-      <div className="mt-5 pt-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs bg-gray-50/80 -mx-6 -mb-6 p-4 rounded-b-2xl">
-        <div className="flex items-center space-x-2 text-gray-700 font-mono">
-          <Terminal className="w-4 h-4 text-gray-500 flex-shrink-0" />
-          <span className="text-gray-500">Query your domain from terminal:</span>
-          <code className="bg-white px-2 py-1 rounded border border-gray-200 text-gray-900 select-all font-semibold">
+      <div className="mt-4 pt-3 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs bg-gray-50 -mx-4 -mb-4 sm:-mx-6 sm:-mb-6 p-3 sm:p-4">
+        <div className="flex items-center space-x-2 text-gray-700 font-mono min-w-0">
+          <Terminal className="w-4 h-4 text-gray-500 shrink-0" />
+          <code className="bg-white px-2 py-1 border border-gray-300 text-gray-900 select-all font-semibold overflow-x-auto whitespace-nowrap block">
             {digCmd}
           </code>
         </div>
         <button
           onClick={() => copyToClipboard(digCmd, setCopiedDig)}
-          className="text-green-700 hover:text-green-800 font-medium flex items-center space-x-1 self-end sm:self-auto cursor-pointer"
+          className="text-green-700 hover:text-green-800 font-medium flex items-center space-x-1 shrink-0 self-end sm:self-auto cursor-pointer"
         >
           {copiedDig ? (
             <>
               <Check className="w-3.5 h-3.5 text-green-600" />
-              <span>Copied Command</span>
+              <span>Tersalin</span>
             </>
           ) : (
             <>
               <Copy className="w-3.5 h-3.5" />
-              <span>Copy dig command</span>
+              <span>Salin Dig</span>
             </>
           )}
         </button>

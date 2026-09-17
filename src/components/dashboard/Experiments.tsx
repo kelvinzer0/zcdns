@@ -140,20 +140,20 @@ export const Experiments: React.FC<Props> = ({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-6">
-      <div className="flex items-center space-x-2">
-        <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
-          <Sparkles className="w-5 h-5" />
+    <div className="bg-white border border-gray-200 p-4 sm:p-6 space-y-4 rounded-none">
+      <div className="flex items-center space-x-3">
+        <div className="w-8 h-8 bg-[#012241]/10 text-[#012241] flex items-center justify-center rounded-none font-bold">
+          <Sparkles className="w-4 h-4" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-gray-900">Hands-On DNS Experiments</h2>
+          <h2 className="text-base sm:text-lg font-bold text-gray-900">Eksperimen DNS</h2>
           <p className="text-xs text-gray-500">
-            Interactive experiments inspired by Julia Evans' Mess-With-DNS
+            Skenario interaktif memahami cara kerja DNS record dan resolusi
           </p>
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {EXPERIMENTS.map((exp) => {
           const isExpanded = expandedId === exp.id;
           const queryTarget = exp.suggestedQuery
@@ -168,22 +168,22 @@ export const Experiments: React.FC<Props> = ({
           return (
             <div
               key={exp.id}
-              className={`rounded-xl border transition-all ${
-                isExpanded ? 'border-purple-200 bg-purple-50/20 shadow-xs' : 'border-gray-200 hover:border-gray-300'
+              className={`border transition-all rounded-none ${
+                isExpanded ? 'border-[#012241] bg-slate-50/40' : 'border-gray-200 hover:border-gray-300'
               }`}
             >
               <div
                 onClick={() => setExpandedId(isExpanded ? null : exp.id)}
-                className="p-4 flex items-center justify-between cursor-pointer select-none"
+                className="p-3.5 flex items-center justify-between cursor-pointer select-none"
               >
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2.5">
                   <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                    className={`text-[10px] font-bold px-1.5 py-0.5 uppercase rounded-none border ${
                       exp.difficulty === 'Beginner'
-                        ? 'bg-green-100 text-green-800'
+                        ? 'bg-green-50 text-green-800 border-green-200'
                         : exp.difficulty === 'Intermediate'
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-purple-100 text-purple-800'
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : 'bg-purple-50 text-purple-800 border-purple-200'
                     }`}
                   >
                     {exp.difficulty}
@@ -191,17 +191,17 @@ export const Experiments: React.FC<Props> = ({
                   <h3 className="text-sm font-bold text-gray-900">{exp.title}</h3>
                 </div>
                 <div className="text-gray-400">
-                  {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </div>
               </div>
 
               {isExpanded && (
-                <div className="px-5 pb-5 pt-1 space-y-4 text-xs border-t border-purple-100/60">
+                <div className="px-4 pb-4 pt-1 space-y-3 text-xs border-t border-gray-100">
                   <p className="text-gray-600 leading-relaxed">{exp.description}</p>
 
-                  <div className="bg-white p-3.5 rounded-lg border border-gray-200 space-y-2">
-                    <span className="font-semibold text-gray-700 block uppercase tracking-wider text-[11px]">
-                      Experiment Steps:
+                  <div className="bg-white p-3 border border-gray-200 space-y-1.5 rounded-none">
+                    <span className="font-bold text-gray-700 block uppercase tracking-wider text-[11px]">
+                      Langkah Eksperimen:
                     </span>
                     <ol className="list-decimal list-inside space-y-1 text-gray-600 font-medium">
                       {exp.steps.map((step, sIdx) => (
@@ -210,27 +210,28 @@ export const Experiments: React.FC<Props> = ({
                     </ol>
                   </div>
 
-                  <div className="p-3 bg-purple-50/80 rounded-lg border border-purple-100 text-purple-950 leading-relaxed">
-                    <span className="font-bold block mb-1">How it works:</span>
+                  <div className="p-3 bg-blue-50/50 border border-blue-200 text-blue-950 leading-relaxed rounded-none">
+                    <span className="font-bold block mb-1">Penjelasan:</span>
                     {exp.explanation}
                   </div>
 
                   {/* Terminal snippet */}
-                  <div className="flex items-center justify-between bg-gray-900 text-green-400 p-2.5 rounded-lg font-mono text-xs">
-                    <span className="truncate">{digCmd}</span>
+                  <div className="flex items-center justify-between bg-gray-900 text-green-400 p-2.5 rounded-none font-mono text-xs overflow-x-auto">
+                    <span className="truncate mr-2">{digCmd}</span>
                     <button
+                      type="button"
                       onClick={() => copyDig(exp.id, digCmd)}
-                      className="text-gray-400 hover:text-white ml-2 flex items-center space-x-1"
+                      className="text-gray-400 hover:text-white flex items-center space-x-1 flex-shrink-0"
                     >
                       {copiedId === exp.id ? (
                         <>
                           <Check className="w-3.5 h-3.5 text-green-400" />
-                          <span>Copied</span>
+                          <span>Tersalin</span>
                         </>
                       ) : (
                         <>
                           <Copy className="w-3.5 h-3.5" />
-                          <span>Copy</span>
+                          <span>Salin</span>
                         </>
                       )}
                     </button>
@@ -240,9 +241,9 @@ export const Experiments: React.FC<Props> = ({
                     <Button
                       size="sm"
                       onClick={() => onSelectExperiment(exp)}
-                      className="bg-[#012241] hover:bg-[#02365f] text-white"
+                      className="bg-[#012241] hover:bg-[#02365f] text-white rounded-none h-8 text-xs font-semibold"
                     >
-                      Try This Experiment
+                      Coba Eksperimen
                       <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                     </Button>
                   </div>
