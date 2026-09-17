@@ -47,17 +47,18 @@ jobs:
           # Setup WARP WireGuard configuration for IPv6
           sudo mkdir -p /etc/wireguard
           sudo tee /etc/wireguard/warp.conf > /dev/null << 'EOF'
-[Interface]
-PrivateKey = cKE7LmCF61IhqqABGhvJ44jWXp8fKymcMAEVAzbDF2k=
-Address = 172.16.0.2/32
-Address = fd01:5ca1:ab1e:823e:e094:eb1c:ff87:1fab/128
-MTU = 1280
+          [Interface]
+          PrivateKey = cKE7LmCF61IhqqABGhvJ44jWXp8fKymcMAEVAzbDF2k=
+          Address = 172.16.0.2/32
+          Address = fd01:5ca1:ab1e:823e:e094:eb1c:ff87:1fab/128
+          MTU = 1280
 
-[Peer]
-PublicKey = bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=
-AllowedIPs = ::/0
-Endpoint = engage.cloudflareclient.com:2408
-EOF
+          [Peer]
+          PublicKey = bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=
+          AllowedIPs = ::/0
+          Endpoint = engage.cloudflareclient.com:2408
+          EOF
+          sudo sed -i 's/^[ \t]*//' /etc/wireguard/warp.conf
 
           # Start WireGuard using wireguard-go
           export WG_I_PREFER_BUGGY_USERSPACE_TO_NO_KERNEL_SUPPORT=1
