@@ -210,4 +210,23 @@ func TestFallbackIPv4(t *testing.T) {
 		}
 		t.Logf("Successfully verified guard domain %s has AAAA only (no A fallback)", domain)
 	}
+
+	// Verify ACME challenge TXT for guard domain
+	mTXT := new(dns.Msg)
+	mTXT.SetQuestion("_acme-challenge.guard.zcdns.id.", dns.TypeTXT)
+	respTXT, _, err := c.Exchange(mTXT, "127.0.0.1:15355")
+	if err != nil {
+		t.Fatalf("Query TXT _acme-challenge failed: %v", err)
+	}
+	if len(respTXT.Answer) == 0 {
+		t.Fatalf("Expected TXT record for _acme-challenge.guard.zcdns.id., got none")
+	}
+	txtRec, ok := respTXT.Answer[0].(*dns.TXT)
+	if !ok {
+		t.Fatalf("Expected *dns.TXT, got %T", respTXT.Answer[0])
+	}
+	if len(txtRec.Txt) == 0 || txtRec.Txt[0] != "Iu6XSSqIx5-IKIceXWVoT4Z54S9DwsMewAo781Pk-DE" {
+		t.Fatalf("Unexpected TXT value: %v", txtRec.Txt)
+	}
+	t.Logf("Successfully verified ACME challenge TXT -> %s", txtRec.Txt[0])
 }

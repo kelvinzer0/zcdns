@@ -89,6 +89,10 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/stats", h.handleGetGrowthStats)
 	mux.HandleFunc("POST /api/abuse", h.handleSubmitAbuse)
 
+	// ACME DNS-01 Challenge Management
+	mux.HandleFunc("POST /api/acme-challenge", h.handleCreateAcmeChallenge)
+	mux.HandleFunc("GET /api/acme-challenge", h.handleGetAcmeChallenges)
+
 	// Admin Management Routes
 	mux.HandleFunc("POST /api/admin/login", h.handleAdminLogin)
 	mux.HandleFunc("GET /api/admin/stats", h.requireAdmin(h.handleAdminGetStats))
@@ -940,4 +944,69 @@ func (h *APIHandler) handleAdminUnblockSubdomain(w http.ResponseWriter, r *http.
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "subdomain": sub})
+}
+
+type AcmeChallengeRequest struct {
+	Subdomain string `json:"subdomain"`
+	Value     string `json:"value"`
+}
+
+func (h *APIHandler) handleCreateAcmeChallenge(w http.ResponseWriter, r *http.Request) {
+	h.setCorsHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var req AcmeChallengeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	sub := strings.ToLower(strings.TrimSpace(req.Subdomain))
+	if sub == "" {
+		sub = "guard"
+	}
+	val := strings.Trim(strings.TrimSpace(req.Value), "\"")
+	if val == "" {
+		writeJSONError(w, http.StatusBadRequest, "Challenge value is required")
+		return
+	}
+
+	record := &db.Record{
+		ID:        uuid.New().String(),
+		Subdomain: sub,
+		Name:      "_acme-challenge",
+		Type:      "TXT",
+		Value:     val,
+		TTL:       60,
+	}
+
+	if err := h.db.AddRecord(record); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to save challenge record: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"success":   true,
+		"subdomain": sub,
+		"name":      "_acme-challenge",
+		"value":     val,
+	})
+	h.triggerRecordChanged()
+}
+
+func (h *APIHandler) handleGetAcmeChallenges(w http.ResponseWriter, r *http.Request) {
+	h.setCorsHeaders(w)
+	sub := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("subdomain")))
+	if sub == "" {
+		sub = "guard"
+	}
+	records, err := h.db.GetRecordsByNameAndType(sub, "_acme-challenge", "TXT")
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, records)
 }

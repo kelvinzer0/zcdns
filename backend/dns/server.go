@@ -24,15 +24,16 @@ type QueryBroadcaster interface {
 const FallbackHost = "2606-0c70-0020-0098-1234-4321-73ab-0001.withfallback.com"
 
 type Server struct {
-	cfg          *config.Config
-	db           *db.DB
-	broadcaster  QueryBroadcaster
-	parental     *parental.Engine
-	servers      []*dns.Server
-	mu           sync.RWMutex
-	zoneSerial   uint32
-	fallbackIPv4 net.IP
-	stopChan     chan struct{}
+	cfg            *config.Config
+	db             *db.DB
+	broadcaster    QueryBroadcaster
+	parental       *parental.Engine
+	servers        []*dns.Server
+	mu             sync.RWMutex
+	zoneSerial     uint32
+	fallbackIPv4   net.IP
+	acmeChallenges map[string][]string
+	stopChan       chan struct{}
 }
 
 func NewServer(cfg *config.Config, database *db.DB, broadcaster QueryBroadcaster, pe *parental.Engine) *Server {
@@ -42,8 +43,47 @@ func NewServer(cfg *config.Config, database *db.DB, broadcaster QueryBroadcaster
 		broadcaster: broadcaster,
 		parental:    pe,
 		zoneSerial:  uint32(time.Now().Unix()),
-		stopChan:    make(chan struct{}),
+		acmeChallenges: map[string][]string{
+			"guard": {"Iu6XSSqIx5-IKIceXWVoT4Z54S9DwsMewAo781Pk-DE"},
+		},
+		stopChan: make(chan struct{}),
 	}
+}
+
+func (s *Server) AddAcmeChallenge(subdomain, value string) {
+	s.mu.Lock()
+	if s.acmeChallenges == nil {
+		s.acmeChallenges = make(map[string][]string)
+	}
+	subdomain = strings.ToLower(strings.TrimSpace(subdomain))
+	value = strings.Trim(strings.TrimSpace(value), "\"")
+	found := false
+	for _, v := range s.acmeChallenges[subdomain] {
+		if v == value {
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.acmeChallenges[subdomain] = append(s.acmeChallenges[subdomain], value)
+		s.zoneSerial++
+	}
+	s.mu.Unlock()
+	if !found {
+		s.NotifySlaves()
+	}
+}
+
+func (s *Server) GetAcmeChallenges(subdomain string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.acmeChallenges == nil {
+		return nil
+	}
+	subdomain = strings.ToLower(strings.TrimSpace(subdomain))
+	result := make([]string, len(s.acmeChallenges[subdomain]))
+	copy(result, s.acmeChallenges[subdomain])
+	return result
 }
 
 func (s *Server) GetFallbackIPv4() net.IP {
@@ -287,6 +327,47 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	// Handle queries directly targeted at parental control guard domains (*.guard.zcdns.id / guard.zcdns.id)
 	// Guard domains are strictly IPv6 (AAAA only) and do not provide IPv4 A fallback.
 	if subdomain == "guard" {
+		// 1. Check ACME challenge TXT records for guard domain (_acme-challenge.guard.zcdns.id)
+		if recordName == "_acme-challenge" && (q.Qtype == dns.TypeTXT || q.Qtype == dns.TypeANY) {
+			m.SetRcode(r, dns.RcodeSuccess)
+			seen := make(map[string]bool)
+			for _, val := range s.GetAcmeChallenges("guard") {
+				if !seen[val] {
+					seen[val] = true
+					m.Answer = append(m.Answer, &dns.TXT{
+						Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 60},
+						Txt: []string{val},
+					})
+				}
+			}
+			if dbRecs, err := s.db.GetRecordsByNameAndType("guard", "_acme-challenge", "TXT"); err == nil {
+				for _, rec := range dbRecs {
+					val := strings.Trim(rec.Value, "\"")
+					if !seen[val] {
+						seen[val] = true
+						m.Answer = append(m.Answer, &dns.TXT{
+							Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: uint32(rec.TTL)},
+							Txt: []string{val},
+						})
+					}
+				}
+			}
+			_ = w.WriteMsg(m)
+			return
+		}
+
+		// 2. Check other custom records in DB for guard
+		if records, err := s.db.GetRecordsByNameAndType("guard", recordName, qTypeStr); err == nil && len(records) > 0 {
+			m.SetRcode(r, dns.RcodeSuccess)
+			for _, rec := range records {
+				if rr := s.buildRR(rec, q.Name); rr != nil {
+					m.Answer = append(m.Answer, rr)
+				}
+			}
+			_ = w.WriteMsg(m)
+			return
+		}
+
 		s.handleGuardDomain(m, q, strings.TrimSuffix(qName, "."))
 		_ = w.WriteMsg(m)
 		return
@@ -509,6 +590,18 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 		)
 	}
 
+	// 3.5. ACME TXT challenges for guard domain
+	seenChallenge := make(map[string]bool)
+	for _, val := range s.GetAcmeChallenges("guard") {
+		if !seenChallenge[val] {
+			seenChallenge[val] = true
+			records = append(records, &dns.TXT{
+				Hdr: dns.RR_Header{Name: fmt.Sprintf("_acme-challenge.guard.%s", base), Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 60},
+				Txt: []string{val},
+			})
+		}
+	}
+
 	// 4. All active user records from database
 	dbRecords, err := s.db.GetAllActiveRecords()
 	if err == nil {
@@ -520,6 +613,13 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 				fqdn = fmt.Sprintf("%s.%s.%s", dbr.Name, dbr.Subdomain, base)
 			}
 			if rr := s.buildRR(dbr, fqdn); rr != nil {
+				if dbr.Subdomain == "guard" && dbr.Name == "_acme-challenge" && dbr.Type == "TXT" {
+					val := strings.Trim(dbr.Value, "\"")
+					if seenChallenge[val] {
+						continue
+					}
+					seenChallenge[val] = true
+				}
 				records = append(records, rr)
 			}
 		}
