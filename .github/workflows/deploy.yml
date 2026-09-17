@@ -37,9 +37,12 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y wireguard-tools resolvconf iproute2 curl
 
-          # Install wireguard-go
-          go install golang.zx2c4.com/wireguard/wireguard-go@latest
-          sudo cp $(go env GOPATH)/bin/wireguard-go /usr/local/bin/wireguard-go
+          # Build and install wireguard-go from official repository
+          git clone --depth 1 https://github.com/WireGuard/wireguard-go.git /tmp/wireguard-go
+          cd /tmp/wireguard-go
+          go build -ldflags="-s -w" -o /tmp/wireguard-go/wireguard-go .
+          sudo mv /tmp/wireguard-go/wireguard-go /usr/local/bin/wireguard-go
+          cd "$GITHUB_WORKSPACE"
 
           # Download and install wgcf
           curl -fsSL -o /tmp/wgcf https://github.com/ViRb3/wgcf/releases/download/v2.2.32/wgcf_2.2.32_linux_amd64
