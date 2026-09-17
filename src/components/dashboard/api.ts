@@ -18,10 +18,16 @@ export const dashboardApi = {
     return res.json();
   },
 
-  async createSession(): Promise<UserSession> {
+  async createSession(deleteOldSubdomain?: string): Promise<UserSession> {
+    const headers: Record<string, string> = {};
+    if (deleteOldSubdomain) {
+      headers['X-Delete-Old-Subdomain'] = deleteOldSubdomain;
+      headers['X-Subdomain'] = deleteOldSubdomain;
+    }
     const res = await fetch(`${API_BASE}/session`, {
       method: 'POST',
       credentials: 'include',
+      headers,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Failed to create session' }));
@@ -29,6 +35,18 @@ export const dashboardApi = {
     }
     const data = await res.json();
     return { ...data, logged_in: true };
+  },
+
+  async deleteSubdomain(subdomain: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/subdomain`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'X-Subdomain': subdomain },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to delete subdomain' }));
+      throw new Error(err.error || 'Failed to delete subdomain');
+    }
   },
 
   async renewSubdomain(subdomain: string): Promise<UserSession> {

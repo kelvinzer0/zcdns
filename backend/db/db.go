@@ -199,6 +199,15 @@ func (d *DB) TouchUser(subdomain string) {
 	_, _ = d.conn.Exec("UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE subdomain = ?", subdomain)
 }
 
+// DeleteSubdomain completely removes a subdomain, its user, records, requests, and parental configurations.
+func (d *DB) DeleteSubdomain(subdomain string) error {
+	_, _ = d.conn.Exec("DELETE FROM records WHERE subdomain = ?", subdomain)
+	_, _ = d.conn.Exec("DELETE FROM requests WHERE subdomain = ?", subdomain)
+	_, _ = d.conn.Exec("DELETE FROM parental_configs WHERE subdomain = ?", subdomain)
+	_, err := d.conn.Exec("DELETE FROM users WHERE subdomain = ?", subdomain)
+	return err
+}
+
 // Record methods
 func (d *DB) GetRecords(subdomain string) ([]Record, error) {
 	rows, err := d.conn.Query(

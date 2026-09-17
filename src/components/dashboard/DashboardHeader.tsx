@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, RefreshCw, Terminal, Globe, LogOut, ShieldCheck, Clock } from 'lucide-react';
+import { Copy, Check, RefreshCw, Terminal, Globe, LogOut, ShieldCheck, Clock, AlertTriangle } from 'lucide-react';
 import { Button } from '../ui/button';
 import type { UserSession } from './types';
 import { useTranslations } from '../../lib/useTranslations';
@@ -24,6 +24,7 @@ export const DashboardHeader: React.FC<Props> = ({
   const [copiedDig, setCopiedDig] = useState(false);
   const [isRenewing, setIsRenewing] = useState(false);
   const [renewSuccess, setRenewSuccess] = useState(false);
+  const [showConfirmNew, setShowConfirmNew] = useState(false);
 
   const handleRenew = async () => {
     if (!onRenewSession || isRenewing) return;
@@ -131,7 +132,7 @@ export const DashboardHeader: React.FC<Props> = ({
           <Button
             variant="outline"
             size="sm"
-            onClick={onNewSession}
+            onClick={() => setShowConfirmNew(true)}
             className="border-gray-300 text-gray-700 hover:text-green-600 hover:border-green-400 rounded-none h-9 text-xs sm:text-sm"
           >
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
@@ -174,6 +175,51 @@ export const DashboardHeader: React.FC<Props> = ({
           )}
         </button>
       </div>
+
+      {/* Confirmation Modal for New Subdomain */}
+      {showConfirmNew && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white border border-gray-300 shadow-xl max-w-md w-full p-6 space-y-4 rounded-none">
+            <div className="flex items-start space-x-3">
+              <div className="p-2.5 bg-red-50 text-red-600 shrink-0 border border-red-200">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base sm:text-lg font-bold text-gray-900">
+                  {t('confirm-new-subdomain-title')}
+                </h3>
+                <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
+                  {t('confirm-new-subdomain')}
+                </p>
+                <div className="mt-2 p-2 bg-gray-50 border border-gray-200 text-xs font-mono text-gray-700 break-all">
+                  Subdomain aktif: <span className="font-bold text-red-600">{fullDomain}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-gray-200">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowConfirmNew(false)}
+                className="rounded-none border-gray-300 text-gray-700"
+              >
+                {t('confirm-new-subdomain-cancel')}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setShowConfirmNew(false);
+                  onNewSession();
+                }}
+                className="bg-red-600 hover:bg-red-700 text-white rounded-none font-semibold"
+              >
+                {t('confirm-new-subdomain-confirm')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

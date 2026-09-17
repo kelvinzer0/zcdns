@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"os"
@@ -55,6 +56,7 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/session", h.handleCreateSession)
 	mux.HandleFunc("GET /api/session", h.handleGetSession)
 	mux.HandleFunc("DELETE /api/session", h.handleDeleteSession)
+	mux.HandleFunc("DELETE /api/subdomain", h.requireSubdomain(h.handleDeleteSubdomain))
 	mux.HandleFunc("POST /api/session/renew", h.requireSubdomain(h.handleRenewSession))
 
 	mux.HandleFunc("GET /api/records", h.requireSubdomain(h.handleGetRecords))
@@ -159,6 +161,19 @@ func (h *APIHandler) handleCreateSession(w http.ResponseWriter, r *http.Request)
 	if err == nil && totalRecs >= 9995 {
 		writeJSONError(w, http.StatusServiceUnavailable, "ZeroCentDNS saat ini mencapai batas kapasitas maksimum (9.999 record). Mohon menunggu beberapa saat hingga kapasitas tersedia kembali.")
 		return
+	}
+
+	// Delete old subdomain and its records if old subdomain is provided or present in active session
+	oldSub := r.Header.Get("X-Delete-Old-Subdomain")
+	if oldSub == "" {
+		oldSub = h.getSubdomain(r)
+	}
+	if oldSub != "" {
+		if err := h.db.DeleteSubdomain(oldSub); err != nil {
+			log.Printf("[SESSION] Warning: Failed to delete old subdomain '%s': %v", oldSub, err)
+		} else {
+			log.Printf("[SESSION] Deleted old subdomain '%s' and all its records upon new subdomain request", oldSub)
+		}
 	}
 
 	// Generate random unique subdomain: animal + random number 10-99
@@ -304,6 +319,32 @@ func (h *APIHandler) handleDeleteSession(w http.ResponseWriter, r *http.Request)
 		Expires: time.Unix(0, 0),
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (h *APIHandler) handleDeleteSubdomain(w http.ResponseWriter, r *http.Request, subdomain string) {
+	h.setCorsHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if err := h.db.DeleteSubdomain(subdomain); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal menghapus subdomain: "+err.Error())
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:    "zcdns_subdomain",
+		Value:   "",
+		Path:    "/",
+		Expires: time.Unix(0, 0),
+	})
+
+	h.triggerRecordChanged()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Subdomain dan seluruh record berhasil dihapus.",
+	})
 }
 
 func (h *APIHandler) handleGetRecords(w http.ResponseWriter, r *http.Request, subdomain string) {

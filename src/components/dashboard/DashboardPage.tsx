@@ -88,7 +88,8 @@ export function DashboardPage() {
   const handleStartSession = async () => {
     setIsLoadingSession(true);
     try {
-      const newSession = await dashboardApi.createSession();
+      const oldSubdomain = session?.subdomain;
+      const newSession = await dashboardApi.createSession(oldSubdomain);
       setSession(newSession);
       if (newSession.subdomain) {
         await loadRecords(newSession.subdomain);
