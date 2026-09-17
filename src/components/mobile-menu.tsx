@@ -47,11 +47,11 @@ export function MobileMenu({ isOpen, onClose }: MobileMenuProps) {
             {t('dashboard')}
           </Link>
           <Link
-            to="/grants"
-            className="text-gray-700 hover:text-green-600 transition-colors font-medium px-2 py-2 "
+            to="/admin"
+            className="text-gray-700 hover:text-red-600 transition-colors font-medium px-2 py-2 "
             onClick={onClose}
           >
-            {t('grants')}
+            {t('admin')}
           </Link>
           <Link
             to="/abuse-report"

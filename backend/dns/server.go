@@ -124,6 +124,14 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
+	// Check if subdomain is blocked due to abuse
+	if blocked, _ := s.db.IsSubdomainBlocked(subdomain); blocked {
+		m.SetRcode(r, dns.RcodeRefused)
+		_ = w.WriteMsg(m)
+		s.logAndBroadcast(subdomain, q.Name, qTypeStr, clientIP, "REFUSED", []string{"Subdomain blocked due to abuse violation"})
+		return
+	}
+
 	// Check if user/subdomain exists
 	user, err := s.db.GetUserBySubdomain(subdomain)
 	if err != nil || user == nil {

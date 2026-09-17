@@ -16,6 +16,7 @@ type Config struct {
 	StaticDir     string
 	CleanInterval int // in minutes
 	RecordTTLMax  int
+	AdminKey      string
 }
 
 func LoadConfig() *Config {
@@ -56,6 +57,7 @@ func LoadConfig() *Config {
 		StaticDir:     staticDir,
 		CleanInterval: 60,
 		RecordTTLMax:  86400,
+		AdminKey:      getEnv("ADMIN_KEY", "@Kelvin123"),
 	}
 }
 

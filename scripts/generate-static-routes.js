@@ -15,7 +15,8 @@ const BASE_URL = 'https://www.zcdns.id';
 const COMPONENT_PAGE_ROUTES = [
   '/', 
   '/abuse-report',
-  '/grants',
+  '/dashboard',
+  '/admin',
 ];
 // --- Akhir Konfigurasi ---
 

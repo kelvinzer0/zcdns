@@ -28,6 +28,7 @@ dist-ssr
 
 # Backend database & binary
 backend/zcdns-server
+backend/zcdns-backend
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

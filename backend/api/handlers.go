@@ -69,6 +69,20 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("POST /api/test-query", h.handleTestQuery)
 
+	// Public Growth Stats & Abuse Report
+	mux.HandleFunc("GET /api/stats", h.handleGetGrowthStats)
+	mux.HandleFunc("POST /api/abuse", h.handleSubmitAbuse)
+
+	// Admin Management Routes
+	mux.HandleFunc("POST /api/admin/login", h.handleAdminLogin)
+	mux.HandleFunc("GET /api/admin/stats", h.requireAdmin(h.handleAdminGetStats))
+	mux.HandleFunc("GET /api/admin/abuse-reports", h.requireAdmin(h.handleAdminGetAbuseReports))
+	mux.HandleFunc("PATCH /api/admin/abuse-reports/{id}", h.requireAdmin(h.handleAdminUpdateAbuseReport))
+	mux.HandleFunc("DELETE /api/admin/abuse-reports/{id}", h.requireAdmin(h.handleAdminDeleteAbuseReport))
+	mux.HandleFunc("GET /api/admin/blocked-subdomains", h.requireAdmin(h.handleAdminGetBlockedSubdomains))
+	mux.HandleFunc("POST /api/admin/blocked-subdomains", h.requireAdmin(h.handleAdminBlockSubdomain))
+	mux.HandleFunc("DELETE /api/admin/blocked-subdomains/{subdomain}", h.requireAdmin(h.handleAdminUnblockSubdomain))
+
 	// Static SPA file server
 	if h.cfg.StaticDir != "" {
 		fileServer := http.FileServer(http.Dir(h.cfg.StaticDir))
@@ -450,8 +464,8 @@ func (h *APIHandler) handleDoH(w http.ResponseWriter, r *http.Request) {
 
 func (h *APIHandler) setCorsHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Subdomain, Authorization")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Subdomain, Authorization, X-Admin-Key")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
 }
 
@@ -463,4 +477,346 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]any{"error": message})
+}
+
+// Growth stats endpoint
+func (h *APIHandler) handleGetGrowthStats(w http.ResponseWriter, r *http.Request) {
+	h.setCorsHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	stats, err := h.db.GetGrowthStats()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal mengambil statistik: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// Abuse Report Public Submission
+type AbuseSubmitRequest struct {
+	ReporterName  string `json:"reporter_name"`
+	ReporterEmail string `json:"reporter_email"`
+	AbuseType     string `json:"abuse_type"`
+	Subdomain     string `json:"subdomain"`
+	Description   string `json:"description"`
+	Evidence      string `json:"evidence"`
+}
+
+func (h *APIHandler) handleSubmitAbuse(w http.ResponseWriter, r *http.Request) {
+	h.setCorsHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var req AbuseSubmitRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Format payload tidak valid")
+		return
+	}
+
+	req.ReporterName = strings.TrimSpace(req.ReporterName)
+	req.ReporterEmail = strings.TrimSpace(req.ReporterEmail)
+	req.Subdomain = strings.TrimSpace(strings.ToLower(req.Subdomain))
+	req.Description = strings.TrimSpace(req.Description)
+
+	if req.ReporterEmail == "" || !strings.Contains(req.ReporterEmail, "@") {
+		writeJSONError(w, http.StatusBadRequest, "Alamat email pelapor tidak valid")
+		return
+	}
+
+	if req.Subdomain == "" {
+		writeJSONError(w, http.StatusBadRequest, "Subdomain yang dilaporkan wajib diisi")
+		return
+	}
+
+	// Clean subdomain if user typed http://, https://, or .zcdns.id
+	cleanSub := strings.TrimPrefix(req.Subdomain, "http://")
+	cleanSub = strings.TrimPrefix(cleanSub, "https://")
+	cleanSub = strings.TrimSuffix(cleanSub, "."+strings.ToLower(h.cfg.BaseDomain))
+	cleanSub = strings.TrimSuffix(cleanSub, "/")
+	if parts := strings.Split(cleanSub, "."); len(parts) > 1 {
+		cleanSub = parts[0]
+	}
+
+	if req.Description == "" {
+		writeJSONError(w, http.StatusBadRequest, "Deskripsi laporan penyalahgunaan wajib diisi")
+		return
+	}
+
+	if req.AbuseType == "" {
+		req.AbuseType = "other"
+	}
+
+	report := &db.AbuseReport{
+		ID:            uuid.New().String(),
+		ReporterName:  req.ReporterName,
+		ReporterEmail: req.ReporterEmail,
+		AbuseType:     req.AbuseType,
+		Subdomain:     cleanSub,
+		Description:   req.Description,
+		Evidence:      req.Evidence,
+		Status:        "pending",
+		AdminNotes:    "",
+	}
+
+	if err := h.db.CreateAbuseReport(report); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal menyimpan laporan: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Laporan penyalahgunaan berhasil dikirim. Tim administrator ZCDNS akan meninjau laporan ini secepatnya.",
+		"id":      report.ID,
+	})
+}
+
+// Admin Authentication & Handlers
+func (h *APIHandler) checkAdminAuth(r *http.Request) bool {
+	// 1. Check header X-Admin-Key
+	if key := r.Header.Get("X-Admin-Key"); key != "" && key == h.cfg.AdminKey {
+		return true
+	}
+
+	// 2. Check Authorization Bearer header
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") && parts[1] == h.cfg.AdminKey {
+			return true
+		}
+	}
+
+	// 3. Check cookie zcdns_admin_token
+	if cookie, err := r.Cookie("zcdns_admin_token"); err == nil && cookie.Value == h.cfg.AdminKey {
+		return true
+	}
+
+	return false
+}
+
+func (h *APIHandler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		h.setCorsHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		if !h.checkAdminAuth(r) {
+			writeJSONError(w, http.StatusUnauthorized, "Akses administrator ditolak. Silakan login terlebih dahulu.")
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+func (h *APIHandler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
+	h.setCorsHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var req struct {
+		Key      string `json:"key"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Format payload tidak valid")
+		return
+	}
+
+	provided := req.Key
+	if provided == "" {
+		provided = req.Password
+	}
+
+	if provided != h.cfg.AdminKey {
+		writeJSONError(w, http.StatusUnauthorized, "Password admin tidak sesuai")
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "zcdns_admin_token",
+		Value:    h.cfg.AdminKey,
+		Path:     "/",
+		MaxAge:   86400 * 7,
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"token":   h.cfg.AdminKey,
+		"message": "Login administrator berhasil",
+	})
+}
+
+func (h *APIHandler) handleAdminGetStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.db.GetGrowthStats()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	reports, _ := h.db.GetAbuseReports("")
+	pendingCount := 0
+	investigatingCount := 0
+	resolvedCount := 0
+	for _, rep := range reports {
+		switch rep.Status {
+		case "pending":
+			pendingCount++
+		case "investigating":
+			investigatingCount++
+		case "resolved_blocked":
+			resolvedCount++
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"growth":           stats,
+		"total_reports":    len(reports),
+		"pending_reports":  pendingCount,
+		"investigating":    investigatingCount,
+		"resolved_blocked": resolvedCount,
+	})
+}
+
+func (h *APIHandler) handleAdminGetAbuseReports(w http.ResponseWriter, r *http.Request) {
+	statusFilter := r.URL.Query().Get("status")
+	reports, err := h.db.GetAbuseReports(statusFilter)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if reports == nil {
+		reports = make([]*db.AbuseReport, 0)
+	}
+	writeJSON(w, http.StatusOK, reports)
+}
+
+func (h *APIHandler) handleAdminUpdateAbuseReport(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSONError(w, http.StatusBadRequest, "Report ID is required")
+		return
+	}
+
+	report, err := h.db.GetAbuseReportByID(id)
+	if err != nil || report == nil {
+		writeJSONError(w, http.StatusNotFound, "Laporan tidak ditemukan")
+		return
+	}
+
+	var req struct {
+		Status         string `json:"status"` // pending, investigating, resolved_blocked, dismissed
+		AdminNotes     string `json:"admin_notes"`
+		BlockSubdomain bool   `json:"block_subdomain"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	if req.Status == "" {
+		req.Status = report.Status
+	}
+
+	// If admin chooses to block the subdomain
+	if req.BlockSubdomain || req.Status == "resolved_blocked" {
+		reason := "Penyalahgunaan: " + req.Status
+		if req.AdminNotes != "" {
+			reason = req.AdminNotes
+		}
+		_ = h.db.BlockSubdomain(report.Subdomain, reason)
+	}
+
+	if err := h.db.UpdateAbuseReport(id, req.Status, req.AdminNotes); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	updated, _ := h.db.GetAbuseReportByID(id)
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *APIHandler) handleAdminDeleteAbuseReport(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSONError(w, http.StatusBadRequest, "Report ID is required")
+		return
+	}
+
+	if err := h.db.DeleteAbuseReport(id); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (h *APIHandler) handleAdminGetBlockedSubdomains(w http.ResponseWriter, r *http.Request) {
+	list, err := h.db.GetBlockedSubdomains()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = make([]map[string]any, 0)
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (h *APIHandler) handleAdminBlockSubdomain(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Subdomain string `json:"subdomain"`
+		Reason    string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	sub := strings.TrimSpace(strings.ToLower(req.Subdomain))
+	sub = strings.TrimSuffix(sub, "."+strings.ToLower(h.cfg.BaseDomain))
+	if sub == "" {
+		writeJSONError(w, http.StatusBadRequest, "Subdomain is required")
+		return
+	}
+
+	reason := req.Reason
+	if reason == "" {
+		reason = "Blocked by administrator"
+	}
+
+	if err := h.db.BlockSubdomain(sub, reason); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "subdomain": sub})
+}
+
+func (h *APIHandler) handleAdminUnblockSubdomain(w http.ResponseWriter, r *http.Request) {
+	sub := r.PathValue("subdomain")
+	sub = strings.TrimSpace(strings.ToLower(sub))
+	sub = strings.TrimSuffix(sub, "."+strings.ToLower(h.cfg.BaseDomain))
+	if sub == "" {
+		writeJSONError(w, http.StatusBadRequest, "Subdomain is required")
+		return
+	}
+
+	if err := h.db.UnblockSubdomain(sub); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "subdomain": sub})
 }
