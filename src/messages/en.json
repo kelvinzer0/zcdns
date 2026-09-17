@@ -318,10 +318,10 @@
     "parental-setup-ios-title": "Apple iOS / macOS Settings:",
     "parental-setup-ios-desc": "Use a DNS profile app (such as DNSCloak or Apple Configurator) and enter your DoH URL:",
     "parental-setup-router-title": "WiFi Router Settings:",
-    "parental-setup-router-1": "Open router admin dashboard (usually 192.168.1.1).",
-    "parental-setup-router-2": "Navigate to DHCP Server or WAN DNS settings.",
-    "parental-setup-router-3": "Set Primary DNS IPv6 / IPv4:",
-    "parental-setup-router-4": "Save router configuration.",
+    "parental-setup-router-1": "Standard routers (UDP port 53) cannot use specific profiles using IP addresses.",
+    "parental-setup-router-2": "You must use a modern router (like OpenWrt, Asuswrt-Merlin, Mikrotik) that supports DNS-over-TLS (DoT) or DNS-over-HTTPS (DoH).",
+    "parental-setup-router-3": "Configure the DoT/DoH endpoint using the Private DNS Hostname or DoH URL provided above.",
+    "parental-setup-router-4": "If your router does not support encrypted DNS, please configure the DNS directly on the connected devices (Android, iOS, PC).",
     "parental-dot-ipv6-note": "Private DNS (DoT) is now fully supported on port 853. Works on any network — IPv4 or IPv6. For browsers & iOS, use the DoH URL instead."
   }
 }

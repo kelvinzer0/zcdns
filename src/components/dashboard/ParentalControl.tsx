@@ -758,12 +758,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
               <ol className="list-decimal list-inside space-y-1 font-medium text-gray-700">
                 <li>{t('parental-setup-router-1')}</li>
                 <li>{t('parental-setup-router-2')}</li>
-                <li>
-                  {t('parental-setup-router-3')}
-                  <code className="block mt-1 p-1.5 bg-white rounded-none border border-gray-300 font-mono text-[11px] text-green-800 break-all">
-                    2606:c700:4020:0098:1234:4321:73ab:0001 (ns1.{baseDomain})
-                  </code>
-                </li>
+                <li>{t('parental-setup-router-3')}</li>
                 <li>{t('parental-setup-router-4')}</li>
               </ol>
             </div>

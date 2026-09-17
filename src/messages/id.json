@@ -318,10 +318,10 @@
         "parental-setup-ios-title": "Pengaturan Apple iOS / macOS:",
         "parental-setup-ios-desc": "Gunakan aplikasi profil DNS (seperti DNSCloak atau Apple Configurator) dan masukkan DoH URL:",
         "parental-setup-router-title": "Pengaturan Router WiFi:",
-        "parental-setup-router-1": "Buka dashboard admin router (biasanya 192.168.1.1).",
-        "parental-setup-router-2": "Masuk ke pengaturan DHCP Server atau WAN DNS.",
-        "parental-setup-router-3": "Set Primary DNS IPv6 / IPv4:",
-        "parental-setup-router-4": "Simpan konfigurasi router.",
+        "parental-setup-router-1": "Router WiFi standar (UDP port 53) tidak bisa menggunakan profil blokir hanya dengan memasukkan alamat IP.",
+        "parental-setup-router-2": "Gunakan router modern (seperti OpenWrt, Asuswrt-Merlin, Mikrotik) yang sudah mendukung DNS-over-TLS (DoT) atau DNS-over-HTTPS (DoH).",
+        "parental-setup-router-3": "Masukkan Private DNS Hostname atau DoH URL di atas ke dalam pengaturan DoT/DoH router Anda.",
+        "parental-setup-router-4": "Jika router Anda tidak mendukung DNS terenkripsi, silakan pasang DNS langsung di masing-masing perangkat (Android/iOS/PC).",
         "parental-dot-ipv6-note": "Private DNS (DoT) kini didukung penuh di port 853. Berfungsi di semua jaringan — IPv4 maupun IPv6. Untuk browser & iOS, gunakan URL DoH."
     }
 }
