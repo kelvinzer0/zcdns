@@ -54,7 +54,7 @@ export function Header({ setMobileMenuOpen }: { setMobileMenuOpen: (isOpen: bool
               <Link to="/grants" className="text-gray-700 hover:text-green-600 transition-colors font-medium">
                 {t('grants')}
               </Link>
-              <Link to="https://www.zcdns.id/dashboard" target="_blank" className="text-gray-700 hover:text-green-600 transition-colors font-medium">
+              <Link to="/dashboard" className="text-gray-700 hover:text-green-600 transition-colors font-medium">
                 {t('dashboard')}
               </Link>
               <Link to="/abuse-report" className="text-gray-700 hover:text-green-600 transition-colors font-medium">
@@ -72,7 +72,7 @@ export function Header({ setMobileMenuOpen }: { setMobileMenuOpen: (isOpen: bool
                 asChild
                 className="bg-[#012241] hover:bg-[#02365f] text-white shadow-lg hover:shadow-xl transition-all duration-200"
               >
-                <Link to="https://www.zcdns.id/dashboard" target="_blank">{t('get-started-free')}</Link>
+                <Link to="/dashboard">{t('get-started-free')}</Link>
               </Button>
             </div>
 

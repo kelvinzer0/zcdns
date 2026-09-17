@@ -27,9 +27,9 @@ export function WarningBanner() {
   return (
     <div className="sticky top-0 z-50 bg-red-100 border-b-2 border-red-200 text-red-900">
       <div className="container mx-auto flex items-center justify-between gap-4 p-3">
-        <div className="flex items-center gap-3">
-          <AlertTriangle className="h-5 w-5 flex-shrink-0 text-red-500" />
-          <p className="text-sm">
+        <div className="flex flex-1 items-center gap-3">
+          <AlertTriangle className="h-5 w-5 flex-shrink-0 self-center text-red-500" />
+          <p className="text-sm leading-normal self-center">
             {t('disclaimer_part1')}
             <Link to={`/${locale}/abuse-report`} className="font-semibold underline hover:text-red-950">
               {t('disclaimer_link')}
@@ -39,7 +39,7 @@ export function WarningBanner() {
         </div>
         <button
           onClick={handleClose}
-          className="p-1  hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-600"
+          className="flex h-7 w-7 flex-shrink-0 items-center justify-center self-center rounded hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-600"
           aria-label={t('close_button_aria_label')}
         >
           <X className="h-5 w-5" />

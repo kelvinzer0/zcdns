@@ -25,3 +25,9 @@ dist-ssr
 
 # PHP files
 *.php
+
+# Backend database & binary
+backend/zcdns-server
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

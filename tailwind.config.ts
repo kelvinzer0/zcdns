@@ -13,7 +13,7 @@ const config: Config = {
 	theme: {
 		extend: {
 			fontFamily: {
-				sans: ['Inter', ...fontFamily.sans],
+				sans: ['DM Sans', ...fontFamily.sans],
 			},
 			typography: (theme: PluginAPI['theme']) => ({
 				DEFAULT: {

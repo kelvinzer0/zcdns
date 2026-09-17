@@ -1,0 +1,55 @@
+name: Deploy ZCDNS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build Frontend
+        run: |
+          bun install
+          bun run build
+
+      - name: Build Go Backend
+        run: |
+          cd backend
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o zcdns-server .
+
+      - name: Deploy to Remote Server
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y sshpass
+          export SSHPASS="$SSH_PASSWORD"
+          
+          # Ensure remote directory exists
+          sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "mkdir -p /opt/zcdns/dist"
+
+          # Upload backend binary
+          sshpass -e scp -6 -o StrictHostKeyChecking=no backend/zcdns-server ${SSH_USER}@[${SSH_HOST}]:/opt/zcdns/zcdns-server.new
+          
+          # Upload frontend dist via compressed stream
+          tar -czf - -C dist . | sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "tar -xzf - -C /opt/zcdns/dist"
+
+          # Replace binary, set permissions, and restart service
+          sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "mv -f /opt/zcdns/zcdns-server.new /opt/zcdns/zcdns-server && chmod +x /opt/zcdns/zcdns-server && systemctl restart zcdns && systemctl is-active zcdns"

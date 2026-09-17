@@ -3,7 +3,7 @@ import { AlarmClock, ArrowRight, BookOpen, CircuitBoard, Zap } from "lucide-reac
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { CustomVideoSlider } from "./CustomVideoSlider";
-import { Link } from 'react-router-dom';
+import { LocalizedLink as Link } from './LocalizedLink';
 import { useTranslations } from '../lib/useTranslations';
 
 export function Hero() {
@@ -55,7 +55,7 @@ export function Hero() {
               size="lg"
               className="bg-[#012241] hover:bg-[#02365f] text-white shadow-lg hover:shadow-xl transition-all duration-200 px-8 py-3"
             >
-              <Link to="https://www.zcdns.id/dashboard" target="_blank">
+              <Link to="/dashboard">
                 {t('start-learning-now')}
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Link>

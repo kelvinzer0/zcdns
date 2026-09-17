@@ -1,0 +1,431 @@
+import { useState } from 'react';
+import { Plus, Trash2, Edit2, AlertCircle, Check, Copy, Info } from 'lucide-react';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import type { DnsRecord, RecordType } from './types';
+
+interface Props {
+  subdomain: string;
+  baseDomain: string;
+  records: DnsRecord[];
+  isLoading: boolean;
+  onAddRecord: (record: { name: string; type: RecordType; value: string; ttl: number }) => Promise<void>;
+  onUpdateRecord: (id: string, record: { name: string; type: RecordType; value: string; ttl: number }) => Promise<void>;
+  onDeleteRecord: (id: string) => Promise<void>;
+  onClearAll: () => Promise<void>;
+}
+
+const RECORD_TYPES: RecordType[] = ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS', 'PTR', 'CAA', 'SRV'];
+
+const TYPE_DESCRIPTIONS: Record<RecordType, { placeholder: string; hint: string }> = {
+  A: {
+    placeholder: '192.0.2.1',
+    hint: 'IPv4 Address. E.g. points to your server IP.',
+  },
+  AAAA: {
+    placeholder: '2001:db8::1',
+    hint: 'IPv6 Address. E.g. modern 128-bit IP address.',
+  },
+  CNAME: {
+    placeholder: 'target.example.com',
+    hint: 'Canonical Name alias pointing to another domain.',
+  },
+  TXT: {
+    placeholder: '"v=spf1 ~all" or "sample-text"',
+    hint: 'Arbitrary text data, often used for SPF or verification tokens.',
+  },
+  MX: {
+    placeholder: '10 mail.example.com',
+    hint: 'Mail Exchange (Priority + Mail Server Host).',
+  },
+  NS: {
+    placeholder: 'ns1.example.com',
+    hint: 'Authoritative Name Server for a sub-delegation.',
+  },
+  PTR: {
+    placeholder: 'host.example.com',
+    hint: 'Pointer record for reverse DNS mapping.',
+  },
+  CAA: {
+    placeholder: '0 issue "letsencrypt.org"',
+    hint: 'Certificate Authority Authorization (flag tag value).',
+  },
+  SRV: {
+    placeholder: '10 60 5060 sipserver.example.com',
+    hint: 'Service locator: Priority Weight Port Target.',
+  },
+};
+
+export const RecordManager: React.FC<Props> = ({
+  subdomain,
+  baseDomain,
+  records,
+  isLoading,
+  onAddRecord,
+  onUpdateRecord,
+  onDeleteRecord,
+  onClearAll,
+}) => {
+  const [type, setType] = useState<RecordType>('A');
+  const [name, setName] = useState('');
+  const [value, setValue] = useState('');
+  const [ttl, setTtl] = useState(60);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Edit state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editType, setEditType] = useState<RecordType>('A');
+  const [editName, setEditName] = useState('');
+  const [editValue, setEditValue] = useState('');
+  const [editTtl, setEditTtl] = useState(60);
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const fullDomain = `${subdomain}.${baseDomain}`;
+  const previewFqdn = name.trim() === '' || name.trim() === '@' 
+    ? fullDomain 
+    : `${name.trim().toLowerCase()}.${fullDomain}`;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    if (!value.trim()) {
+      setErrorMessage('Record value is required');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await onAddRecord({
+        name: name.trim() || '@',
+        type,
+        value: value.trim(),
+        ttl: Number(ttl) || 60,
+      });
+      setName('');
+      setValue('');
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to add record');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const startEdit = (rec: DnsRecord) => {
+    setEditingId(rec.id);
+    setEditType(rec.type);
+    setEditName(rec.name);
+    setEditValue(rec.value);
+    setEditTtl(rec.ttl);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId) return;
+    try {
+      await onUpdateRecord(editingId, {
+        name: editName.trim() || '@',
+        type: editType,
+        value: editValue.trim(),
+        ttl: Number(editTtl) || 60,
+      });
+      setEditingId(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update record');
+    }
+  };
+
+  const copyRecordValue = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const getTypeBadgeClass = (t: RecordType) => {
+    switch (t) {
+      case 'A':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'AAAA':
+        return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'CNAME':
+        return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'TXT':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'MX':
+        return 'bg-cyan-100 text-cyan-800 border-cyan-200';
+      case 'NS':
+        return 'bg-rose-100 text-rose-800 border-rose-200';
+      case 'CAA':
+        return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      {/* Add Record Card */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-2">
+            <div className="w-8 h-8 rounded-lg bg-green-100 text-green-700 flex items-center justify-center font-bold">
+              <Plus className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Add a DNS Record</h2>
+              <p className="text-xs text-gray-500">Configure new routing rule for your sandbox</p>
+            </div>
+          </div>
+        </div>
+
+        {errorMessage && (
+          <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+            {/* Type */}
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase">Type</label>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value as RecordType)}
+                className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800"
+              >
+                {RECORD_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Name / Subdomain */}
+            <div className="sm:col-span-4">
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase">
+                Name <span className="text-gray-400 font-normal">(@ for root)</span>
+              </label>
+              <Input
+                type="text"
+                placeholder="@ or sub (e.g. api, www)"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="h-10 text-sm font-mono"
+              />
+              <div className="text-[11px] text-gray-500 mt-1 truncate">
+                Preview: <code className="text-green-700 font-semibold">{previewFqdn}</code>
+              </div>
+            </div>
+
+            {/* Value */}
+            <div className="sm:col-span-4">
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase">Value / Content</label>
+              <Input
+                type="text"
+                placeholder={TYPE_DESCRIPTIONS[type].placeholder}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                className="h-10 text-sm font-mono"
+              />
+              <div className="text-[11px] text-gray-500 mt-1 truncate">
+                {TYPE_DESCRIPTIONS[type].hint}
+              </div>
+            </div>
+
+            {/* TTL */}
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase">TTL (Sec)</label>
+              <select
+                value={ttl}
+                onChange={(e) => setTtl(Number(e.target.value))}
+                className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500 font-mono"
+              >
+                <option value={5}>5s (Instant)</option>
+                <option value={60}>60s (Recommended)</option>
+                <option value={300}>300s (5m)</option>
+                <option value={3600}>3600s (1h)</option>
+                <option value={86400}>86400s (1d)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="bg-[#012241] hover:bg-[#02365f] text-white px-6 font-medium"
+            >
+              {isSubmitting ? 'Adding...' : 'Add Record'}
+            </Button>
+          </div>
+        </form>
+      </div>
+
+      {/* All DNS Records Table */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-200 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900 flex items-center space-x-2">
+              <span>All DNS Records</span>
+              <span className="text-xs bg-gray-100 text-gray-700 font-semibold px-2 py-0.5 rounded-full">
+                {records.length}
+              </span>
+            </h2>
+            <p className="text-xs text-gray-500">Live authoritative zone records stored in your sandbox</p>
+          </div>
+
+          {records.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onClearAll}
+              className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+              Clear All Records
+            </Button>
+          )}
+        </div>
+
+        {isLoading ? (
+          <div className="p-12 text-center text-gray-500 text-sm">Loading records...</div>
+        ) : records.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className="w-12 h-12 rounded-full bg-gray-100 text-gray-400 mx-auto flex items-center justify-center mb-3">
+              <Info className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-semibold text-gray-900 mb-1">No DNS records configured</h3>
+            <p className="text-sm text-gray-500 max-w-md mx-auto mb-4">
+              Add your first record using the form above to start testing domain resolution and experimenting with DNS.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <tr>
+                  <th className="py-3 px-6">Name (FQDN)</th>
+                  <th className="py-3 px-4">Type</th>
+                  <th className="py-3 px-6">Content / Value</th>
+                  <th className="py-3 px-4">TTL</th>
+                  <th className="py-3 px-6 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {records.map((rec) => {
+                  const isEditing = editingId === rec.id;
+
+                  if (isEditing) {
+                    return (
+                      <tr key={rec.id} className="bg-green-50/50">
+                        <td className="py-3 px-6">
+                          <Input
+                            type="text"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            className="h-8 text-xs font-mono"
+                          />
+                        </td>
+                        <td className="py-3 px-4">
+                          <select
+                            value={editType}
+                            onChange={(e) => setEditType(e.target.value as RecordType)}
+                            className="h-8 px-2 border rounded text-xs bg-white font-semibold"
+                          >
+                            {RECORD_TYPES.map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="py-3 px-6">
+                          <Input
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            className="h-8 text-xs font-mono"
+                          />
+                        </td>
+                        <td className="py-3 px-4">
+                          <input
+                            type="number"
+                            value={editTtl}
+                            onChange={(e) => setEditTtl(Number(e.target.value))}
+                            className="h-8 w-20 px-2 border rounded text-xs font-mono bg-white"
+                          />
+                        </td>
+                        <td className="py-3 px-6 text-right space-x-2">
+                          <Button size="sm" onClick={handleSaveEdit} className="bg-green-600 hover:bg-green-700 text-white h-7 px-2.5 text-xs">
+                            Save
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingId(null)} className="h-7 px-2 text-xs">
+                            Cancel
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return (
+                    <tr key={rec.id} className="hover:bg-gray-50/70 transition-colors">
+                      <td className="py-3.5 px-6 font-mono font-medium text-gray-900">
+                        <span className="text-green-700 font-semibold">{rec.name === '@' ? '@' : rec.name}</span>
+                        <span className="text-gray-400 font-normal">.{fullDomain}</span>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={`inline-block px-2.5 py-0.5 text-xs font-bold rounded-md border ${getTypeBadgeClass(
+                            rec.type
+                          )}`}
+                        >
+                          {rec.type}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-6 font-mono text-gray-800 break-all">
+                        <div className="flex items-center space-x-2">
+                          <span>{rec.value}</span>
+                          <button
+                            onClick={() => copyRecordValue(rec.id, rec.value)}
+                            className="text-gray-400 hover:text-gray-600 transition-colors"
+                            title="Copy value"
+                          >
+                            {copiedId === rec.id ? (
+                              <Check className="w-3.5 h-3.5 text-green-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-gray-500 text-xs">{rec.ttl}s</td>
+                      <td className="py-3.5 px-6 text-right space-x-2 whitespace-nowrap">
+                        <button
+                          onClick={() => startEdit(rec)}
+                          className="p-1.5 text-gray-500 hover:text-blue-600 rounded hover:bg-blue-50 transition-colors"
+                          title="Edit record"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => onDeleteRecord(rec.id)}
+                          className="p-1.5 text-gray-500 hover:text-red-600 rounded hover:bg-red-50 transition-colors"
+                          title="Delete record"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

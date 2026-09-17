@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-do
 
 import { About } from './about';
 import { AbusePage } from './abuse-page';
+import { DashboardPage } from './dashboard/DashboardPage';
 import { DocPageWrapper } from './doc-page-wrapper';
 import { EmailServiceOffer } from './EmailServiceOffer';
 import { Features } from './features';
@@ -54,6 +55,8 @@ export function LocalizedLayout() {
         return { title: 'Abuse Report', description: 'Report abuse or malicious activity related to our DNS services.' };
       case '/grants':
         return { title: 'Grants & Donations', description: 'Help us sustain and grow the ZCDNS ecosystem.' };
+      case '/dashboard':
+        return { title: 'DNS Playground & Dashboard - ZeroCentDNS', description: 'Interactive DNS sandbox with live query stream and full record management.' };
       default:
         // Halaman utama
         return { 
@@ -85,6 +88,7 @@ export function LocalizedLayout() {
             </>
           } />
           <Route path="/abuse-report" element={<AbusePage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/docs/*" element={<DocPageWrapper />} />
           <Route path="/grants" element={<GrantsPage />} />
           <Route path="/*" element={<Navigate to={`/${locale}`} replace />} />
