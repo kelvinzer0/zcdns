@@ -28,6 +28,7 @@ type Server struct {
 	parental    *parental.Engine
 	servers     []*dns.Server
 	mu          sync.RWMutex
+	zoneSerial  uint32
 }
 
 func NewServer(cfg *config.Config, database *db.DB, broadcaster QueryBroadcaster, pe *parental.Engine) *Server {
@@ -36,7 +37,47 @@ func NewServer(cfg *config.Config, database *db.DB, broadcaster QueryBroadcaster
 		db:          database,
 		broadcaster: broadcaster,
 		parental:    pe,
+		zoneSerial:  uint32(time.Now().Unix()),
 	}
+}
+
+func (s *Server) GetZoneSerial() uint32 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.zoneSerial
+}
+
+func (s *Server) IncrementSerialAndNotify() {
+	s.mu.Lock()
+	s.zoneSerial++
+	s.mu.Unlock()
+	s.NotifySlaves()
+}
+
+func (s *Server) NotifySlaves() {
+	base := dns.Fqdn(s.cfg.BaseDomain)
+	msg := new(dns.Msg)
+	msg.SetNotify(base)
+
+	slaves := []string{
+		"216.218.133.2:53",
+		"[2001:470:600::2]:53",
+		"ns1.he.net:53",
+		"ns2.he.net:53",
+		"ns3.he.net:53",
+		"ns4.he.net:53",
+		"ns5.he.net:53",
+	}
+
+	client := new(dns.Client)
+	client.Timeout = 3 * time.Second
+
+	for _, slave := range slaves {
+		go func(target string) {
+			_, _, _ = client.Exchange(msg, target)
+		}(slave)
+	}
+	log.Printf("[DNS-NOTIFY] Sent NOTIFY for %s to %d slaves (Serial: %d)", base, len(slaves), s.GetZoneSerial())
 }
 
 func (s *Server) Start() error {
@@ -79,6 +120,13 @@ func (s *Server) Stop() {
 }
 
 func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
+	if r.Opcode == dns.OpcodeNotify {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		_ = w.WriteMsg(m)
+		return
+	}
+
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Authoritative = true
@@ -98,6 +146,12 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		if host, _, err := net.SplitHostPort(w.RemoteAddr().String()); err == nil {
 			clientIP = host
 		}
+	}
+
+	// Handle AXFR / IXFR Zone Transfer requests
+	if q.Qtype == dns.TypeAXFR || q.Qtype == dns.TypeIXFR {
+		s.handleAXFR(w, r)
+		return
 	}
 
 	subdomain, recordName, isMatch := s.parseDomain(qName)
@@ -207,6 +261,11 @@ func (s *Server) handleBaseDomain(m *dns.Msg, q dns.Question) {
 	switch q.Qtype {
 	case dns.TypeNS:
 		m.Answer = append(m.Answer,
+			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns1.he.net."},
+			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns2.he.net."},
+			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns3.he.net."},
+			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns4.he.net."},
+			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns5.he.net."},
 			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: fmt.Sprintf("ns1.%s", base)},
 			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: fmt.Sprintf("ns2.%s", base)},
 		)
@@ -215,11 +274,11 @@ func (s *Server) handleBaseDomain(m *dns.Msg, q dns.Question) {
 			Hdr:     dns.RR_Header{Name: base, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 3600},
 			Ns:      fmt.Sprintf("ns1.%s", base),
 			Mbox:    fmt.Sprintf("hostmaster.%s", base),
-			Serial:  2026091701,
-			Refresh: 7200,
-			Retry:   3600,
+			Serial:  s.GetZoneSerial(),
+			Refresh: 300,
+			Retry:   120,
 			Expire:  1209600,
-			Minttl:  300,
+			Minttl:  60,
 		})
 	case dns.TypeAAAA:
 		m.Answer = append(m.Answer, &dns.AAAA{
@@ -228,6 +287,87 @@ func (s *Server) handleBaseDomain(m *dns.Msg, q dns.Question) {
 		})
 	default:
 		m.SetRcode(m, dns.RcodeSuccess)
+	}
+}
+
+func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
+	// AXFR requires TCP connection
+	if _, ok := w.RemoteAddr().(*net.TCPAddr); !ok {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		m.SetRcode(r, dns.RcodeRefused)
+		_ = w.WriteMsg(m)
+		return
+	}
+
+	base := dns.Fqdn(s.cfg.BaseDomain)
+	serial := s.GetZoneSerial()
+
+	soa := &dns.SOA{
+		Hdr:     dns.RR_Header{Name: base, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 3600},
+		Ns:      fmt.Sprintf("ns1.%s", base),
+		Mbox:    fmt.Sprintf("hostmaster.%s", base),
+		Serial:  serial,
+		Refresh: 300,
+		Retry:   120,
+		Expire:  1209600,
+		Minttl:  60,
+	}
+
+	records := make([]dns.RR, 0)
+	// 1. First record must be SOA (RFC 5936)
+	records = append(records, soa)
+
+	// 2. Nameservers
+	for _, ns := range []string{
+		"ns1.he.net.", "ns2.he.net.", "ns3.he.net.", "ns4.he.net.", "ns5.he.net.",
+		fmt.Sprintf("ns1.%s", base), fmt.Sprintf("ns2.%s", base),
+	} {
+		records = append(records, &dns.NS{
+			Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600},
+			Ns:  ns,
+		})
+	}
+
+	// 3. Base records & nameservers
+	serverIP := net.ParseIP("2606:c700:4020:0098:1234:4321:73ab:0001")
+	records = append(records,
+		&dns.AAAA{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
+		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns1.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
+		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns2.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
+		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("www.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
+		// Wildcard AAAA: prevents HE.net slave from replying NXDOMAIN for active subdomains
+		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 60}, AAAA: serverIP},
+	)
+
+	// 4. All active user records from database
+	dbRecords, err := s.db.GetAllActiveRecords()
+	if err == nil {
+		for _, dbr := range dbRecords {
+			var fqdn string
+			if dbr.Name == "@" || dbr.Name == "" {
+				fqdn = fmt.Sprintf("%s.%s", dbr.Subdomain, base)
+			} else {
+				fqdn = fmt.Sprintf("%s.%s.%s", dbr.Name, dbr.Subdomain, base)
+			}
+			if rr := s.buildRR(dbr, fqdn); rr != nil {
+				records = append(records, rr)
+			}
+		}
+	}
+
+	// 5. Final record must be identical SOA (RFC 5936)
+	records = append(records, soa)
+
+	ch := make(chan *dns.Envelope, 1)
+	ch <- &dns.Envelope{RR: records}
+	close(ch)
+
+	tr := new(dns.Transfer)
+	if err := tr.Out(w, r, ch); err != nil {
+		log.Printf("[AXFR] Transfer error to %s: %v", w.RemoteAddr(), err)
+	} else {
+		log.Printf("[AXFR] Successfully transferred %d records to %s (Serial: %d)", len(records), w.RemoteAddr(), serial)
 	}
 }
 

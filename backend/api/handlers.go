@@ -24,10 +24,11 @@ var animals = []string{
 }
 
 type APIHandler struct {
-	cfg      *config.Config
-	db       *db.DB
-	hub      *StreamHub
-	parental *parental.Engine
+	cfg             *config.Config
+	db              *db.DB
+	hub             *StreamHub
+	parental        *parental.Engine
+	onRecordChanged func()
 }
 
 func NewAPIHandler(cfg *config.Config, database *db.DB, hub *StreamHub, pe *parental.Engine) *APIHandler {
@@ -36,6 +37,16 @@ func NewAPIHandler(cfg *config.Config, database *db.DB, hub *StreamHub, pe *pare
 		db:       database,
 		hub:      hub,
 		parental: pe,
+	}
+}
+
+func (h *APIHandler) SetOnRecordChanged(fn func()) {
+	h.onRecordChanged = fn
+}
+
+func (h *APIHandler) triggerRecordChanged() {
+	if h.onRecordChanged != nil {
+		go h.onRecordChanged()
 	}
 }
 
@@ -202,6 +213,7 @@ func (h *APIHandler) handleCreateSession(w http.ResponseWriter, r *http.Request)
 		"baseDomain": h.cfg.BaseDomain,
 		"dnsPort":    h.cfg.DNSPort,
 	})
+	h.triggerRecordChanged()
 }
 
 func (h *APIHandler) handleGetSession(w http.ResponseWriter, r *http.Request) {
@@ -304,6 +316,7 @@ func (h *APIHandler) handleCreateRecord(w http.ResponseWriter, r *http.Request, 
 	}
 
 	writeJSON(w, http.StatusCreated, record)
+	h.triggerRecordChanged()
 }
 
 func (h *APIHandler) handleUpdateRecord(w http.ResponseWriter, r *http.Request, subdomain string) {
@@ -340,6 +353,7 @@ func (h *APIHandler) handleUpdateRecord(w http.ResponseWriter, r *http.Request, 
 	}
 
 	writeJSON(w, http.StatusOK, record)
+	h.triggerRecordChanged()
 }
 
 func (h *APIHandler) handleDeleteRecord(w http.ResponseWriter, r *http.Request, subdomain string) {
@@ -355,6 +369,7 @@ func (h *APIHandler) handleDeleteRecord(w http.ResponseWriter, r *http.Request, 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	h.triggerRecordChanged()
 }
 
 func (h *APIHandler) handleDeleteAllRecords(w http.ResponseWriter, r *http.Request, subdomain string) {
@@ -363,6 +378,7 @@ func (h *APIHandler) handleDeleteAllRecords(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	h.triggerRecordChanged()
 }
 
 func (h *APIHandler) handleGetRequests(w http.ResponseWriter, r *http.Request, subdomain string) {

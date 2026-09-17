@@ -221,6 +221,26 @@ func (d *DB) GetRecords(subdomain string) ([]Record, error) {
 	return records, nil
 }
 
+func (d *DB) GetAllActiveRecords() ([]Record, error) {
+	rows, err := d.conn.Query(
+		"SELECT id, subdomain, name, type, value, ttl, created_at, updated_at FROM records ORDER BY subdomain ASC, name ASC",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := make([]Record, 0)
+	for rows.Next() {
+		var r Record
+		if err := rows.Scan(&r.ID, &r.Subdomain, &r.Name, &r.Type, &r.Value, &r.TTL, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
+}
+
 func (d *DB) GetRecordsByNameAndType(subdomain, name, recordType string) ([]Record, error) {
 	var rows *sql.Rows
 	var err error

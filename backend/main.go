@@ -51,6 +51,7 @@ func main() {
 
 	// Initialize HTTP API
 	apiHandler := api.NewAPIHandler(cfg, database, hub, parentalEngine)
+	apiHandler.SetOnRecordChanged(dnsServer.IncrementSerialAndNotify)
 	mux := http.NewServeMux()
 	apiHandler.RegisterRoutes(mux)
 
