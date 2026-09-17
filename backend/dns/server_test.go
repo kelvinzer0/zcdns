@@ -125,16 +125,14 @@ func TestFallbackIPv4(t *testing.T) {
 	c := new(dns.Client)
 	c.Net = "udp"
 
-	testCases := []string{
+	standardDomains := []string{
 		"zcdns.id.",
 		"ns1.zcdns.id.",
 		"ns2.zcdns.id.",
 		"www.zcdns.id.",
-		"guard.zcdns.id.",
-		"testsub.guard.zcdns.id.",
 	}
 
-	for _, domain := range testCases {
+	for _, domain := range standardDomains {
 		m := new(dns.Msg)
 		m.SetQuestion(domain, dns.TypeA)
 		resp, _, err := c.Exchange(m, "127.0.0.1:15355")
@@ -170,5 +168,46 @@ func TestFallbackIPv4(t *testing.T) {
 		if aaaaRec.AAAA.String() != "2606:c700:4020:98:1234:4321:73ab:1" {
 			t.Fatalf("Expected 2606:c700:4020:98:1234:4321:73ab:1 for %s, got %s", domain, aaaaRec.AAAA.String())
 		}
+	}
+
+	// Guard domains must be strictly IPv6 (AAAA only, NO A record)
+	guardDomains := []string{
+		"guard.zcdns.id.",
+		"testsub.guard.zcdns.id.",
+	}
+
+	for _, domain := range guardDomains {
+		// A query should return NOERROR NODATA (0 answers)
+		mA := new(dns.Msg)
+		mA.SetQuestion(domain, dns.TypeA)
+		respA, _, err := c.Exchange(mA, "127.0.0.1:15355")
+		if err != nil {
+			t.Fatalf("Query A %s failed: %v", domain, err)
+		}
+		if len(respA.Answer) != 0 {
+			t.Fatalf("Expected NO A record for guard domain %s, got %d records: %v", domain, len(respA.Answer), respA.Answer)
+		}
+		if respA.Rcode != dns.RcodeSuccess {
+			t.Fatalf("Expected RcodeSuccess (NODATA) for A query on %s, got %s", domain, dns.RcodeToString[respA.Rcode])
+		}
+
+		// AAAA query should return serverIP
+		mAAAA := new(dns.Msg)
+		mAAAA.SetQuestion(domain, dns.TypeAAAA)
+		respAAAA, _, err := c.Exchange(mAAAA, "127.0.0.1:15355")
+		if err != nil {
+			t.Fatalf("Query AAAA %s failed: %v", domain, err)
+		}
+		if len(respAAAA.Answer) == 0 {
+			t.Fatalf("Expected AAAA record for guard domain %s, got none", domain)
+		}
+		aaaaRec, ok := respAAAA.Answer[0].(*dns.AAAA)
+		if !ok {
+			t.Fatalf("Expected *dns.AAAA record for %s, got %T", domain, respAAAA.Answer[0])
+		}
+		if aaaaRec.AAAA.String() != "2606:c700:4020:98:1234:4321:73ab:1" {
+			t.Fatalf("Expected 2606:c700:4020:98:1234:4321:73ab:1 for %s, got %s", domain, aaaaRec.AAAA.String())
+		}
+		t.Logf("Successfully verified guard domain %s has AAAA only (no A fallback)", domain)
 	}
 }

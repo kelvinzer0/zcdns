@@ -285,8 +285,9 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	// Handle queries directly targeted at parental control guard domains (*.guard.zcdns.id / guard.zcdns.id)
+	// Guard domains are strictly IPv6 (AAAA only) and do not provide IPv4 A fallback.
 	if subdomain == "guard" {
-		s.handleNameserverDomain(m, q, strings.TrimSuffix(qName, "."))
+		s.handleGuardDomain(m, q, strings.TrimSuffix(qName, "."))
 		_ = w.WriteMsg(m)
 		return
 	}
@@ -504,8 +505,6 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns1.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns2.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("www.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
-			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("guard.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
-			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.guard.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: fallbackIP},
 		)
 	}
@@ -538,6 +537,43 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 		log.Printf("[AXFR] Transfer error to %s: %v", w.RemoteAddr(), err)
 	} else {
 		log.Printf("[AXFR] Successfully transferred %d records to %s (Serial: %d)", len(records), w.RemoteAddr(), serial)
+	}
+}
+
+func (s *Server) handleGuardDomain(m *dns.Msg, q dns.Question, name string) {
+	target := dns.Fqdn(name)
+	serverIP := net.ParseIP("2606:c700:4020:0098:1234:4321:73ab:0001")
+	base := dns.Fqdn(s.cfg.BaseDomain)
+	soa := &dns.SOA{
+		Hdr:     dns.RR_Header{Name: base, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 3600},
+		Ns:      fmt.Sprintf("ns1.%s", base),
+		Mbox:    fmt.Sprintf("hostmaster.%s", base),
+		Serial:  s.GetZoneSerial(),
+		Refresh: 300,
+		Retry:   120,
+		Expire:  1209600,
+		Minttl:  60,
+	}
+
+	switch q.Qtype {
+	case dns.TypeAAAA:
+		m.Answer = append(m.Answer, &dns.AAAA{
+			Hdr:  dns.RR_Header{Name: target, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
+			AAAA: serverIP,
+		})
+	case dns.TypeANY:
+		m.Answer = append(m.Answer, &dns.AAAA{
+			Hdr:  dns.RR_Header{Name: target, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
+			AAAA: serverIP,
+		})
+	case dns.TypeA:
+		// Guard domains (*.guard.zcdns.id) are strictly IPv6 (AAAA only).
+		// Return NOERROR NODATA for IPv4 A queries so withfallback is not triggered.
+		m.SetRcode(m, dns.RcodeSuccess)
+		m.Ns = append(m.Ns, soa)
+	default:
+		m.SetRcode(m, dns.RcodeSuccess)
+		m.Ns = append(m.Ns, soa)
 	}
 }
 
