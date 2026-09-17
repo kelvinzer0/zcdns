@@ -34,6 +34,9 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o zcdns-server .
 
       - name: Setup IPv6 with WireGuard and Cloudflare WARP
+        env:
+          WGCF_CONF: ${{ secrets.WGCF_CONF }}
+          WGCF_PRIVATE_KEY: ${{ secrets.WGCF_PRIVATE_KEY }}
         run: |
           sudo apt-get update && sudo apt-get install -y wireguard-tools resolvconf iproute2 curl
 
@@ -44,11 +47,14 @@ jobs:
           sudo mv /tmp/wireguard-go/wireguard-go /usr/local/bin/wireguard-go
           cd "$GITHUB_WORKSPACE"
 
-          # Setup WARP WireGuard configuration for IPv6
+          # Setup WARP WireGuard configuration for IPv6 from Secret
           sudo mkdir -p /etc/wireguard
-          sudo tee /etc/wireguard/warp.conf > /dev/null << 'EOF'
+          if [ -n "$WGCF_CONF" ]; then
+            printf "%s\n" "$WGCF_CONF" | sudo tee /etc/wireguard/warp.conf > /dev/null
+          else
+            sudo tee /etc/wireguard/warp.conf > /dev/null << EOF
           [Interface]
-          PrivateKey = cKE7LmCF61IhqqABGhvJ44jWXp8fKymcMAEVAzbDF2k=
+          PrivateKey = $WGCF_PRIVATE_KEY
           Address = 172.16.0.2/32
           Address = fd01:5ca1:ab1e:823e:e094:eb1c:ff87:1fab/128
           MTU = 1280
@@ -58,7 +64,9 @@ jobs:
           AllowedIPs = ::/0
           Endpoint = engage.cloudflareclient.com:2408
           EOF
+          fi
           sudo sed -i 's/^[ \t]*//' /etc/wireguard/warp.conf
+          sudo chmod 600 /etc/wireguard/warp.conf
 
           # Start WireGuard using wireguard-go
           export WG_I_PREFER_BUGGY_USERSPACE_TO_NO_KERNEL_SUPPORT=1
