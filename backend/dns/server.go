@@ -258,41 +258,55 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 
 func (s *Server) handleBaseDomain(m *dns.Msg, q dns.Question) {
 	base := dns.Fqdn(s.cfg.BaseDomain)
+	soa := &dns.SOA{
+		Hdr:     dns.RR_Header{Name: base, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 3600},
+		Ns:      fmt.Sprintf("ns1.%s", base),
+		Mbox:    fmt.Sprintf("hostmaster.%s", base),
+		Serial:  s.GetZoneSerial(),
+		Refresh: 300,
+		Retry:   120,
+		Expire:  1209600,
+		Minttl:  60,
+	}
+
+	nsRecords := []dns.RR{
+		&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns1.he.net."},
+		&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns2.he.net."},
+		&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns3.he.net."},
+		&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns4.he.net."},
+		&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns5.he.net."},
+		&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: fmt.Sprintf("ns1.%s", base)},
+		&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: fmt.Sprintf("ns2.%s", base)},
+	}
+
+	aaaaRecord := &dns.AAAA{
+		Hdr:  dns.RR_Header{Name: base, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
+		AAAA: net.ParseIP("2606:c700:4020:0098:1234:4321:73ab:0001"),
+	}
+
 	switch q.Qtype {
 	case dns.TypeNS:
-		m.Answer = append(m.Answer,
-			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns1.he.net."},
-			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns2.he.net."},
-			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns3.he.net."},
-			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns4.he.net."},
-			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: "ns5.he.net."},
-			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: fmt.Sprintf("ns1.%s", base)},
-			&dns.NS{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600}, Ns: fmt.Sprintf("ns2.%s", base)},
-		)
+		m.Answer = append(m.Answer, nsRecords...)
 	case dns.TypeSOA:
-		m.Answer = append(m.Answer, &dns.SOA{
-			Hdr:     dns.RR_Header{Name: base, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 3600},
-			Ns:      fmt.Sprintf("ns1.%s", base),
-			Mbox:    fmt.Sprintf("hostmaster.%s", base),
-			Serial:  s.GetZoneSerial(),
-			Refresh: 300,
-			Retry:   120,
-			Expire:  1209600,
-			Minttl:  60,
-		})
+		m.Answer = append(m.Answer, soa)
+		m.Ns = append(m.Ns, nsRecords...)
 	case dns.TypeAAAA:
-		m.Answer = append(m.Answer, &dns.AAAA{
-			Hdr:  dns.RR_Header{Name: base, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
-			AAAA: net.ParseIP("2606:c700:4020:0098:1234:4321:73ab:0001"),
-		})
+		m.Answer = append(m.Answer, aaaaRecord)
+	case dns.TypeANY:
+		m.Answer = append(m.Answer, soa)
+		m.Answer = append(m.Answer, nsRecords...)
+		m.Answer = append(m.Answer, aaaaRecord)
 	default:
-		m.SetRcode(m, dns.RcodeSuccess)
+		// NODATA: return NOERROR with SOA in Authority section
+		m.Rcode = dns.RcodeSuccess
+		m.Ns = append(m.Ns, soa)
 	}
 }
 
 func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 	// AXFR requires TCP connection
 	if _, ok := w.RemoteAddr().(*net.TCPAddr); !ok {
+		log.Printf("[AXFR] Refused request from non-TCP client: %v", w.RemoteAddr())
 		m := new(dns.Msg)
 		m.SetReply(r)
 		m.SetRcode(r, dns.RcodeRefused)
@@ -300,8 +314,25 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
+	defer func() {
+		_ = w.Close()
+	}()
+
 	base := dns.Fqdn(s.cfg.BaseDomain)
+	if len(r.Question) > 0 {
+		qName := strings.ToLower(r.Question[0].Name)
+		if strings.TrimSuffix(qName, ".") != strings.ToLower(s.cfg.BaseDomain) {
+			log.Printf("[AXFR] Refused request for non-zone domain %s from %s", qName, w.RemoteAddr())
+			m := new(dns.Msg)
+			m.SetReply(r)
+			m.SetRcode(r, dns.RcodeNotAuth)
+			_ = w.WriteMsg(m)
+			return
+		}
+	}
+
 	serial := s.GetZoneSerial()
+	log.Printf("[AXFR] Initiating zone transfer for %s to %s (Serial: %d)", base, w.RemoteAddr(), serial)
 
 	soa := &dns.SOA{
 		Hdr:     dns.RR_Header{Name: base, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 3600},

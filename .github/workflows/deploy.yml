@@ -95,5 +95,14 @@ jobs:
           # Upload frontend dist via compressed stream
           tar -czf - -C dist . | sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "tar -xzf - -C /opt/zcdns/dist"
 
-          # Replace binary, set permissions, and restart service
-          sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "mv -f /opt/zcdns/zcdns-server.new /opt/zcdns/zcdns-server && chmod +x /opt/zcdns/zcdns-server && systemctl restart zcdns && systemctl is-active zcdns"
+          # Replace binary, configure firewall for DNS (UDP & TCP 53), and restart service
+          sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
+            mv -f /opt/zcdns/zcdns-server.new /opt/zcdns/zcdns-server &&
+            chmod +x /opt/zcdns/zcdns-server &&
+            (which ufw >/dev/null 2>&1 && (ufw allow 53/tcp; ufw allow 53/udp) || true) &&
+            (which ip6tables >/dev/null 2>&1 && (ip6tables -I INPUT -p tcp --dport 53 -j ACCEPT; ip6tables -I INPUT -p udp --dport 53 -j ACCEPT) || true) &&
+            (which iptables >/dev/null 2>&1 && (iptables -I INPUT -p tcp --dport 53 -j ACCEPT; iptables -I INPUT -p udp --dport 53 -j ACCEPT) || true) &&
+            systemctl restart zcdns &&
+            systemctl is-active zcdns &&
+            ss -tulpn | grep 53 || true
+          "
