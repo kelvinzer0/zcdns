@@ -55,6 +55,7 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/session", h.handleCreateSession)
 	mux.HandleFunc("GET /api/session", h.handleGetSession)
 	mux.HandleFunc("DELETE /api/session", h.handleDeleteSession)
+	mux.HandleFunc("POST /api/session/renew", h.requireSubdomain(h.handleRenewSession))
 
 	mux.HandleFunc("GET /api/records", h.requireSubdomain(h.handleGetRecords))
 	mux.HandleFunc("POST /api/records", h.requireSubdomain(h.handleCreateRecord))
@@ -150,6 +151,13 @@ func (h *APIHandler) handleCreateSession(w http.ResponseWriter, r *http.Request)
 	h.setCorsHeaders(w)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Capacity check (max 9,999 records for zone transfer stability)
+	totalRecs, err := h.db.GetTotalRecordCount()
+	if err == nil && totalRecs >= 9995 {
+		writeJSONError(w, http.StatusServiceUnavailable, "ZeroCentDNS saat ini mencapai batas kapasitas maksimum (9.999 record). Mohon menunggu beberapa saat hingga kapasitas tersedia kembali.")
 		return
 	}
 
@@ -250,14 +258,40 @@ func (h *APIHandler) handleGetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	expiresAt := user.LastActive.Add(180 * 24 * time.Hour)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"logged_in":  true,
-		"id":         user.ID,
-		"subdomain":  user.Subdomain,
-		"domain":     fmt.Sprintf("%s.%s", user.Subdomain, h.cfg.BaseDomain),
-		"baseDomain": h.cfg.BaseDomain,
-		"dnsPort":    h.cfg.DNSPort,
-		"created_at": user.CreatedAt,
+		"logged_in":   true,
+		"id":          user.ID,
+		"subdomain":   user.Subdomain,
+		"domain":      fmt.Sprintf("%s.%s", user.Subdomain, h.cfg.BaseDomain),
+		"baseDomain":  h.cfg.BaseDomain,
+		"dnsPort":     h.cfg.DNSPort,
+		"created_at":  user.CreatedAt,
+		"last_active": user.LastActive,
+		"expires_at":  expiresAt,
+	})
+}
+
+func (h *APIHandler) handleRenewSession(w http.ResponseWriter, r *http.Request, subdomain string) {
+	h.setCorsHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	user, err := h.db.RenewUser(subdomain)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal memperpanjang masa aktif subdomain: "+err.Error())
+		return
+	}
+
+	expiresAt := user.LastActive.Add(180 * 24 * time.Hour)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":     true,
+		"subdomain":   subdomain,
+		"last_active": user.LastActive,
+		"expires_at":  expiresAt,
+		"message":     "Masa aktif subdomain berhasil diperpanjang hingga 6 bulan ke depan.",
 	})
 }
 
@@ -289,6 +323,13 @@ type RecordRequest struct {
 }
 
 func (h *APIHandler) handleCreateRecord(w http.ResponseWriter, r *http.Request, subdomain string) {
+	// Capacity check (max 9,999 records for slave zone safety)
+	totalRecs, err := h.db.GetTotalRecordCount()
+	if err == nil && totalRecs >= 9999 {
+		writeJSONError(w, http.StatusServiceUnavailable, "ZeroCentDNS saat ini mencapai batas kapasitas maksimum (9.999 record). Mohon menunggu beberapa saat hingga kapasitas tersedia kembali.")
+		return
+	}
+
 	var req RecordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "Invalid JSON payload")

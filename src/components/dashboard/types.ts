@@ -30,6 +30,8 @@ export interface UserSession {
   dnsPort?: number;
   logged_in: boolean;
   created_at?: string;
+  last_active?: string;
+  expires_at?: string;
 }
 
 export interface TestQueryResult {

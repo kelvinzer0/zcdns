@@ -108,6 +108,20 @@ export function DashboardPage() {
     setRequests([]);
   };
 
+  const handleRenewSession = async () => {
+    if (!session?.subdomain) return;
+    const res = await dashboardApi.renewSubdomain(session.subdomain);
+    setSession((prev) =>
+      prev
+        ? {
+            ...prev,
+            last_active: res.last_active,
+            expires_at: res.expires_at,
+          }
+        : null
+    );
+  };
+
   const handleAddRecord = async (record: { name: string; type: RecordType; value: string; ttl: number }) => {
     if (!session?.subdomain) return;
     const newRecord = await dashboardApi.createRecord(session.subdomain, record);
@@ -240,6 +254,7 @@ export function DashboardPage() {
           wsStatus={wsStatus}
           onNewSession={handleStartSession}
           onLogout={handleLogout}
+          onRenewSession={handleRenewSession}
         />
 
         {/* Tab Navigation - Optimized for Mobile Scroll */}

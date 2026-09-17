@@ -24,10 +24,24 @@ export const dashboardApi = {
       credentials: 'include',
     });
     if (!res.ok) {
-      throw new Error('Failed to create session');
+      const err = await res.json().catch(() => ({ error: 'Failed to create session' }));
+      throw new Error(err.error || 'Failed to create session');
     }
     const data = await res.json();
     return { ...data, logged_in: true };
+  },
+
+  async renewSubdomain(subdomain: string): Promise<UserSession> {
+    const res = await fetch(`${API_BASE}/session/renew`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'X-Subdomain': subdomain },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Gagal memperpanjang masa aktif subdomain' }));
+      throw new Error(err.error || 'Gagal memperpanjang masa aktif subdomain');
+    }
+    return res.json();
   },
 
   async deleteSession(): Promise<void> {

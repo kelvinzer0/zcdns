@@ -340,23 +340,58 @@ func (d *DB) DeleteRequests(subdomain string) error {
 	return err
 }
 
-// Cleanup old entries (records and requests older than 14 days)
-func (d *DB) CleanupOldData() {
-	twoWeeksAgo := time.Now().Add(-14 * 24 * time.Hour).Format("2006-01-02 15:04:05")
-	res1, err := d.conn.Exec("DELETE FROM requests WHERE created_at < ?", twoWeeksAgo)
+const MaxTotalRecords = 9999
+
+func (d *DB) GetTotalRecordCount() (int, error) {
+	var count int
+	err := d.conn.QueryRow("SELECT COUNT(*) FROM records").Scan(&count)
+	return count, err
+}
+
+func (d *DB) RenewUser(subdomain string) (*UserSession, error) {
+	res, err := d.conn.Exec("UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE subdomain = ?", subdomain)
+	if err != nil {
+		return nil, err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return nil, fmt.Errorf("subdomain not found")
+	}
+	return d.GetUserBySubdomain(subdomain)
+}
+
+// Cleanup old entries (requests older than 7 days, and inactive users/subdomains older than 6 months / 180 days)
+func (d *DB) CleanupOldData() []string {
+	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	res1, err := d.conn.Exec("DELETE FROM requests WHERE created_at < ?", sevenDaysAgo)
 	if err == nil {
 		rows, _ := res1.RowsAffected()
 		if rows > 0 {
-			log.Printf("[DB] Cleaned up %d old requests", rows)
+			log.Printf("[DB] Cleaned up %d old request logs (>7 days)", rows)
 		}
 	}
-	res2, err := d.conn.Exec("DELETE FROM users WHERE last_active < ?", twoWeeksAgo)
+
+	sixMonthsAgo := time.Now().Add(-180 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	rows, err := d.conn.Query("SELECT subdomain FROM users WHERE last_active < ?", sixMonthsAgo)
+	var purgedSubs []string
 	if err == nil {
-		rows, _ := res2.RowsAffected()
-		if rows > 0 {
-			log.Printf("[DB] Cleaned up %d inactive users and their zones", rows)
+		for rows.Next() {
+			var sub string
+			if err := rows.Scan(&sub); err == nil {
+				purgedSubs = append(purgedSubs, sub)
+			}
+		}
+		rows.Close()
+
+		for _, sub := range purgedSubs {
+			_, _ = d.conn.Exec("DELETE FROM records WHERE subdomain = ?", sub)
+			_, _ = d.conn.Exec("DELETE FROM requests WHERE subdomain = ?", sub)
+			_, _ = d.conn.Exec("DELETE FROM parental_configs WHERE subdomain = ?", sub)
+			_, _ = d.conn.Exec("DELETE FROM users WHERE subdomain = ?", sub)
+			log.Printf("[DB-CLEANUP] Purged expired subdomain '%s' (no renewal/activity for >6 months)", sub)
 		}
 	}
+	return purgedSubs
 }
 
 // Parental Control methods

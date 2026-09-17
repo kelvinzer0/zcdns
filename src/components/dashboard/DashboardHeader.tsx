@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, RefreshCw, Terminal, Globe, LogOut } from 'lucide-react';
+import { Copy, Check, RefreshCw, Terminal, Globe, LogOut, ShieldCheck, Clock } from 'lucide-react';
 import { Button } from '../ui/button';
 import type { UserSession } from './types';
 import { useTranslations } from '../../lib/useTranslations';
@@ -9,6 +9,7 @@ interface Props {
   wsStatus: 'connected' | 'disconnected' | 'connecting';
   onNewSession: () => void;
   onLogout: () => void;
+  onRenewSession?: () => Promise<void>;
 }
 
 export const DashboardHeader: React.FC<Props> = ({
@@ -16,10 +17,25 @@ export const DashboardHeader: React.FC<Props> = ({
   wsStatus,
   onNewSession,
   onLogout,
+  onRenewSession,
 }) => {
   const t = useTranslations('Dashboard');
   const [copiedDomain, setCopiedDomain] = useState(false);
   const [copiedDig, setCopiedDig] = useState(false);
+  const [isRenewing, setIsRenewing] = useState(false);
+  const [renewSuccess, setRenewSuccess] = useState(false);
+
+  const handleRenew = async () => {
+    if (!onRenewSession || isRenewing) return;
+    setIsRenewing(true);
+    try {
+      await onRenewSession();
+      setRenewSuccess(true);
+      setTimeout(() => setRenewSuccess(false), 3000);
+    } finally {
+      setIsRenewing(false);
+    }
+  };
 
   const fullDomain = session.domain || `${session.subdomain}.${session.baseDomain || 'zcdns.id'}`;
   const nameserver = `ns1.${session.baseDomain || 'zcdns.id'}`;
@@ -88,7 +104,30 @@ export const DashboardHeader: React.FC<Props> = ({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center flex-wrap gap-2">
+          {session.expires_at && (
+            <div className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-mono">
+              <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>
+                Aktif s/d: {new Date(session.expires_at).toLocaleDateString()}
+              </span>
+            </div>
+          )}
+
+          {onRenewSession && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRenew}
+              disabled={isRenewing}
+              className="border-green-600 text-green-700 hover:bg-green-50 rounded-none h-9 text-xs sm:text-sm font-medium"
+              title="Perpanjang masa aktif subdomain hingga 6 bulan ke depan"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 mr-1.5 text-green-600" />
+              {renewSuccess ? 'Diperpanjang!' : 'Perpanjang (6 Bln)'}
+            </Button>
+          )}
+
           <Button
             variant="outline"
             size="sm"

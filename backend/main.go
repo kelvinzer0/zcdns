@@ -63,12 +63,15 @@ func main() {
 	mux.HandleFunc("GET /health", healthHandler)
 	mux.HandleFunc("GET /api/health", healthHandler)
 
-	// Periodic cleanup worker (runs every hour)
+	// Periodic cleanup worker (runs every CleanInterval minutes)
 	go func() {
 		ticker := time.NewTicker(time.Duration(cfg.CleanInterval) * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			database.CleanupOldData()
+			purged := database.CleanupOldData()
+			if len(purged) > 0 {
+				dnsServer.IncrementSerialAndNotify()
+			}
 		}
 	}()
 
