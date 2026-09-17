@@ -33,6 +33,11 @@ jobs:
           cd backend
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o zcdns-server .
 
+      - name: Setup WARP IPv6
+        uses: fscarmen/warp-on-actions@v1
+        with:
+          stack: ipv6
+
       - name: Deploy to Remote Server
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
