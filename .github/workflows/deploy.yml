@@ -33,7 +33,7 @@ jobs:
           cd backend
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o zcdns-server .
 
-      - name: Setup IPv6 with wgcf and wireguard-go
+      - name: Setup IPv6 with WireGuard and Cloudflare WARP
         run: |
           sudo apt-get update && sudo apt-get install -y wireguard-tools resolvconf iproute2 curl
 
@@ -44,27 +44,28 @@ jobs:
           sudo mv /tmp/wireguard-go/wireguard-go /usr/local/bin/wireguard-go
           cd "$GITHUB_WORKSPACE"
 
-          # Download and install wgcf
-          curl -fsSL -o /tmp/wgcf https://github.com/ViRb3/wgcf/releases/download/v2.2.32/wgcf_2.2.32_linux_amd64
-          chmod +x /tmp/wgcf
-          sudo mv /tmp/wgcf /usr/local/bin/wgcf
+          # Setup WARP WireGuard configuration for IPv6
+          sudo mkdir -p /etc/wireguard
+          sudo tee /etc/wireguard/warp.conf > /dev/null << 'EOF'
+[Interface]
+PrivateKey = cKE7LmCF61IhqqABGhvJ44jWXp8fKymcMAEVAzbDF2k=
+Address = 172.16.0.2/32
+Address = fd01:5ca1:ab1e:823e:e094:eb1c:ff87:1fab/128
+MTU = 1280
 
-          # Register WARP account and generate profile
-          wgcf register --accept-tos
-          wgcf generate
-
-          # Preserve runner DNS and only route IPv6 over WireGuard
-          sed -i '/^DNS =/d' wgcf-profile.conf
-          sed -i 's/AllowedIPs = 0.0.0.0\/0, ::\/0/AllowedIPs = ::\/0/g' wgcf-profile.conf
+[Peer]
+PublicKey = bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=
+AllowedIPs = ::/0
+Endpoint = engage.cloudflareclient.com:2408
+EOF
 
           # Start WireGuard using wireguard-go
-          sudo mkdir -p /etc/wireguard
-          sudo cp wgcf-profile.conf /etc/wireguard/wgcf.conf
           export WG_I_PREFER_BUGGY_USERSPACE_TO_NO_KERNEL_SUPPORT=1
-          sudo -E wg-quick up wgcf
+          sudo -E wg-quick up warp
 
           # Verify IPv6 connectivity
           ip -6 a
+          ping6 -c 3 2606:4700:4700::1111 || true
           curl -6 -sI https://cloudflare.com | head -n 3 || true
 
       - name: Deploy to Remote Server
