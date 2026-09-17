@@ -33,10 +33,36 @@ jobs:
           cd backend
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o zcdns-server .
 
-      - name: Setup WARP IPv6
-        uses: fscarmen/warp-on-actions@v1
-        with:
-          stack: ipv6
+      - name: Setup IPv6 with wgcf and wireguard-go
+        run: |
+          sudo apt-get update && sudo apt-get install -y wireguard-tools resolvconf iproute2 curl
+
+          # Install wireguard-go
+          go install golang.zx2c4.com/wireguard/wireguard-go@latest
+          sudo cp $(go env GOPATH)/bin/wireguard-go /usr/local/bin/wireguard-go
+
+          # Download and install wgcf
+          curl -fsSL -o /tmp/wgcf https://github.com/ViRb3/wgcf/releases/download/v2.2.32/wgcf_2.2.32_linux_amd64
+          chmod +x /tmp/wgcf
+          sudo mv /tmp/wgcf /usr/local/bin/wgcf
+
+          # Register WARP account and generate profile
+          wgcf register --accept-tos
+          wgcf generate
+
+          # Preserve runner DNS and only route IPv6 over WireGuard
+          sed -i '/^DNS =/d' wgcf-profile.conf
+          sed -i 's/AllowedIPs = 0.0.0.0\/0, ::\/0/AllowedIPs = ::\/0/g' wgcf-profile.conf
+
+          # Start WireGuard using wireguard-go
+          sudo mkdir -p /etc/wireguard
+          sudo cp wgcf-profile.conf /etc/wireguard/wgcf.conf
+          export WG_I_PREFER_BUGGY_USERSPACE_TO_NO_KERNEL_SUPPORT=1
+          sudo -E wg-quick up wgcf
+
+          # Verify IPv6 connectivity
+          ip -6 a
+          curl -6 -sI https://cloudflare.com | head -n 3 || true
 
       - name: Deploy to Remote Server
         env:
