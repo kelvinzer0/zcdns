@@ -715,9 +715,8 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 
 	if fallbackIP := s.GetFallbackIPv4(); fallbackIP != nil {
 		records = append(records,
+			// ns1/ns2 are AAAA-only; A record only on base domain, www, and wildcard
 			&dns.A{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
-			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns1.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
-			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("ns2.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("www.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: fallbackIP},
 		)
@@ -813,49 +812,38 @@ func (s *Server) handleGuardDomain(m *dns.Msg, q dns.Question, name string) {
 func (s *Server) handleNameserverDomain(m *dns.Msg, q dns.Question, name string) {
 	target := dns.Fqdn(name)
 	serverIP := net.ParseIP("2606:c700:4020:0098:1234:4321:73ab:0001")
-	fallbackIP := s.GetFallbackIPv4()
-
-	var aRecord *dns.A
-	if fallbackIP != nil {
-		aRecord = &dns.A{
-			Hdr: dns.RR_Header{Name: target, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
-			A:   fallbackIP,
-		}
+	// ns1/ns2 are AAAA-only — no A (withfallback) record to avoid resolver confusion.
+	// A queries return NODATA (NOERROR + SOA in Authority).
+	base := dns.Fqdn(s.cfg.BaseDomain)
+	soa := &dns.SOA{
+		Hdr:     dns.RR_Header{Name: base, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 3600},
+		Ns:      fmt.Sprintf("ns1.%s", base),
+		Mbox:    fmt.Sprintf("hostmaster.%s", base),
+		Serial:  s.GetZoneSerial(),
+		Refresh: 300,
+		Retry:   120,
+		Expire:  1209600,
+		Minttl:  60,
 	}
 
 	switch q.Qtype {
 	case dns.TypeA:
-		if aRecord != nil {
-			m.Answer = append(m.Answer, aRecord)
-		} else {
-			m.SetRcode(m, dns.RcodeSuccess)
-		}
+		// NODATA — ns1/ns2 have no IPv4 address
+		m.SetRcode(m, dns.RcodeSuccess)
+		m.Ns = append(m.Ns, soa)
 	case dns.TypeAAAA:
 		m.Answer = append(m.Answer, &dns.AAAA{
 			Hdr:  dns.RR_Header{Name: target, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
 			AAAA: serverIP,
 		})
 	case dns.TypeANY:
-		if aRecord != nil {
-			m.Answer = append(m.Answer, aRecord)
-		}
 		m.Answer = append(m.Answer, &dns.AAAA{
 			Hdr:  dns.RR_Header{Name: target, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
 			AAAA: serverIP,
 		})
 	default:
 		m.SetRcode(m, dns.RcodeSuccess)
-		base := dns.Fqdn(s.cfg.BaseDomain)
-		m.Ns = append(m.Ns, &dns.SOA{
-			Hdr:     dns.RR_Header{Name: base, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 3600},
-			Ns:      fmt.Sprintf("ns1.%s", base),
-			Mbox:    fmt.Sprintf("hostmaster.%s", base),
-			Serial:  s.GetZoneSerial(),
-			Refresh: 300,
-			Retry:   120,
-			Expire:  1209600,
-			Minttl:  60,
-		})
+		m.Ns = append(m.Ns, soa)
 	}
 }
 
