@@ -73,15 +73,38 @@ var malwareKeywords = []string{
 	"malware", "phishing", "cryptominer", "coinhive", "trojan", "ransomware",
 }
 
+var defaultUpstreams = []string{
+	"1.1.1.1:53",
+	"8.8.8.8:53",
+	"9.9.9.9:53",
+	"[2606:4700:4700::1111]:53",
+	"[2001:4860:4860::8888]:53",
+}
+
 var socialKeywords = []string{
 	"tiktok.com", "instagram.com", "facebook.com", "fb.com", "twitter.com",
 	"x.com", "snapchat.com", "reddit.com", "pinterest.com", "t.co",
 }
 
 var gamingKeywords = []string{
-	"roblox.com", "steampowered.com", "steamcommunity.com", "epicgames.com",
+	"roblox.com", "rbxcdn.com", "rbx.com", "robloxlabs.com",
+	"steampowered.com", "steamcommunity.com", "epicgames.com",
 	"riotgames.com", "valorant.com", "twitch.tv", "discord.com", "discord.gg",
-	"genshin.hoyoverse.com", "supercell.com",
+	"genshin.hoyoverse.com", "supercell.com", "minecraft.net", "mojang.com",
+	"battlenet.com", "blizzard.com", "ea.com", "pubg.com",
+}
+
+func cleanDomainInput(d string) string {
+	d = strings.ToLower(strings.TrimSpace(d))
+	d = strings.TrimPrefix(d, "http://")
+	d = strings.TrimPrefix(d, "https://")
+	if idx := strings.Index(d, "/"); idx != -1 {
+		d = d[:idx]
+	}
+	if idx := strings.Index(d, ":"); idx != -1 {
+		d = d[:idx]
+	}
+	return strings.TrimSuffix(d, ".")
 }
 
 func (e *Engine) CheckDomain(pConfig *db.ParentalConfig, qName string) (blocked bool, reason string) {
@@ -89,11 +112,11 @@ func (e *Engine) CheckDomain(pConfig *db.ParentalConfig, qName string) (blocked 
 		return false, ""
 	}
 
-	clean := strings.ToLower(strings.TrimSuffix(qName, "."))
+	clean := cleanDomainInput(qName)
 
 	// 1. Check custom allowlist (always takes precedence)
 	for _, allowed := range pConfig.CustomAllowed {
-		allowedClean := strings.ToLower(strings.TrimSpace(allowed))
+		allowedClean := cleanDomainInput(allowed)
 		if allowedClean != "" && (clean == allowedClean || strings.HasSuffix(clean, "."+allowedClean)) {
 			return false, ""
 		}
@@ -101,7 +124,7 @@ func (e *Engine) CheckDomain(pConfig *db.ParentalConfig, qName string) (blocked 
 
 	// 2. Check custom blocklist
 	for _, blockedDomain := range pConfig.CustomBlocked {
-		blockedClean := strings.ToLower(strings.TrimSpace(blockedDomain))
+		blockedClean := cleanDomainInput(blockedDomain)
 		if blockedClean != "" && (clean == blockedClean || strings.HasSuffix(clean, "."+blockedClean)) {
 			return true, fmt.Sprintf("Custom Blocklist: %s", blockedClean)
 		}
@@ -132,7 +155,7 @@ func (e *Engine) CheckDomain(pConfig *db.ParentalConfig, qName string) (blocked 
 
 func matchesAny(domain string, keywords []string) bool {
 	for _, kw := range keywords {
-		if strings.Contains(domain, kw) {
+		if domain == kw || strings.HasSuffix(domain, "."+kw) || strings.Contains(domain, kw) {
 			return true
 		}
 	}
@@ -251,6 +274,12 @@ func (e *Engine) buildSafeSearchResponse(req *dns.Msg, q dns.Question, ip string
 	return resp, nil
 }
 
+func (e *Engine) ClearCache() {
+	e.cacheMu.Lock()
+	e.cache = make(map[string]*cacheEntry)
+	e.cacheMu.Unlock()
+}
+
 func (e *Engine) forwardUpstream(req *dns.Msg) (*dns.Msg, error) {
 	q := req.Question[0]
 	cacheKey := fmt.Sprintf("%s:%d", q.Name, q.Qtype)
@@ -266,16 +295,50 @@ func (e *Engine) forwardUpstream(req *dns.Msg) (*dns.Msg, error) {
 	}
 	e.cacheMu.RUnlock()
 
-	resp, _, err := e.dnsClient.Exchange(req, e.upstream)
-	if err != nil {
-		return nil, err
+	var resp *dns.Msg
+	var err error
+
+	upstreams := []string{e.upstream}
+	for _, u := range defaultUpstreams {
+		if u != e.upstream {
+			upstreams = append(upstreams, u)
+		}
+	}
+
+	for _, u := range upstreams {
+		resp, _, err = e.dnsClient.Exchange(req, u)
+		if err == nil && resp != nil {
+			break
+		}
+	}
+
+	if err != nil || resp == nil {
+		return nil, fmt.Errorf("upstream resolution failed: %v", err)
+	}
+
+	ttl := uint32(60)
+	if len(resp.Answer) > 0 {
+		ttl = resp.Answer[0].Header().Ttl
+		if ttl < 5 {
+			ttl = 5
+		} else if ttl > 300 {
+			ttl = 300
+		}
 	}
 
 	// Cache entry
 	e.cacheMu.Lock()
+	if len(e.cache) > 2000 {
+		now := time.Now()
+		for k, v := range e.cache {
+			if now.After(v.expires) {
+				delete(e.cache, k)
+			}
+		}
+	}
 	e.cache[cacheKey] = &cacheEntry{
 		msg:     resp,
-		expires: time.Now().Add(60 * time.Second),
+		expires: time.Now().Add(time.Duration(ttl) * time.Second),
 	}
 	e.cacheMu.Unlock()
 

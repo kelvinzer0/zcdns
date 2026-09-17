@@ -158,11 +158,16 @@ export const dashboardApi = {
     }
   },
 
-  async testQuery(name: string, type: string, nameserver?: string): Promise<TestQueryResult> {
+  async testQuery(name: string, type: string, nameserver?: string, subdomain?: string): Promise<TestQueryResult> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (subdomain) {
+      headers['X-Subdomain'] = subdomain;
+    }
     const res = await fetch(`${API_BASE}/test-query`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, type, nameserver }),
+      credentials: 'include',
+      headers,
+      body: JSON.stringify({ name, type, nameserver, subdomain }),
     });
     if (!res.ok) {
       throw new Error('DNS test query failed');

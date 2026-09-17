@@ -38,7 +38,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
   const [newAllowed, setNewAllowed] = useState('');
 
   // Live tester inside parental control
-  const [testDomain, setTestDomain] = useState('pornhub.com');
+  const [testDomain, setTestDomain] = useState('roblox.com');
   const [testResult, setTestResult] = useState<TestQueryResult | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
@@ -135,7 +135,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
       if (config) {
         await dashboardApi.saveParentalConfig(subdomain, config);
       }
-      const res = await dashboardApi.testQuery(testDomain.trim(), 'A');
+      const res = await dashboardApi.testQuery(testDomain.trim(), 'A', undefined, subdomain);
       setTestResult(res);
     } catch (err: any) {
       console.error(err);
@@ -582,10 +582,35 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
           </Button>
         </div>
 
+        {/* Quick Presets */}
+        <div className="flex flex-wrap gap-1.5 items-center pt-1">
+          <span className="text-[11px] text-gray-500 font-semibold mr-1 font-mono">Uji Cepat:</span>
+          {[
+            { label: 'Roblox (Game)', domain: 'roblox.com' },
+            { label: 'Pornhub (Adult)', domain: 'pornhub.com' },
+            { label: 'DoubleClick (Ads)', domain: 'doubleclick.net' },
+            { label: 'TikTok (Social)', domain: 'tiktok.com' },
+            { label: 'Google (SafeSearch)', domain: 'google.com' },
+          ].map((preset) => (
+            <button
+              key={preset.domain}
+              type="button"
+              onClick={() => setTestDomain(preset.domain)}
+              className={`px-2 py-0.5 text-xs font-mono border cursor-pointer transition-colors ${
+                testDomain === preset.domain
+                  ? 'bg-blue-50 text-blue-700 border-blue-300 font-bold'
+                  : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+              }`}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
         {testResult && (
           <div
-            className={`p-3 border text-xs font-mono space-y-1 rounded-none ${
-              testResult.answers && testResult.answers.some((a) => a.includes('0.0.0.0')) ||
+            className={`p-3 border text-xs font-mono space-y-1.5 rounded-none ${
+              (testResult.answers && testResult.answers.some((a) => a.includes('0.0.0.0') || a.includes('::') || a.includes('216.239.38.') || a.includes('204.79.197.'))) ||
               testResult.rcode === 'NXDOMAIN'
                 ? 'bg-red-50 border-red-200 text-red-950'
                 : 'bg-green-50 border-green-200 text-green-950'
@@ -593,7 +618,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
           >
             <div className="flex items-center justify-between font-bold">
               <span>
-                {testResult.answers && testResult.answers.some((a) => a.includes('0.0.0.0')) ||
+                {(testResult.answers && testResult.answers.some((a) => a.includes('0.0.0.0') || a.includes('::') || a.includes('216.239.38.') || a.includes('204.79.197.'))) ||
                 testResult.rcode === 'NXDOMAIN'
                   ? `🛑 ${t('parental-test-blocked')}`
                   : `✅ ${t('parental-test-allowed')}`}
@@ -608,6 +633,11 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
                 <span className="italic">{t('parental-test-empty-answers')}</span>
               )}
             </div>
+            {testResult.server && (
+              <div className="text-[11px] text-gray-500 pt-1 border-t border-gray-200/50">
+                Server: {testResult.server}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ type TestQueryRequest struct {
 	Name       string `json:"name"`
 	Type       string `json:"type"`
 	Nameserver string `json:"nameserver"`
+	Subdomain  string `json:"subdomain"`
 }
 
 type TestQueryResponse struct {
@@ -40,6 +42,14 @@ func (h *APIHandler) handleTestQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	subdomain := req.Subdomain
+	if subdomain == "" {
+		subdomain = h.getSubdomain(r)
+	}
+	if subdomain == "" {
+		subdomain = "default"
+	}
+
 	qName := strings.TrimSpace(req.Name)
 	if qName == "" {
 		writeJSONError(w, http.StatusBadRequest, "Query name is required")
@@ -60,6 +70,62 @@ func (h *APIHandler) handleTestQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	msg := new(dns.Msg)
+	msg.SetQuestion(qName, qType)
+	msg.RecursionDesired = true
+
+	// If querying ZeroCentDNS directly (no custom nameserver specified)
+	cleanQ := strings.TrimSuffix(strings.ToLower(qName), ".")
+	cleanBase := strings.ToLower(h.cfg.BaseDomain)
+	isInternal := strings.HasSuffix(cleanQ, cleanBase)
+
+	if req.Nameserver == "" && h.parental != nil && !isInternal {
+		// External domain query: process directly through parental control engine with the user's subdomain policy
+		clientIP := "127.0.0.1"
+		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			clientIP = host
+		}
+
+		startTime := time.Now()
+		resp, err := h.parental.ProcessQuery(subdomain, clientIP, msg)
+		elapsedMs := time.Since(startTime).Milliseconds()
+
+		if err != nil || resp == nil {
+			writeJSON(w, http.StatusOK, TestQueryResponse{
+				Status:         "ERROR",
+				RCode:          "SERVFAIL",
+				Question:       fmt.Sprintf("%s %s", qTypeStr, qName),
+				Answers:        []string{},
+				Authority:      []string{},
+				ResponseTimeMs: elapsedMs,
+				Server:         fmt.Sprintf("ZeroCentDNS Parental (%s)", subdomain),
+				Raw:            fmt.Sprintf("Parental query failed: %v", err),
+			})
+			return
+		}
+
+		answers := make([]string, 0)
+		for _, rr := range resp.Answer {
+			answers = append(answers, rr.String())
+		}
+		authority := make([]string, 0)
+		for _, rr := range resp.Ns {
+			authority = append(authority, rr.String())
+		}
+
+		writeJSON(w, http.StatusOK, TestQueryResponse{
+			Status:         "SUCCESS",
+			RCode:          dns.RcodeToString[resp.Rcode],
+			Question:       fmt.Sprintf("%s %s", qTypeStr, qName),
+			Answers:        answers,
+			Authority:      authority,
+			ResponseTimeMs: elapsedMs,
+			Server:         fmt.Sprintf("ZeroCentDNS Parental (%s)", subdomain),
+			Raw:            resp.String(),
+		})
+		return
+	}
+
 	displayServer := req.Nameserver
 	if displayServer == "" {
 		displayServer = fmt.Sprintf("ns1.%s:53", h.cfg.BaseDomain)
@@ -76,10 +142,6 @@ func (h *APIHandler) handleTestQuery(w http.ResponseWriter, r *http.Request) {
 	} else {
 		serverAddr = fmt.Sprintf("127.0.0.1:%d", h.cfg.DNSPort)
 	}
-
-	msg := new(dns.Msg)
-	msg.SetQuestion(qName, qType)
-	msg.RecursionDesired = true
 
 	client := &dns.Client{
 		Net:     "udp",
