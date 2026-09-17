@@ -715,9 +715,11 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 
 	if fallbackIP := s.GetFallbackIPv4(); fallbackIP != nil {
 		records = append(records,
-			// ns1/ns2 are AAAA-only; A record only on base domain, www, and wildcard
+			// ns1/ns2 are AAAA-only; A record only on base domain, www, guard, and wildcard
 			&dns.A{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("www.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
+			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("guard.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
+			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.guard.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: fallbackIP},
 		)
 	}
@@ -775,6 +777,7 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 func (s *Server) handleGuardDomain(m *dns.Msg, q dns.Question, name string) {
 	target := dns.Fqdn(name)
 	serverIP := net.ParseIP("2606:c700:4020:0098:1234:4321:73ab:0001")
+	fallbackIP := s.GetFallbackIPv4()
 	base := dns.Fqdn(s.cfg.BaseDomain)
 	soa := &dns.SOA{
 		Hdr:     dns.RR_Header{Name: base, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 3600},
@@ -793,16 +796,27 @@ func (s *Server) handleGuardDomain(m *dns.Msg, q dns.Question, name string) {
 			Hdr:  dns.RR_Header{Name: target, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
 			AAAA: serverIP,
 		})
+	case dns.TypeA:
+		if fallbackIP != nil {
+			m.Answer = append(m.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: target, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+				A:   fallbackIP,
+			})
+		} else {
+			m.SetRcode(m, dns.RcodeSuccess)
+			m.Ns = append(m.Ns, soa)
+		}
 	case dns.TypeANY:
+		if fallbackIP != nil {
+			m.Answer = append(m.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: target, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+				A:   fallbackIP,
+			})
+		}
 		m.Answer = append(m.Answer, &dns.AAAA{
 			Hdr:  dns.RR_Header{Name: target, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
 			AAAA: serverIP,
 		})
-	case dns.TypeA:
-		// Guard domains (*.guard.zcdns.id) are strictly IPv6 (AAAA only).
-		// Return NOERROR NODATA for IPv4 A queries so withfallback is not triggered.
-		m.SetRcode(m, dns.RcodeSuccess)
-		m.Ns = append(m.Ns, soa)
 	default:
 		m.SetRcode(m, dns.RcodeSuccess)
 		m.Ns = append(m.Ns, soa)
