@@ -106,3 +106,36 @@ jobs:
             systemctl is-active zcdns &&
             ss -tulpn | grep 53 || true
           "
+
+      - name: Verify and Test Remote DNS and AXFR
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+        run: |
+          export SSHPASS="$SSH_PASSWORD"
+          echo "=== 1. DIAGNOSTICS ON REMOTE SERVER ==="
+          sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
+            echo '--- ZCDNS SERVICE DEFINITION ---'
+            systemctl cat zcdns || true
+            echo '--- ZCDNS LOGS ---'
+            journalctl -u zcdns -n 35 --no-pager || true
+            echo '--- LISTENING PORTS (ss -tulpn) ---'
+            ss -tulpn || true
+            echo '--- SHARED-IP INFO ---'
+            ps aux | grep shared-ip || true
+            echo '--- LOCAL DIG SOA UDP ---'
+            dig @127.0.0.1 zcdns.id SOA +time=2 +tries=1 || true
+            echo '--- LOCAL DIG SOA TCP ---'
+            dig @127.0.0.1 zcdns.id SOA +tcp +time=2 +tries=1 || true
+            echo '--- LOCAL DIG AXFR ---'
+            dig @127.0.0.1 zcdns.id AXFR +time=2 +tries=1 || true
+          "
+          echo "=== 2. TEST FROM RUNNER OVER EXTERNAL IPV6 ==="
+          sudo apt-get install -y dnsutils
+          echo "--- DIG SOA UDP OVER IPV6 ---"
+          dig -6 @${SSH_HOST} zcdns.id SOA +time=3 +tries=2 || true
+          echo "--- DIG SOA TCP OVER IPV6 ---"
+          dig -6 @${SSH_HOST} zcdns.id SOA +tcp +time=3 +tries=2 || true
+          echo "--- DIG AXFR OVER IPV6 ---"
+          dig -6 @${SSH_HOST} zcdns.id AXFR +time=5 +tries=2 || true
