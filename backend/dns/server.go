@@ -304,24 +304,31 @@ func (s *Server) StartDoT() error {
 		},
 	}
 
-	addr := fmt.Sprintf(":%d", s.cfg.DoTPort)
-	dotSrv := &dns.Server{
-		Addr:      addr,
-		Net:       "tcp-tls",
-		TLSConfig: tlsCfg,
-		Handler:   dns.HandlerFunc(s.handleDoTRequest),
-	}
-
-	s.mu.Lock()
-	s.servers = append(s.servers, dotSrv)
-	s.mu.Unlock()
-
-	go func() {
-		log.Printf("[DoT] Starting DNS-over-TLS listener on %s (guard.%s)", addr, s.cfg.BaseDomain)
-		if err := dotSrv.ListenAndServe(); err != nil {
-			log.Printf("[DoT] listener stopped: %v", err)
+	for _, dnsAddr := range s.cfg.DNSAddrs {
+		host, _, err := net.SplitHostPort(dnsAddr)
+		if err != nil {
+			log.Printf("[DoT] invalid DNS address %q: %v", dnsAddr, err)
+			continue
 		}
-	}()
+		addr := net.JoinHostPort(host, strconv.Itoa(s.cfg.DoTPort))
+		dotSrv := &dns.Server{
+			Addr:      addr,
+			Net:       "tcp-tls",
+			TLSConfig: tlsCfg,
+			Handler:   dns.HandlerFunc(s.handleDoTRequest),
+		}
+
+		s.mu.Lock()
+		s.servers = append(s.servers, dotSrv)
+		s.mu.Unlock()
+
+		go func(srv *dns.Server, address string) {
+			log.Printf("[DoT] Starting DNS-over-TLS listener on %s (guard.%s)", address, s.cfg.BaseDomain)
+			if err := srv.ListenAndServe(); err != nil {
+				log.Printf("[DoT] listener stopped on %s: %v", address, err)
+			}
+		}(dotSrv, addr)
+	}
 
 	// Brief pause to catch immediate listen errors (port in use, etc.)
 	time.Sleep(100 * time.Millisecond)
