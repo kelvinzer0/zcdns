@@ -57,9 +57,6 @@ export function Header({ setMobileMenuOpen }: { setMobileMenuOpen: (isOpen: bool
               <Link to="/abuse-report" className="text-gray-700 hover:text-green-600 transition-colors font-medium">
                 {t('abuse-report')}
               </Link>
-              <Link to="/admin" className="text-gray-700 hover:text-red-600 transition-colors font-medium">
-                {t('admin')}
-              </Link>
               <a target="_blank" href="https://codeberg.org/zcdns/mediakit/archive/main.tar.gz" className="text-gray-700 hover:text-green-600 transition-colors font-medium">
                 {t('media-kit')}
               </a>
