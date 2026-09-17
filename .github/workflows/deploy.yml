@@ -107,6 +107,7 @@ jobs:
             shared-ip add ns2.zcdns.id --localport=53 --localipv4=10.0.0.11 --localipv6=fd00::11 || true &&
             # Configure shared-ip DoT mapping so port 853 traffic for guard.zcdns.id routes to zcdns-server
             shared-ip add guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
+            shared-ip add "*.guard.zcdns.id" --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update "*.guard.zcdns.id" --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
             systemctl restart zcdns &&
             systemctl is-active zcdns &&
             systemctl restart shared-ip &&
