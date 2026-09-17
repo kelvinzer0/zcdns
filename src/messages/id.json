@@ -321,6 +321,7 @@
         "parental-setup-router-1": "Buka dashboard admin router (biasanya 192.168.1.1).",
         "parental-setup-router-2": "Masuk ke pengaturan DHCP Server atau WAN DNS.",
         "parental-setup-router-3": "Set Primary DNS IPv6 / IPv4:",
-        "parental-setup-router-4": "Simpan konfigurasi router."
+        "parental-setup-router-4": "Simpan konfigurasi router.",
+        "parental-dot-ipv6-note": "Mohon maaf, Private DNS ini hanya bekerja jika Anda menggunakan jaringan IPv6. Sebagai alternatif, silakan gunakan DoH."
     }
 }

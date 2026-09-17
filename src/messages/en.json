@@ -321,6 +321,7 @@
     "parental-setup-router-1": "Open router admin dashboard (usually 192.168.1.1).",
     "parental-setup-router-2": "Navigate to DHCP Server or WAN DNS settings.",
     "parental-setup-router-3": "Set Primary DNS IPv6 / IPv4:",
-    "parental-setup-router-4": "Save router configuration."
+    "parental-setup-router-4": "Save router configuration.",
+    "parental-dot-ipv6-note": "Please note that Private DNS only works if you are on an IPv6 network. As an alternative, please use DoH."
   }
 }

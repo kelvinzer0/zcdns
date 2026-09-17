@@ -215,21 +215,26 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
 
         {/* DNS Endpoint Details */}
         <div className="pt-3 border-t border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="bg-gray-50 p-3 border border-gray-200 rounded-none flex items-center justify-between">
-            <div className="overflow-hidden">
-              <span className="text-[10px] font-semibold text-gray-500 uppercase block">
-                Private DNS Hostname (Android / TLS)
-              </span>
-              <code className="text-xs sm:text-sm font-bold text-gray-900 font-mono truncate block">{guardDomain}</code>
+          <div className="bg-gray-50 p-3 border border-gray-200 rounded-none flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <div className="overflow-hidden">
+                <span className="text-[10px] font-semibold text-gray-500 uppercase block">
+                  Private DNS Hostname (Android / TLS)
+                </span>
+                <code className="text-xs sm:text-sm font-bold text-gray-900 font-mono truncate block">{guardDomain}</code>
+              </div>
+              <button
+                type="button"
+                onClick={() => copyText(guardDomain, setCopiedDot)}
+                className="p-1.5 text-gray-500 hover:text-green-700 rounded-none hover:bg-gray-200 transition-colors flex-shrink-0 ml-2"
+                title="Salin Hostname"
+              >
+                {copiedDot ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => copyText(guardDomain, setCopiedDot)}
-              className="p-1.5 text-gray-500 hover:text-green-700 rounded-none hover:bg-gray-200 transition-colors flex-shrink-0 ml-2"
-              title="Salin Hostname"
-            >
-              {copiedDot ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-            </button>
+            <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 leading-snug">
+              ⚠️ {t('parental-dot-ipv6-note')}
+            </p>
           </div>
 
           <div className="bg-gray-50 p-3 border border-gray-200 rounded-none flex items-center justify-between">
@@ -712,6 +717,9 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
                 </li>
                 <li>{t('parental-setup-android-5')}</li>
               </ol>
+              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1.5 leading-snug">
+                ⚠️ {t('parental-dot-ipv6-note')}
+              </p>
             </div>
           )}
 
