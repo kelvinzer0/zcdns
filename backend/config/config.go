@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -25,12 +26,6 @@ func LoadConfig() *Config {
 		httpPort = "127.0.0.1:" + httpPort
 	}
 
-	dnsPortStr := getEnv("DNS_PORT", "5354")
-	dnsPort, err := strconv.Atoi(dnsPortStr)
-	if err != nil {
-		dnsPort = 5354
-	}
-
 	var dnsAddrs []string
 	if rawAddrs := os.Getenv("DNS_ADDRS"); rawAddrs != "" {
 		for _, addr := range strings.Split(rawAddrs, ",") {
@@ -40,6 +35,21 @@ func LoadConfig() *Config {
 			}
 		}
 	}
+
+	dnsPortStr := getEnv("DNS_PORT", "53")
+	dnsPort, err := strconv.Atoi(dnsPortStr)
+	if err != nil {
+		dnsPort = 53
+	}
+	if len(dnsAddrs) > 0 {
+		_, p, err := net.SplitHostPort(dnsAddrs[0])
+		if err == nil {
+			if parsedP, err := strconv.Atoi(p); err == nil {
+				dnsPort = parsedP
+			}
+		}
+	}
+
 	if len(dnsAddrs) == 0 {
 		dnsAddrs = []string{fmt.Sprintf(":%d", dnsPort)}
 	}

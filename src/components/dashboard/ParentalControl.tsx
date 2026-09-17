@@ -21,10 +21,10 @@ import { dashboardApi } from './api';
 interface Props {
   subdomain: string;
   baseDomain: string;
-  dnsPort: number;
+  dnsPort?: number;
 }
 
-export function ParentalControl({ subdomain, baseDomain, dnsPort }: Props) {
+export function ParentalControl({ subdomain, baseDomain }: Props) {
   const [config, setConfig] = useState<ParentalConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -727,7 +727,13 @@ export function ParentalControl({ subdomain, baseDomain, dnsPort }: Props) {
               <ol className="list-decimal list-inside space-y-1 font-medium text-gray-700">
                 <li>Buka dashboard admin router Anda (biasanya di <code>192.168.1.1</code>).</li>
                 <li>Cari menu <strong>DHCP Server</strong> atau <strong>WAN / Network DNS</strong>.</li>
-                <li>Masukkan alamat IP DNS Server ZeroCentDNS (port <code>{dnsPort}</code>) ke kolom <strong>Primary DNS</strong>.</li>
+                <li>
+                  Masukkan DNS Server ZeroCentDNS:
+                  <code className="block mt-1 p-2 bg-white rounded border border-gray-300 font-mono text-xs text-green-800">
+                    Primary DNS (IPv6): 2606:c700:4020:0098:1234:4321:73ab:0001 (ns1.{baseDomain})
+                  </code>
+                </li>
+                <li>Atau gunakan DNS over HTTPS (DoH) pada router / browser yang mendukung DoH.</li>
                 <li>Simpan dan restart router.</li>
               </ol>
             </div>

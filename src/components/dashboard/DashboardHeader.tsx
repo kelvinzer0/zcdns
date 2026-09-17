@@ -20,8 +20,10 @@ export const DashboardHeader: React.FC<Props> = ({
   const [copiedDig, setCopiedDig] = useState(false);
 
   const fullDomain = session.domain || `${session.subdomain}.${session.baseDomain || 'zcdns.id'}`;
-  const dnsPort = session.dnsPort || 5354;
-  const digCmd = `dig @127.0.0.1 -p ${dnsPort} ${fullDomain} ANY`;
+  const nameserver = `ns1.${session.baseDomain || 'zcdns.id'}`;
+  const digCmd = session.dnsPort && session.dnsPort !== 53
+    ? `dig @${nameserver} -p ${session.dnsPort} ${fullDomain} ANY`
+    : `dig @${nameserver} ${fullDomain} ANY`;
 
   const copyToClipboard = (text: string, setCopied: (v: boolean) => void) => {
     navigator.clipboard.writeText(text);

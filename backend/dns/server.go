@@ -93,7 +93,7 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	qName := strings.ToLower(q.Name)
 	qTypeStr := dns.TypeToString[q.Qtype]
 
-	clientIP := "127.0.0.1"
+	clientIP := "remote"
 	if w.RemoteAddr() != nil {
 		if host, _, err := net.SplitHostPort(w.RemoteAddr().String()); err == nil {
 			clientIP = host
@@ -120,6 +120,13 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		}
 
 		m.SetRcode(r, dns.RcodeNameError) // NXDOMAIN
+		_ = w.WriteMsg(m)
+		return
+	}
+
+	// Handle queries directly targeted at authoritative nameservers (ns1.zcdns.id / ns2.zcdns.id)
+	if (subdomain == "ns1" || subdomain == "ns2") && (recordName == "@" || recordName == "") {
+		s.handleNameserverDomain(m, q, strings.TrimSuffix(qName, "."))
 		_ = w.WriteMsg(m)
 		return
 	}
@@ -214,10 +221,23 @@ func (s *Server) handleBaseDomain(m *dns.Msg, q dns.Question) {
 			Expire:  1209600,
 			Minttl:  300,
 		})
-	case dns.TypeA:
-		m.Answer = append(m.Answer, &dns.A{
-			Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
-			A:   net.ParseIP("127.0.0.1"),
+	case dns.TypeAAAA:
+		m.Answer = append(m.Answer, &dns.AAAA{
+			Hdr:  dns.RR_Header{Name: base, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
+			AAAA: net.ParseIP("2606:c700:4020:0098:1234:4321:73ab:0001"),
+		})
+	default:
+		m.SetRcode(m, dns.RcodeSuccess)
+	}
+}
+
+func (s *Server) handleNameserverDomain(m *dns.Msg, q dns.Question, name string) {
+	target := dns.Fqdn(name)
+	switch q.Qtype {
+	case dns.TypeAAAA:
+		m.Answer = append(m.Answer, &dns.AAAA{
+			Hdr:  dns.RR_Header{Name: target, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
+			AAAA: net.ParseIP("2606:c700:4020:0098:1234:4321:73ab:0001"),
 		})
 	default:
 		m.SetRcode(m, dns.RcodeSuccess)

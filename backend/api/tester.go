@@ -60,12 +60,21 @@ func (h *APIHandler) handleTestQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverAddr := fmt.Sprintf("127.0.0.1:%d", h.cfg.DNSPort)
+	displayServer := req.Nameserver
+	if displayServer == "" {
+		displayServer = fmt.Sprintf("ns1.%s:53", h.cfg.BaseDomain)
+	}
+
+	serverAddr := ""
 	if req.Nameserver != "" {
 		serverAddr = req.Nameserver
 		if !strings.Contains(serverAddr, ":") {
 			serverAddr += ":53"
 		}
+	} else if len(h.cfg.DNSAddrs) > 0 {
+		serverAddr = h.cfg.DNSAddrs[0]
+	} else {
+		serverAddr = fmt.Sprintf("127.0.0.1:%d", h.cfg.DNSPort)
 	}
 
 	msg := new(dns.Msg)
@@ -92,7 +101,7 @@ func (h *APIHandler) handleTestQuery(w http.ResponseWriter, r *http.Request) {
 			Answers:        []string{},
 			Authority:      []string{},
 			ResponseTimeMs: elapsedMs,
-			Server:         serverAddr,
+			Server:         displayServer,
 			Raw:            fmt.Sprintf("DNS Query Failed: %s", err.Error()),
 		})
 		return
@@ -117,7 +126,7 @@ func (h *APIHandler) handleTestQuery(w http.ResponseWriter, r *http.Request) {
 		Answers:        answers,
 		Authority:      authority,
 		ResponseTimeMs: elapsedMs,
-		Server:         serverAddr,
+		Server:         displayServer,
 		Raw:            resp.String(),
 	})
 }

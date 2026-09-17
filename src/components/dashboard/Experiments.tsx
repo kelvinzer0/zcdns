@@ -161,7 +161,9 @@ export const Experiments: React.FC<Props> = ({
               ? fullDomain
               : `${exp.suggestedQuery.name}.${fullDomain}`
             : fullDomain;
-          const digCmd = `dig @127.0.0.1 -p ${dnsPort} ${queryTarget} ${exp.suggestedQuery?.type || 'A'}`;
+          const nameserver = `ns1.${baseDomain || 'zcdns.id'}`;
+          const portFlag = dnsPort && dnsPort !== 53 ? ` -p ${dnsPort}` : '';
+          const digCmd = `dig @${nameserver}${portFlag} ${queryTarget} ${exp.suggestedQuery?.type || 'A'}`;
 
           return (
             <div

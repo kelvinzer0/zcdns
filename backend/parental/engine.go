@@ -347,11 +347,14 @@ func (e *Engine) HandleDoH(w http.ResponseWriter, r *http.Request, subdomain str
 		return
 	}
 
-	clientIP := "127.0.0.1"
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		clientIP = strings.Split(fwd, ",")[0]
-	} else if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+	clientIP := "remote"
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		clientIP = host
+	}
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		clientIP = strings.TrimSpace(strings.Split(fwd, ",")[0])
+	} else if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		clientIP = strings.TrimSpace(realIP)
 	}
 
 	respMsg, err := e.ProcessQuery(subdomain, clientIP, reqMsg)

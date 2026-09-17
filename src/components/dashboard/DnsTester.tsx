@@ -36,7 +36,7 @@ export const DnsTester: React.FC<Props> = ({ subdomain, baseDomain }) => {
         answers: [],
         authority: [],
         response_time_ms: 0,
-        server: '127.0.0.1',
+        server: `ns1.${baseDomain || 'zcdns.id'}`,
         raw: err.message || 'DNS Query execution failed',
       });
     } finally {
