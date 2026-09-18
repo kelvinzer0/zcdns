@@ -29,6 +29,9 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [repo, setRepo] = useState<any>(null);
+  
+  const [dlOS, setDlOS] = useState('Linux');
+  const [dlArch, setDlArch] = useState(0);
 
   useEffect(() => {
     fetch('/api/vault/init', {
@@ -103,7 +106,7 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
         { label: 'x86_64 (amd64)', filename: 'zvault-linux-amd64', url: '/bin/zvault-linux-amd64' },
         { label: 'ARM64 (aarch64)', filename: 'zvault-linux-arm64', url: '/bin/zvault-linux-arm64' },
       ],
-      quickInstall: 'curl -fsSL https://www.zcdns.id/bin/zvault-linux-amd64 -o zvault && chmod +x zvault && sudo mv zvault /usr/local/bin/'
+      getInstallCmd: (archFile: string) => `mkdir -p ~/.local/bin && curl -fsSL https://www.zcdns.id/bin/${archFile} -o ~/.local/bin/zvault && chmod +x ~/.local/bin/zvault`
     },
     {
       os: 'macOS',
@@ -112,7 +115,7 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
         { label: 'Apple Silicon (M-series / ARM64)', filename: 'zvault-macos-arm64', url: '/bin/zvault-macos-arm64' },
         { label: 'Intel (x86_64)', filename: 'zvault-macos-amd64', url: '/bin/zvault-macos-amd64' },
       ],
-      quickInstall: 'curl -fsSL https://www.zcdns.id/bin/zvault-macos-arm64 -o zvault && chmod +x zvault && sudo mv zvault /usr/local/bin/'
+      getInstallCmd: (archFile: string) => `mkdir -p ~/.local/bin && curl -fsSL https://www.zcdns.id/bin/${archFile} -o ~/.local/bin/zvault && chmod +x ~/.local/bin/zvault`
     },
     {
       os: 'Windows',
@@ -120,7 +123,7 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
       archs: [
         { label: 'Windows 64-bit (x86_64 .exe)', filename: 'zvault-windows-amd64.exe', url: '/bin/zvault-windows-amd64.exe' },
       ],
-      quickInstall: 'curl.exe -fsSL https://www.zcdns.id/bin/zvault-windows-amd64.exe -o zvault.exe'
+      getInstallCmd: (archFile: string) => `curl.exe -fsSL https://www.zcdns.id/bin/${archFile} -o zvault.exe`
     }
   ];
 
@@ -324,88 +327,82 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
 
             {/* Modal Content */}
             <div className="p-6 space-y-6">
-              {/* Quick Install Section */}
+              {/* OS & Arch Selector */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-2">Quick Install (Linux / macOS)</h4>
-                <div className="relative bg-gray-900 text-gray-100 p-3 rounded font-mono text-xs flex items-center justify-between gap-3">
-                  <code className="truncate">
-                    curl -fsSL https://www.zcdns.id/bin/zvault-linux-amd64 -o zvault && chmod +x zvault && sudo mv zvault /usr/local/bin/
-                  </code>
-                  <button 
-                    onClick={() => handleCopy('curl -fsSL https://www.zcdns.id/bin/zvault-linux-amd64 -o zvault && chmod +x zvault && sudo mv zvault /usr/local/bin/', 'quick-install')}
-                    className="text-gray-400 hover:text-white p-1 shrink-0"
-                    title="Copy command"
-                  >
-                    {copiedCmd === 'quick-install' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* OS Direct Download Matrix */}
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-3">Direct Binary Downloads (All Operating Systems)</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {downloadOptions.map((item) => {
-                    const Icon = item.icon;
+                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-3">Pilih Sistem Operasi Anda</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {downloadOptions.map((opt) => {
+                    const Icon = opt.icon;
                     return (
-                      <div key={item.os} className="border border-gray-200 p-3.5 bg-gray-50 flex flex-col justify-between">
-                        <div>
-                          <div className="flex items-center space-x-2 text-gray-900 font-bold text-sm mb-2.5">
-                            <Icon className="w-4 h-4 text-gray-700" />
-                            <span>{item.os}</span>
-                          </div>
-                          <div className="space-y-2">
-                            {item.archs.map((arch) => (
-                              <a
-                                key={arch.filename}
-                                href={arch.url}
-                                download={arch.filename}
-                                className="block p-2 bg-white border border-gray-200 hover:border-green-500 hover:bg-green-50/30 text-xs transition-colors rounded"
-                              >
-                                <div className="font-medium text-gray-800 truncate flex items-center justify-between">
-                                  <span>{arch.label}</span>
-                                  <Download className="w-3.5 h-3.5 text-gray-400 ml-1 shrink-0" />
-                                </div>
-                                <div className="text-[10px] text-gray-400 font-mono truncate mt-0.5">
-                                  {arch.filename}
-                                </div>
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="mt-3 pt-2.5 border-t border-gray-200">
-                          <button
-                            onClick={() => handleCopy(item.quickInstall, item.os)}
-                            className="text-[11px] text-gray-600 hover:text-gray-900 flex items-center justify-between w-full"
-                          >
-                            <span className="font-mono text-[10px] text-gray-500 truncate mr-1">Copy install cmd</span>
-                            {copiedCmd === item.os ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
-                          </button>
-                        </div>
-                      </div>
+                      <button
+                        key={opt.os}
+                        onClick={() => { setDlOS(opt.os); setDlArch(0); }}
+                        className={`flex items-center gap-2 px-4 py-2 border rounded text-sm transition-colors ${dlOS === opt.os ? 'border-green-600 bg-green-50 text-green-800 font-semibold' : 'border-gray-200 hover:bg-gray-50 text-gray-700'}`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        {opt.os}
+                      </button>
                     );
                   })}
                 </div>
-              </div>
+                
+                {downloadOptions.find(o => o.os === dlOS) && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-2 block">Arsitektur</label>
+                      <select 
+                        value={dlArch} 
+                        onChange={(e) => setDlArch(Number(e.target.value))}
+                        className="w-full sm:w-auto bg-white border border-gray-300 text-gray-700 text-sm py-2 px-3 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+                      >
+                        {downloadOptions.find(o => o.os === dlOS)!.archs.map((a, i) => (
+                          <option key={i} value={i}>{a.label}</option>
+                        ))}
+                      </select>
+                    </div>
 
-              {/* GitHub Releases Link & Instructions */}
-              <div className="bg-blue-50 border border-blue-200 p-3.5 flex items-start justify-between gap-3 text-xs text-blue-900">
-                <div>
-                  <div className="font-semibold">GitHub Releases & CI Builds</div>
-                  <p className="text-blue-800 text-[11px] mt-0.5">
-                    Binary zvault juga di-compile secara otomatis oleh GitHub Actions CI untuk setiap commit terbaru.
-                  </p>
-                </div>
-                <a 
-                  href="https://github.com/kelvinzer0/zcdns/releases" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:text-blue-900 shrink-0 self-center"
-                >
-                  GitHub Releases
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-2 block">Terminal Command</label>
+                      <div className="relative bg-gray-900 text-gray-100 p-3.5 rounded font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 overflow-hidden">
+                        <code className="break-all">
+                          {downloadOptions.find(o => o.os === dlOS)!.getInstallCmd(downloadOptions.find(o => o.os === dlOS)!.archs[dlArch].filename)}
+                        </code>
+                        <button 
+                          onClick={() => handleCopy(downloadOptions.find(o => o.os === dlOS)!.getInstallCmd(downloadOptions.find(o => o.os === dlOS)!.archs[dlArch].filename), 'quick-install')}
+                          className="text-gray-400 hover:text-white shrink-0 self-end sm:self-auto flex items-center gap-1.5 bg-gray-800 px-2 py-1 rounded"
+                          title="Copy command"
+                        >
+                          {copiedCmd === 'quick-install' ? (
+                            <><Check className="w-3.5 h-3.5 text-green-400" /> Copied</>
+                          ) : (
+                            <><Copy className="w-3.5 h-3.5" /> Copy</>
+                          )}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-2">
+                        Command di atas tidak memerlukan akses root/sudo dan akan memasang binary ke <code>~/.local/bin/</code>. Pastikan direktori tersebut ada di <code>PATH</code> Anda.
+                      </p>
+                    </div>
+
+                    <div className="pt-2 flex flex-col sm:flex-row gap-3 items-center justify-between border-t border-gray-100">
+                      <a 
+                        href={downloadOptions.find(o => o.os === dlOS)!.archs[dlArch].url}
+                        download={downloadOptions.find(o => o.os === dlOS)!.archs[dlArch].filename}
+                        className="flex items-center gap-2 text-sm font-semibold text-green-700 hover:text-green-800 bg-green-50 px-4 py-2 rounded"
+                      >
+                        <Download className="w-4 h-4" />
+                        Unduh Manual ({downloadOptions.find(o => o.os === dlOS)!.archs[dlArch].filename})
+                      </a>
+                      
+                      <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                        <ExternalLink className="w-3 h-3" />
+                        <a href="https://github.com/kelvinzer0/zcdns/releases" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                          Lihat Source / GitHub Releases
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Basic Usage Cheat Sheet */}
