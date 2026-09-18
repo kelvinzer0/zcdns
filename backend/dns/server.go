@@ -21,7 +21,7 @@ type QueryBroadcaster interface {
 	BroadcastRequest(subdomain string, req *db.RequestLog)
 }
 
-const FallbackHost = "2606-0c70-0020-0098-1234-4321-73ab-0001.withfallback.com"
+const FallbackHost = "2606-c700-0020-0098-1234-4321-73ab-0001.withfallback.com"
 
 type Server struct {
 	cfg            *config.Config

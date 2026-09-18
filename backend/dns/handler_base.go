@@ -23,7 +23,7 @@ func (s *Server) handleDoTRequest(w dns.ResponseWriter, r *dns.Msg) {
 	// Clean up after the request to prevent sniMap from growing unbounded.
 	// DoT connections are typically long-lived (TCP keepalive) but one entry
 	// per remote addr is negligible; we clean on each request for safety.
-	defer s.sniMap.Delete(remoteKey)
+	// defer s.sniMap.Delete(remoteKey) // Removed to allow DoT TCP pipelining
 
 	clientIP := remoteKey
 	if host, _, err := net.SplitHostPort(remoteKey); err == nil {
