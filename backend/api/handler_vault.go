@@ -312,3 +312,28 @@ func (h *APIHandler) handleVaultVerifyAuth(w http.ResponseWriter, r *http.Reques
 		"subdomain": sub,
 	})
 }
+
+type SyncVaultRequest struct {
+	RepoID         string           `json:"repo_id"`
+	Commits        []db.VaultCommit `json:"commits"`
+	KVPairs        []db.VaultKVPair `json:"kv_pairs"`
+	HeadCommitHash string           `json:"head_commit_hash"`
+}
+
+func (h *APIHandler) handleSyncVault(w http.ResponseWriter, r *http.Request, subdomain string) {
+	var req SyncVaultRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	if req.RepoID == "" {
+		writeJSONError(w, http.StatusBadRequest, "repo_id is required")
+		return
+	}
+	
+	if err := h.db.SyncVault(req.RepoID, req.Commits, req.KVPairs, req.HeadCommitHash); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to sync vault: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}

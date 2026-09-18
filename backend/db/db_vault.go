@@ -226,3 +226,37 @@ func (d *DB) DeleteCommit(repoID, commitHash string) error {
 	return err
 }
 
+
+func (d *DB) SyncVault(repoID string, commits []VaultCommit, kvPairs []VaultKVPair, headCommitHash string) error {
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, c := range commits {
+		_, err = tx.Exec("INSERT OR IGNORE INTO vault_commits (id, repo_id, hash, parent_hash, message, timestamp, author) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			c.ID, c.RepoID, c.Hash, c.ParentHash, c.Message, c.Timestamp, c.Author)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, p := range kvPairs {
+		_, err = tx.Exec("INSERT OR IGNORE INTO vault_kv_pairs (id, commit_hash, key_name, encrypted_value) VALUES (?, ?, ?, ?)",
+			p.ID, p.CommitHash, p.KeyName, p.EncryptedValue)
+		if err != nil {
+			return err
+		}
+	}
+
+	if headCommitHash != "" {
+		_, err = tx.Exec("UPDATE vault_branches SET head_commit = ?, updated_at = ? WHERE repo_id = ? AND name = 'main'",
+			headCommitHash, time.Now(), repoID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
