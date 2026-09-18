@@ -106,7 +106,7 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
         { label: 'x86_64 (amd64)', filename: 'zvault-linux-amd64', url: '/bin/zvault-linux-amd64' },
         { label: 'ARM64 (aarch64)', filename: 'zvault-linux-arm64', url: '/bin/zvault-linux-arm64' },
       ],
-      getInstallCmd: (archFile: string) => `mkdir -p ~/.local/bin && curl -fsSL https://www.zcdns.id/bin/${archFile} -o ~/.local/bin/zvault && chmod +x ~/.local/bin/zvault`
+      getInstallCmd: (archFile: string) => `mkdir -p ~/.local/bin && curl -fsSL https://zcdns.id/bin/${archFile} -o ~/.local/bin/zvault && chmod +x ~/.local/bin/zvault`
     },
     {
       os: 'macOS',
@@ -115,7 +115,7 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
         { label: 'Apple Silicon (M-series / ARM64)', filename: 'zvault-macos-arm64', url: '/bin/zvault-macos-arm64' },
         { label: 'Intel (x86_64)', filename: 'zvault-macos-amd64', url: '/bin/zvault-macos-amd64' },
       ],
-      getInstallCmd: (archFile: string) => `mkdir -p ~/.local/bin && curl -fsSL https://www.zcdns.id/bin/${archFile} -o ~/.local/bin/zvault && chmod +x ~/.local/bin/zvault`
+      getInstallCmd: (archFile: string) => `mkdir -p ~/.local/bin && curl -fsSL https://zcdns.id/bin/${archFile} -o ~/.local/bin/zvault && chmod +x ~/.local/bin/zvault`
     },
     {
       os: 'Windows',
@@ -123,7 +123,7 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
       archs: [
         { label: 'Windows 64-bit (x86_64 .exe)', filename: 'zvault-windows-amd64.exe', url: '/bin/zvault-windows-amd64.exe' },
       ],
-      getInstallCmd: (archFile: string) => `curl.exe -fsSL https://www.zcdns.id/bin/${archFile} -o zvault.exe`
+      getInstallCmd: (archFile: string) => `curl.exe -fsSL https://zcdns.id/bin/${archFile} -o zvault.exe`
     }
   ];
 
