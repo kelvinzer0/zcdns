@@ -28,7 +28,7 @@ func (d *DB) InitVault(subdomain string) (*VaultRepo, error) {
 	commitHash := uuid.New().String()[:8]
 	
 	_, err = d.conn.Exec("INSERT INTO vault_commits (id, repo_id, hash, message, timestamp, author) VALUES (?, ?, ?, ?, ?, ?)",
-		uuid.New().String(), repo.ID, commitHash, "initial secrets", time.Now(), "system")
+		uuid.New().String(), repo.ID, commitHash, "initial commit", time.Now(), "system")
 	if err != nil {
 		return nil, err
 	}
@@ -38,11 +38,6 @@ func (d *DB) InitVault(subdomain string) (*VaultRepo, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	_, err = d.conn.Exec("INSERT INTO vault_kv_pairs (id, commit_hash, key_name, encrypted_value) VALUES (?, ?, ?, ?)",
-		uuid.New().String(), commitHash, "API_KEY", "sk_live_1234567890abcdef")
-	_, err = d.conn.Exec("INSERT INTO vault_kv_pairs (id, commit_hash, key_name, encrypted_value) VALUES (?, ?, ?, ?)",
-		uuid.New().String(), commitHash, "DB_PASSWORD", "super_secret_password")
 
 	return repo, nil
 }

@@ -71,10 +71,7 @@ func (d *DB) CleanupOldData() []string {
 		rows.Close()
 
 		for _, sub := range purgedSubs {
-			_, _ = d.conn.Exec("DELETE FROM records WHERE subdomain = ?", sub)
-			_, _ = d.conn.Exec("DELETE FROM requests WHERE subdomain = ?", sub)
-			_, _ = d.conn.Exec("DELETE FROM parental_configs WHERE subdomain = ?", sub)
-			_, _ = d.conn.Exec("DELETE FROM users WHERE subdomain = ?", sub)
+			_ = d.DeleteSubdomain(sub)
 			log.Printf("[DB-CLEANUP] Purged expired subdomain '%s' (no renewal/activity for >6 months)", sub)
 		}
 	}
