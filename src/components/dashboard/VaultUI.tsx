@@ -175,7 +175,7 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
           <div className="flex items-center space-x-2">
             <Shield className="w-5 h-5 text-gray-700" />
             <h2 className="text-lg font-bold text-gray-900">Secrets Vault</h2>
-            <span className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded font-mono font-medium">1 Private Repo</span>
+            
           </div>
 
           <div className="flex items-center space-x-3">

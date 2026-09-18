@@ -92,10 +92,32 @@ export const RecordManager: React.FC<Props> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
-    if (!value.trim()) {
-      setErrorMessage('Record value is required');
+    
+    const cleanName = name.trim();
+    if (cleanName && !/^(\*|@|[a-zA-Z0-9_]([a-zA-Z0-9-_]{0,61}[a-zA-Z0-9_])?(\.[a-zA-Z0-9_]([a-zA-Z0-9-_]{0,61}[a-zA-Z0-9_])?)*)$/.test(cleanName)) {
+      setErrorMessage("Format nama record tidak valid (hostname/wildcard/@)");
       return;
     }
+    
+    const cleanValue = value.trim();
+    if (!cleanValue) {
+      setErrorMessage("Value tidak boleh kosong");
+      return;
+    }
+    
+    if (type === "A" && !/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(cleanValue)) {
+      setErrorMessage("Tipe A memerlukan alamat IPv4 yang valid");
+      return;
+    }
+    if (type === "AAAA" && !/^[0-9a-fA-F:]+$/.test(cleanValue)) {
+      setErrorMessage("Tipe AAAA memerlukan alamat IPv6 yang valid");
+      return;
+    }
+    if (["CNAME", "NS", "PTR"].includes(type) && !/^([a-zA-Z0-9_]([a-zA-Z0-9-_]{0,61}[a-zA-Z0-9_])?(\.[a-zA-Z0-9_]([a-zA-Z0-9-_]{0,61}[a-zA-Z0-9_])?)*)\.?$/.test(cleanValue)) {
+      setErrorMessage(`Tipe ${type} memerlukan format domain yang valid`);
+      return;
+    }
+
 
     try {
       setIsSubmitting(true);
@@ -185,9 +207,9 @@ export const RecordManager: React.FC<Props> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-12 gap-3 sm:gap-4">
             {/* Type */}
-            <div className="sm:col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">{t('col-type')}</label>
               <select
                 value={type}
@@ -203,7 +225,7 @@ export const RecordManager: React.FC<Props> = ({
             </div>
 
             {/* Name / Subdomain */}
-            <div className="sm:col-span-4">
+            <div className="col-span-2 sm:col-span-4">
               <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">
                 {t('col-name')} <span className="text-gray-400 font-normal">(@)</span>
               </label>
@@ -220,7 +242,7 @@ export const RecordManager: React.FC<Props> = ({
             </div>
 
             {/* Value */}
-            <div className="sm:col-span-4">
+            <div className="col-span-2 sm:col-span-4">
               <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">{t('col-value')}</label>
               <Input
                 type="text"
@@ -235,7 +257,7 @@ export const RecordManager: React.FC<Props> = ({
             </div>
 
             {/* TTL */}
-            <div className="sm:col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">{t('col-ttl')}</label>
               <select
                 value={ttl}

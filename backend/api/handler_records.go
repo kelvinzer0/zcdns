@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"zcdns-backend/db"
 
@@ -126,6 +128,8 @@ func (h *APIHandler) handleDeleteAllRecords(w http.ResponseWriter, r *http.Reque
 	h.triggerRecordChanged()
 }
 
+var hostnameRegex = regexp.MustCompile(`^(\*|@|[a-zA-Z0-9_]([a-zA-Z0-9-_]{0,61}[a-zA-Z0-9_])?(\.[a-zA-Z0-9_]([a-zA-Z0-9-_]{0,61}[a-zA-Z0-9_])?)*)$`)
+
 func (h *APIHandler) validateRecord(req RecordRequest) (name string, recordType string, value string, ttl int, err error) {
 	cleanType := strings.ToUpper(strings.TrimSpace(req.Type))
 	validTypes := map[string]bool{
@@ -142,13 +146,34 @@ func (h *APIHandler) validateRecord(req RecordRequest) (name string, recordType 
 		cleanName = "@"
 	}
 
+	if !hostnameRegex.MatchString(cleanName) {
+		return "", "", "", 0, fmt.Errorf("invalid record name format")
+	}
+
 	cleanValue := strings.TrimSpace(req.Value)
 	if cleanValue == "" {
 		return "", "", "", 0, fmt.Errorf("record value cannot be empty")
 	}
 
-	if cleanType == "TXT" && !strings.HasPrefix(cleanValue, "\"") {
-		cleanValue = fmt.Sprintf("\"%s\"", cleanValue)
+	switch cleanType {
+	case "A":
+		ip := net.ParseIP(cleanValue)
+		if ip == nil || ip.To4() == nil {
+			return "", "", "", 0, fmt.Errorf("value must be a valid IPv4 address")
+		}
+	case "AAAA":
+		ip := net.ParseIP(cleanValue)
+		if ip == nil || ip.To16() == nil {
+			return "", "", "", 0, fmt.Errorf("value must be a valid IPv6 address")
+		}
+	case "CNAME", "NS", "PTR":
+		if !hostnameRegex.MatchString(strings.TrimSuffix(strings.ToLower(cleanValue), ".")) {
+			return "", "", "", 0, fmt.Errorf("value must be a valid domain name")
+		}
+	case "TXT":
+		if !strings.HasPrefix(cleanValue, "\"") {
+			cleanValue = fmt.Sprintf("\"%s\"", cleanValue)
+		}
 	}
 
 	ttl = req.TTL
