@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"zcdns-backend/db"
 )
 
 func (h *APIHandler) handleInitVault(w http.ResponseWriter, r *http.Request, subdomain string) {
@@ -25,7 +26,7 @@ func (h *APIHandler) handleGetVaultBranches(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if branches == nil {
-		branches = make([]VaultBranch, 0) // need to use db.VaultBranch but this is not correct, wait, in api handler, types from db should be qualified
+		branches = make([]db.VaultBranch, 0)
 	}
 	writeJSON(w, http.StatusOK, branches)
 }

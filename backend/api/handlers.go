@@ -67,6 +67,10 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/parental", h.requireSubdomain(h.handleGetParental))
 	mux.HandleFunc("POST /api/parental", h.requireSubdomain(h.handleSaveParental))
 
+	mux.HandleFunc("POST /api/vault/init", h.requireSubdomain(h.handleInitVault))
+	mux.HandleFunc("GET /api/vault/branches", h.requireSubdomain(h.handleGetVaultBranches))
+	mux.HandleFunc("GET /api/vault/commits", h.requireSubdomain(h.handleGetVaultCommits))
+
 	mux.HandleFunc("GET /dns-query", h.handleDoH)
 	mux.HandleFunc("POST /dns-query", h.handleDoH)
 	mux.HandleFunc("GET /dns-query/{subdomain}", h.handleDoH)
