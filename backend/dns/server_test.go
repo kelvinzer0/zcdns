@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/miekg/dns"
 	"zcdns-backend/config"
 	"zcdns-backend/db"
+
+	"github.com/miekg/dns"
 )
 
 func TestAXFR(t *testing.T) {
