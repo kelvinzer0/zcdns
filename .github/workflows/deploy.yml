@@ -49,7 +49,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create zvault-latest dist/bin/* --title "zvault CLI (Latest)" --notes "Cross-platform zvault binary release for Linux, macOS, and Windows." --clobber || true
+          gh release create zvault-latest dist/bin/* --title "zvault CLI (Latest)" --notes "Cross-platform zvault binary release for Linux, macOS, and Windows." || \
+          gh release upload zvault-latest dist/bin/* --clobber || true
 
       - name: Setup IPv6 with WireGuard and Cloudflare WARP
         env:
