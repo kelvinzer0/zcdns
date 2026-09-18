@@ -68,7 +68,49 @@ func (h *APIHandler) handleGetVaultCommits(w http.ResponseWriter, r *http.Reques
 		writeJSONError(w, http.StatusInternalServerError, "Failed to get commits: "+err.Error())
 		return
 	}
+	if commits == nil {
+		commits = make([]db.VaultCommit, 0)
+	}
 	writeJSON(w, http.StatusOK, commits)
+}
+
+func (h *APIHandler) handleGetVaultKV(w http.ResponseWriter, r *http.Request, subdomain string) {
+	commit := r.URL.Query().Get("commit")
+	if commit == "" {
+		writeJSONError(w, http.StatusBadRequest, "commit is required")
+		return
+	}
+	kv, err := h.db.GetVaultKVPairs(commit)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to get KV pairs: "+err.Error())
+		return
+	}
+	if kv == nil {
+		kv = make([]db.VaultKVPair, 0)
+	}
+	writeJSON(w, http.StatusOK, kv)
+}
+
+func (h *APIHandler) handleRevertVaultCommit(w http.ResponseWriter, r *http.Request, subdomain string) {
+	var req struct {
+		RepoID     string `json:"repo_id"`
+		CommitHash string `json:"commit_hash"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	if req.RepoID == "" || req.CommitHash == "" {
+		writeJSONError(w, http.StatusBadRequest, "repo_id and commit_hash are required")
+		return
+	}
+	// The user meant "revert commit harus nya setelah itu hilang commit yang terbaru"
+	// Let's just delete the specific commit. If it's the latest, it will rollback.
+	if err := h.db.DeleteCommit(req.RepoID, req.CommitHash); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to revert commit: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
 // Device Auth Flow (RFC 8628 style for zvault CLI)

@@ -428,7 +428,7 @@ export function DashboardPage() {
           )}
 
           {activeTab === 'vault' && (
-            <VaultUI />
+            <VaultUI subdomain={session.subdomain!} />
           )}
         </div>
       </div>

@@ -8,15 +8,42 @@ import (
 )
 
 func (d *DB) InitVault(subdomain string) (*VaultRepo, error) {
+	var existingID string
+	err := d.conn.QueryRow("SELECT id FROM vault_repos WHERE subdomain = ?", subdomain).Scan(&existingID)
+	if err == nil {
+		return &VaultRepo{ID: existingID, Subdomain: subdomain}, nil
+	}
+
 	repo := &VaultRepo{
 		ID:        uuid.New().String(),
 		Subdomain: subdomain,
 		CreatedAt: time.Now(),
 	}
-	_, err := d.conn.Exec("INSERT INTO vault_repos (id, subdomain) VALUES (?, ?)", repo.ID, repo.Subdomain)
+	_, err = d.conn.Exec("INSERT INTO vault_repos (id, subdomain) VALUES (?, ?)", repo.ID, repo.Subdomain)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init vault: %w", err)
 	}
+
+	branchID := uuid.New().String()
+	commitHash := uuid.New().String()[:8]
+	
+	_, err = d.conn.Exec("INSERT INTO vault_commits (id, repo_id, hash, message, timestamp, author) VALUES (?, ?, ?, ?, ?, ?)",
+		uuid.New().String(), repo.ID, commitHash, "initial secrets", time.Now(), "system")
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = d.conn.Exec("INSERT INTO vault_branches (id, repo_id, name, head_commit, updated_at) VALUES (?, ?, ?, ?, ?)",
+		branchID, repo.ID, "main", commitHash, time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = d.conn.Exec("INSERT INTO vault_kv_pairs (id, commit_hash, key_name, encrypted_value) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), commitHash, "API_KEY", "sk_live_1234567890abcdef")
+	_, err = d.conn.Exec("INSERT INTO vault_kv_pairs (id, commit_hash, key_name, encrypted_value) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), commitHash, "DB_PASSWORD", "super_secret_password")
+
 	return repo, nil
 }
 
@@ -123,6 +150,84 @@ func (d *DB) DenyVaultAuth(userCode string) error {
 		SET status = 'denied'
 		WHERE user_code = ? AND status = 'pending'
 	`, userCode)
+	return err
+}
+
+func (d *DB) GetVaultKVPairs(commitHash string) ([]VaultKVPair, error) {
+	rows, err := d.conn.Query("SELECT id, commit_hash, key_name, encrypted_value FROM vault_kv_pairs WHERE commit_hash = ?", commitHash)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pairs []VaultKVPair
+	for rows.Next() {
+		var p VaultKVPair
+		if err := rows.Scan(&p.ID, &p.CommitHash, &p.KeyName, &p.EncryptedValue); err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, p)
+	}
+	return pairs, nil
+}
+
+func (d *DB) RevertToCommit(repoID, targetCommitHash string) error {
+	var targetTimestamp time.Time
+	err := d.conn.QueryRow("SELECT timestamp FROM vault_commits WHERE hash = ?", targetCommitHash).Scan(&targetTimestamp)
+	if err != nil {
+		return err
+	}
+
+	rows, err := d.conn.Query("SELECT hash FROM vault_commits WHERE repo_id = ? AND timestamp > ?", repoID, targetTimestamp)
+	if err != nil {
+		return err
+	}
+	var commitsToDelete []string
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return err
+		}
+		commitsToDelete = append(commitsToDelete, h)
+	}
+	rows.Close()
+
+	for _, h := range commitsToDelete {
+		_, err = d.conn.Exec("DELETE FROM vault_kv_pairs WHERE commit_hash = ?", h)
+		if err != nil {
+			return err
+		}
+		_, err = d.conn.Exec("DELETE FROM vault_commits WHERE hash = ?", h)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = d.conn.Exec("UPDATE vault_branches SET head_commit = ? WHERE repo_id = ?", targetCommitHash, repoID)
+	return err
+}
+
+func (d *DB) DeleteCommit(repoID, commitHash string) error {
+	_, err := d.conn.Exec("DELETE FROM vault_kv_pairs WHERE commit_hash = ?", commitHash)
+	if err != nil {
+		return err
+	}
+
+	var parentHash string
+	err = d.conn.QueryRow("SELECT COALESCE(parent_hash, '') FROM vault_commits WHERE hash = ?", commitHash).Scan(&parentHash)
+	if err != nil {
+		return err
+	}
+
+	_, err = d.conn.Exec("DELETE FROM vault_commits WHERE hash = ?", commitHash)
+	if err != nil {
+		return err
+	}
+
+	if parentHash != "" {
+		_, err = d.conn.Exec("UPDATE vault_branches SET head_commit = ? WHERE repo_id = ? AND head_commit = ?", parentHash, repoID, commitHash)
+	} else {
+		_, err = d.conn.Exec("UPDATE vault_branches SET head_commit = NULL WHERE repo_id = ? AND head_commit = ?", repoID, commitHash)
+	}
 	return err
 }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   GitCommit, 
   Key, 
@@ -17,26 +17,83 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 
-export function VaultUI() {
+export function VaultUI({ subdomain }: { subdomain: string }) {
+  const [branches, setBranches] = useState<any[]>([]);
+  const [commits, setCommits] = useState<any[]>([]);
+  const [secrets, setSecrets] = useState<any[]>([]);
+  
   const [selectedBranch, setSelectedBranch] = useState('main');
-  const [selectedCommit, setSelectedCommit] = useState(0);
+  const [selectedCommitIdx, setSelectedCommitIdx] = useState(0);
+  
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [repo, setRepo] = useState<any>(null);
 
-  const branches = ['main', 'production', 'staging'];
-  
-  const commits = [
-    { id: 0, hash: 'a1b2c3d', message: 'update production API key', author: 'user', time: '2 mins ago' },
-    { id: 1, hash: 'e4f5g6h', message: 'add database credentials', author: 'system', time: '1 hr ago' },
-    { id: 2, hash: 'i7j8k9l', message: 'initial secrets', author: 'user', time: '2 days ago' },
-  ];
+  useEffect(() => {
+    fetch('/api/vault/init', {
+      method: 'POST',
+      headers: { 'X-Subdomain': subdomain }
+    }).then(r => r.json()).then(data => {
+      setRepo(data);
+    });
+  }, [subdomain]);
 
-  const secrets = [
-    { key: 'API_KEY', value: 'sk_live_1234567890abcdef' },
-    { key: 'DB_PASSWORD', value: 'super_secret_password' },
-    { key: 'JWT_SECRET', value: 'my_jwt_secret_key' },
-  ];
+  useEffect(() => {
+    if (!repo) return;
+    fetch(`/api/vault/branches?repo_id=${repo.id}`, {
+      headers: { 'X-Subdomain': subdomain }
+    }).then(r => r.json()).then(data => {
+      setBranches(data || []);
+      if (data && data.length > 0) {
+        setSelectedBranch(data[0].name);
+      }
+    });
+    
+    fetch(`/api/vault/commits?repo_id=${repo.id}`, {
+      headers: { 'X-Subdomain': subdomain }
+    }).then(r => r.json()).then(data => {
+      setCommits(data || []);
+      if (data && data.length > 0) {
+        setSelectedCommitIdx(0);
+      }
+    });
+  }, [repo, subdomain]);
+
+  useEffect(() => {
+    if (commits.length > 0 && commits[selectedCommitIdx]) {
+      fetch(`/api/vault/kv?commit=${commits[selectedCommitIdx].hash}`, {
+        headers: { 'X-Subdomain': subdomain }
+      }).then(r => r.json()).then(data => {
+        setSecrets(data || []);
+      });
+    } else {
+      setSecrets([]);
+    }
+  }, [commits, selectedCommitIdx, subdomain]);
+
+  const handleRevertCommit = async () => {
+    if (!repo || commits.length === 0 || !commits[selectedCommitIdx]) return;
+    const commit = commits[selectedCommitIdx];
+    await fetch('/api/vault/revert', {
+      method: 'POST',
+      headers: { 
+        'X-Subdomain': subdomain,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        repo_id: repo.id,
+        commit_hash: commit.hash
+      })
+    });
+    // refresh commits
+    fetch(`/api/vault/commits?repo_id=${repo.id}`, {
+      headers: { 'X-Subdomain': subdomain }
+    }).then(r => r.json()).then(data => {
+      setCommits(data || []);
+      setSelectedCommitIdx(0);
+    });
+  };
 
   const downloadOptions = [
     {
@@ -147,8 +204,8 @@ export function VaultUI() {
               {commits.map((commit, index) => (
                 <div 
                   key={commit.id} 
-                  onClick={() => setSelectedCommit(index)}
-                  className={`p-3.5 cursor-pointer hover:bg-gray-50 transition-colors ${selectedCommit === index ? 'bg-green-50/50 border-l-4 border-l-green-600' : 'border-l-4 border-l-transparent'}`}
+                  onClick={() => setSelectedCommitIdx(index)}
+                  className={`p-3.5 cursor-pointer hover:bg-gray-50 transition-colors ${selectedCommitIdx === index ? 'bg-green-50/50 border-l-4 border-l-green-600' : 'border-l-4 border-l-transparent'}`}
                 >
                   <div className="flex items-start space-x-2.5">
                     <div className="mt-0.5 text-gray-400">
@@ -159,7 +216,7 @@ export function VaultUI() {
                       <div className="flex items-center mt-1 text-xs text-gray-500 space-x-2">
                         <span className="font-mono bg-gray-100 px-1 py-0.2 rounded text-[11px]">{commit.hash}</span>
                         <span>•</span>
-                        <span>{commit.time}</span>
+                        <span>{new Date(commit.timestamp).toLocaleString()}</span>
                       </div>
                     </div>
                   </div>
@@ -170,33 +227,35 @@ export function VaultUI() {
           
           {/* Right: Key-Value Pairs */}
           <div className="w-full md:w-2/3 bg-white flex flex-col flex-1 h-full overflow-hidden">
-            <div className="px-4 md:px-6 py-3 border-b border-gray-200 flex justify-between items-center bg-gray-50/50 sticky top-0 z-10">
-              <div>
-                <h3 className="text-sm font-bold text-gray-900">{commits[selectedCommit].message}</h3>
-                <p className="text-xs text-gray-500 mt-0.5 font-mono">commit {commits[selectedCommit].hash} ({selectedBranch})</p>
-              </div>
-              <Button variant="outline" size="sm" className="text-xs h-8 border-gray-300 text-gray-700 hover:text-black">
-                Revert Commit
-              </Button>
-            </div>
+            {commits.length > 0 && commits[selectedCommitIdx] ? (
+              <>
+                <div className="px-4 md:px-6 py-3 border-b border-gray-200 flex justify-between items-center bg-gray-50/50 sticky top-0 z-10">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900">{commits[selectedCommitIdx].message}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5 font-mono">commit {commits[selectedCommitIdx].hash} ({selectedBranch})</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleRevertCommit} className="text-xs h-8 border-gray-300 text-gray-700 hover:text-black">
+                    Revert Commit
+                  </Button>
+                </div>
 
-            <div className="p-4 md:p-6 overflow-y-auto flex-1">
-              <div className="space-y-3">
-                {secrets.map((secret) => {
-                  const isVisible = !!revealed[secret.key];
-                  return (
-                    <div key={secret.key} className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-                      <div className="w-full sm:w-1/3">
-                        <div className="flex items-center space-x-2 border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-mono text-gray-800 font-semibold truncate">
-                          <Key className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                          <span className="truncate">{secret.key}</span>
-                        </div>
+                <div className="p-4 md:p-6 overflow-y-auto flex-1">
+                  <div className="space-y-3">
+                    {secrets.map((secret) => {
+                      const isVisible = !!revealed[secret.key_name];
+                      return (
+                        <div key={secret.key_name} className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                          <div className="w-full sm:w-1/3">
+                            <div className="flex items-center space-x-2 border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-mono text-gray-800 font-semibold truncate">
+                              <Key className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                              <span className="truncate">{secret.key_name}</span>
+                            </div>
                       </div>
                       <div className="w-full sm:w-2/3 flex items-center gap-1.5">
                         <div className="relative flex-1">
                           <input 
                             type={isVisible ? "text" : "password"} 
-                            value={secret.value} 
+                            value={secret.encrypted_value} 
                             readOnly 
                             className="w-full border border-gray-200 px-3 py-2 text-xs font-mono text-gray-900 bg-white focus:outline-none" 
                           />
@@ -204,7 +263,7 @@ export function VaultUI() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => toggleReveal(secret.key)}
+                          onClick={() => toggleReveal(secret.key_name)}
                           className="h-8 px-2 text-gray-500 hover:text-gray-900"
                           title={isVisible ? "Hide secret" : "Reveal secret"}
                         >
@@ -230,6 +289,12 @@ export function VaultUI() {
                 </button>
               </div>
             </div>
+            </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
+                No commits found in this repository.
+              </div>
+            )}
           </div>
         </div>
       </div>
