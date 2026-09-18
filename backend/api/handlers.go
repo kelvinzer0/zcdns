@@ -98,8 +98,8 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/abuse", h.handleSubmitAbuse)
 
 	// ACME DNS-01 Challenge Management
-	mux.HandleFunc("POST /api/acme-challenge", h.handleCreateAcmeChallenge)
-	mux.HandleFunc("GET /api/acme-challenge", h.handleGetAcmeChallenges)
+	mux.HandleFunc("POST /api/acme-challenge", h.requireAdmin(h.handleCreateAcmeChallenge))
+	mux.HandleFunc("GET /api/acme-challenge", h.requireAdmin(h.handleGetAcmeChallenges))
 
 	// Admin Management Routes
 	mux.HandleFunc("POST /api/admin/login", h.handleAdminLogin)

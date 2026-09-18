@@ -46,6 +46,10 @@ func (h *APIHandler) handleGetVaultBranches(w http.ResponseWriter, r *http.Reque
 		writeJSONError(w, http.StatusBadRequest, "repo_id is required")
 		return
 	}
+	if !h.db.VerifyRepoOwnership(repoID, subdomain) {
+		writeJSONError(w, http.StatusForbidden, "Akses ditolak")
+		return
+	}
 	branches, err := h.db.GetBranches(repoID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "Failed to get branches: "+err.Error())
@@ -63,6 +67,10 @@ func (h *APIHandler) handleGetVaultCommits(w http.ResponseWriter, r *http.Reques
 		writeJSONError(w, http.StatusBadRequest, "repo_id is required")
 		return
 	}
+	if !h.db.VerifyRepoOwnership(repoID, subdomain) {
+		writeJSONError(w, http.StatusForbidden, "Akses ditolak")
+		return
+	}
 	commits, err := h.db.GetCommits(repoID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "Failed to get commits: "+err.Error())
@@ -78,6 +86,10 @@ func (h *APIHandler) handleGetVaultKV(w http.ResponseWriter, r *http.Request, su
 	commit := r.URL.Query().Get("commit")
 	if commit == "" {
 		writeJSONError(w, http.StatusBadRequest, "commit is required")
+		return
+	}
+	if !h.db.VerifyCommitOwnership(commit, subdomain) {
+		writeJSONError(w, http.StatusForbidden, "Akses ditolak")
 		return
 	}
 	kv, err := h.db.GetVaultKVPairs(commit)
@@ -102,6 +114,10 @@ func (h *APIHandler) handleRevertVaultCommit(w http.ResponseWriter, r *http.Requ
 	}
 	if req.RepoID == "" || req.CommitHash == "" {
 		writeJSONError(w, http.StatusBadRequest, "repo_id and commit_hash are required")
+		return
+	}
+	if !h.db.VerifyRepoOwnership(req.RepoID, subdomain) || !h.db.VerifyCommitOwnership(req.CommitHash, subdomain) {
+		writeJSONError(w, http.StatusForbidden, "Akses ditolak")
 		return
 	}
 	// The user meant "revert commit harus nya setelah itu hilang commit yang terbaru"
@@ -322,6 +338,10 @@ func (h *APIHandler) handleSyncVault(w http.ResponseWriter, r *http.Request, sub
 	}
 	if req.RepoID == "" {
 		writeJSONError(w, http.StatusBadRequest, "repo_id is required")
+		return
+	}
+	if !h.db.VerifyRepoOwnership(req.RepoID, subdomain) {
+		writeJSONError(w, http.StatusForbidden, "Akses ditolak")
 		return
 	}
 	

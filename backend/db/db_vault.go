@@ -260,3 +260,21 @@ func (d *DB) SyncVault(repoID string, commits []VaultCommit, kvPairs []VaultKVPa
 
 	return tx.Commit()
 }
+
+func (d *DB) VerifyRepoOwnership(repoID, subdomain string) bool {
+	var owner string
+	err := d.conn.QueryRow("SELECT subdomain FROM vault_repos WHERE id = ?", repoID).Scan(&owner)
+	if err != nil {
+		return false
+	}
+	return owner == subdomain
+}
+
+func (d *DB) VerifyCommitOwnership(commitHash, subdomain string) bool {
+	var owner string
+	err := d.conn.QueryRow("SELECT r.subdomain FROM vault_repos r JOIN vault_commits c ON r.id = c.repo_id WHERE c.hash = ?", commitHash).Scan(&owner)
+	if err != nil {
+		return false
+	}
+	return owner == subdomain
+}
