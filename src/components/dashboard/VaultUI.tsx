@@ -78,7 +78,7 @@ export function VaultUI() {
   };
 
   return (
-    <div className="space-y-4 mt-6">
+    <div className="space-y-6 mt-6">
       {/* CLI Quick Download & Banner */}
       <div className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 text-white rounded-none border border-gray-800 p-4 shadow-sm">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -119,16 +119,6 @@ export function VaultUI() {
           </div>
 
           <div className="flex items-center space-x-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowDownloadModal(true)}
-              className="text-xs font-medium border-gray-300 text-gray-700 hover:text-black gap-1.5 h-8"
-            >
-              <Download className="w-3.5 h-3.5" />
-              CLI Binaries
-            </Button>
-
             <div className="flex items-center space-x-2">
               <span className="text-xs text-gray-500 font-medium">Branch:</span>
               <div className="relative">
@@ -146,10 +136,10 @@ export function VaultUI() {
         </div>
         
         {/* Two-Column Explorer */}
-        <div className="flex flex-col md:flex-row h-[550px]">
+        <div className="flex flex-col md:flex-row min-h-[550px] md:h-[550px]">
           {/* Left: Commit History */}
-          <div className="w-full md:w-1/3 border-r border-gray-200 bg-white overflow-y-auto">
-            <div className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 sticky top-0 flex items-center justify-between">
+          <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-gray-200 bg-white overflow-y-auto max-h-[250px] md:max-h-none">
+            <div className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 sticky top-0 flex items-center justify-between z-10">
               <h3 className="text-xs font-bold uppercase tracking-wider text-gray-600">Commit History</h3>
               <span className="text-xs text-gray-400 font-mono">{commits.length} commits</span>
             </div>
@@ -179,8 +169,8 @@ export function VaultUI() {
           </div>
           
           {/* Right: Key-Value Pairs */}
-          <div className="w-full md:w-2/3 bg-white flex flex-col h-full overflow-hidden">
-            <div className="px-6 py-3 border-b border-gray-200 flex justify-between items-center bg-gray-50/50 sticky top-0 z-10">
+          <div className="w-full md:w-2/3 bg-white flex flex-col flex-1 h-full overflow-hidden">
+            <div className="px-4 md:px-6 py-3 border-b border-gray-200 flex justify-between items-center bg-gray-50/50 sticky top-0 z-10">
               <div>
                 <h3 className="text-sm font-bold text-gray-900">{commits[selectedCommit].message}</h3>
                 <p className="text-xs text-gray-500 mt-0.5 font-mono">commit {commits[selectedCommit].hash} ({selectedBranch})</p>
@@ -190,7 +180,7 @@ export function VaultUI() {
               </Button>
             </div>
 
-            <div className="p-6 overflow-y-auto flex-1">
+            <div className="p-4 md:p-6 overflow-y-auto flex-1">
               <div className="space-y-3">
                 {secrets.map((secret) => {
                   const isVisible = !!revealed[secret.key];
@@ -357,11 +347,13 @@ export function VaultUI() {
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-2">Quick Start Commands</h4>
                 <div className="bg-gray-900 text-gray-100 p-3.5 font-mono text-xs space-y-1.5 overflow-x-auto">
-                  <div className="text-gray-400"># 1. Clone your vault repo</div>
-                  <div className="text-green-400">zvault clone https://zcdns.id/vault/your-subdomain</div>
-                  <div className="text-gray-400 mt-2"># 2. Add or update secrets</div>
+                  <div className="text-gray-400"># 1. Login to your account</div>
+                  <div className="text-green-400">zvault login</div>
+                  <div className="text-gray-400 mt-2"># 2. Clone your vault repo</div>
+                  <div className="text-green-400">zvault clone https://zcdns.id/vault/your-repo</div>
+                  <div className="text-gray-400 mt-2"># 3. Add or update secrets</div>
                   <div className="text-green-400">zvault set API_KEY=sk_live_...</div>
-                  <div className="text-gray-400 mt-2"># 3. Commit and push</div>
+                  <div className="text-gray-400 mt-2"># 4. Commit and push</div>
                   <div className="text-green-400">zvault commit -m &quot;update production API key&quot;</div>
                   <div className="text-green-400">zvault push</div>
                 </div>
