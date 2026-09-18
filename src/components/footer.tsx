@@ -1,8 +1,39 @@
-import { Link } from 'react-router-dom'; // Changed to react-router-dom Link
-import { useTranslations } from '../lib/useTranslations'; // Adjusted import path for placeholder
+import { Link } from 'react-router-dom';
+import { useTranslations } from '../lib/useTranslations';
+import { useEffect, useState } from 'react';
 
 export function Footer() {
   const t = useTranslations('Footer');
+  const [pingData, setPingData] = useState<{ status: 'loading' | 'online' | 'offline', latency: number | null }>({ status: 'loading', latency: null });
+
+  useEffect(() => {
+    let isMounted = true;
+    const pingAPI = async () => {
+      try {
+        const start = performance.now();
+        const res = await fetch('/api/health');
+        if (res.ok) {
+          const end = performance.now();
+          if (isMounted) {
+            setPingData({ status: 'online', latency: Math.round(end - start) });
+          }
+        } else {
+          if (isMounted) setPingData({ status: 'offline', latency: null });
+        }
+      } catch (e) {
+        if (isMounted) setPingData({ status: 'offline', latency: null });
+      }
+    };
+    pingAPI();
+    
+    // Periodically check every 60 seconds
+    const interval = setInterval(pingAPI, 60000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   return (
     <footer className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -13,7 +44,7 @@ export function Footer() {
             <div className="space-y-6">
               <Link to="/" className="inline-flex items-center group relative w-max">
                 <img
-                  src="/zcdns-light-logo.svg"  // Replaced next/image with img tag, using a placeholder for now
+                  src="/zcdns-light-logo.svg"
                   alt={t('zerocentdns-logo')}
                   className="transition-transform duration-300 group-hover:rotate-12 h-24 w-auto"
                 />
@@ -38,8 +69,6 @@ export function Footer() {
                 </a>
               </div>
             </div>
-
-
           </div>
         </div>
 
@@ -50,10 +79,23 @@ export function Footer() {
               <span>Copyright © {new Date().getFullYear()}</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500  animate-pulse rounded-full"></div>
-              <span>{t('service-active')}</span> 
+              {pingData.status === 'online' ? (
+                <>
+                  <div className="w-2 h-2 bg-green-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+                  <span>{t('service-active')} ({pingData.latency}ms)</span>
+                </>
+              ) : pingData.status === 'offline' ? (
+                <>
+                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                  <span className="text-red-400">Service Degraded</span>
+                </>
+              ) : (
+                <>
+                  <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+                  <span>Checking...</span>
+                </>
+              )}
             </div>
-            
           </div>
         </div>
       </div>
