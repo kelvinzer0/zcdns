@@ -7,8 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"zcdns-backend/db"
+
+	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
