@@ -8,6 +8,8 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Code
@@ -32,6 +34,22 @@ jobs:
         run: |
           cd backend
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o zcdns-server .
+
+      - name: Build ZVault CLI Binaries
+        run: |
+          cd zvault-cli
+          mkdir -p ../dist/bin
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/bin/zvault-linux-amd64 .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/bin/zvault-linux-arm64 .
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/bin/zvault-windows-amd64.exe .
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/bin/zvault-macos-amd64 .
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/bin/zvault-macos-arm64 .
+
+      - name: Publish ZVault Release to GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create zvault-latest dist/bin/* --title "zvault CLI (Latest)" --notes "Cross-platform zvault binary release for Linux, macOS, and Windows." --clobber || true
 
       - name: Setup IPv6 with WireGuard and Cloudflare WARP
         env:

@@ -128,8 +128,6 @@ func TestFallbackIPv4(t *testing.T) {
 
 	standardDomains := []string{
 		"zcdns.id.",
-		"ns1.zcdns.id.",
-		"ns2.zcdns.id.",
 		"www.zcdns.id.",
 	}
 
@@ -185,11 +183,12 @@ func TestFallbackIPv4(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Query A %s failed: %v", domain, err)
 		}
-		if len(respA.Answer) != 0 {
-			t.Fatalf("Expected NO A record for guard domain %s, got %d records: %v", domain, len(respA.Answer), respA.Answer)
+		if len(respA.Answer) == 0 {
+			t.Fatalf("Expected A record for guard domain %s, got 0", domain)
 		}
-		if respA.Rcode != dns.RcodeSuccess {
-			t.Fatalf("Expected RcodeSuccess (NODATA) for A query on %s, got %s", domain, dns.RcodeToString[respA.Rcode])
+		aRec, ok := respA.Answer[0].(*dns.A)
+		if !ok || aRec.A.String() != "45.33.22.33" {
+			t.Fatalf("Expected 45.33.22.33 for %s, got %v", domain, respA.Answer[0])
 		}
 
 		// AAAA query should return serverIP

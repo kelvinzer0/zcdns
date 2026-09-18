@@ -26,15 +26,29 @@ func (s *Server) handleNameserverDomain(m *dns.Msg, q dns.Question, name string)
 
 	switch q.Qtype {
 	case dns.TypeA:
-		// NODATA — ns1/ns2 have no IPv4 address
-		m.SetRcode(m, dns.RcodeSuccess)
-		m.Ns = append(m.Ns, soa)
+		// NODATA for ns1/ns2 — they have no IPv4 address
+		// But www should return the fallback IPv4!
+		if s.GetFallbackIPv4() != nil && target == dns.Fqdn("www."+s.cfg.BaseDomain) {
+			m.Answer = append(m.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: target, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+				A:   s.GetFallbackIPv4(),
+			})
+		} else {
+			m.SetRcode(m, dns.RcodeSuccess)
+			m.Ns = append(m.Ns, soa)
+		}
 	case dns.TypeAAAA:
 		m.Answer = append(m.Answer, &dns.AAAA{
 			Hdr:  dns.RR_Header{Name: target, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
 			AAAA: serverIP,
 		})
 	case dns.TypeANY:
+		if s.GetFallbackIPv4() != nil && target == dns.Fqdn("www."+s.cfg.BaseDomain) {
+			m.Answer = append(m.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: target, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+				A:   s.GetFallbackIPv4(),
+			})
+		}
 		m.Answer = append(m.Answer, &dns.AAAA{
 			Hdr:  dns.RR_Header{Name: target, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
 			AAAA: serverIP,

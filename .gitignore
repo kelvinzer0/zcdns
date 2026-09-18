@@ -32,3 +32,4 @@ backend/zcdns-backend
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+public/bin/
