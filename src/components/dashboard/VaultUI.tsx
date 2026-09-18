@@ -184,7 +184,7 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
                   onChange={(e) => setSelectedBranch(e.target.value)}
                   className="appearance-none bg-white border border-gray-300 text-gray-700 text-xs py-1.5 pl-2.5 pr-7 rounded-none focus:outline-none focus:ring-1 focus:ring-green-500 font-medium cursor-pointer"
                 >
-                  {branches.map(b => <option key={b} value={b}>{b}</option>)}
+                  {branches.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
                 </select>
                 <ChevronDown className="w-3.5 h-3.5 text-gray-500 absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none" />
               </div>
