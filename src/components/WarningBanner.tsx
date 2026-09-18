@@ -27,9 +27,9 @@ export function WarningBanner() {
   return (
     <div className="sticky top-0 z-50 bg-red-100 border-b-2 border-red-200 text-red-900 py-3 px-4">
       <div className="container mx-auto flex items-center justify-between gap-4">
-        <div className="flex flex-1 items-center gap-3">
-          <AlertTriangle className="h-5 w-5 flex-shrink-0 text-red-500" />
-          <p className="text-sm leading-normal my-auto">
+        <div className="flex flex-1 items-start sm:items-center gap-3">
+          <AlertTriangle className="h-5 w-5 flex-shrink-0 text-red-500 mt-0.5 sm:mt-0" />
+          <p className="text-sm leading-snug mb-0">
             {t('disclaimer_part1')}
             <Link to={`/${locale}/abuse-report`} className="font-semibold underline hover:text-red-950">
               {t('disclaimer_link')}
