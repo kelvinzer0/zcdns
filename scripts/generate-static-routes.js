@@ -17,6 +17,7 @@ const COMPONENT_PAGE_ROUTES = [
   '/abuse-report',
   '/dashboard',
   '/admin',
+  '/vault/auth',
 ];
 // --- Akhir Konfigurasi ---
 

@@ -121,6 +121,18 @@ func InitDB(dbPath string) (*DB, error) {
 		UNIQUE(commit_hash, key_name)
 	);
 
+	CREATE TABLE IF NOT EXISTS vault_auth_requests (
+		device_code TEXT PRIMARY KEY,
+		user_code TEXT UNIQUE NOT NULL,
+		subdomain TEXT,
+		token TEXT,
+		status TEXT DEFAULT 'pending',
+		expires_at TIMESTAMP NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_vault_auth_user_code ON vault_auth_requests(user_code);
+
 	CREATE INDEX IF NOT EXISTS idx_records_subdomain ON records(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_records_lookup ON records(subdomain, name, type);
 	CREATE INDEX IF NOT EXISTS idx_requests_subdomain ON requests(subdomain);

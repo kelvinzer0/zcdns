@@ -61,3 +61,68 @@ func (d *DB) GetCommits(repoID string) ([]VaultCommit, error) {
 	}
 	return commits, nil
 }
+
+func (d *DB) CreateVaultAuthRequest(req *VaultAuthRequest) error {
+	_, err := d.conn.Exec(`
+		INSERT INTO vault_auth_requests (device_code, user_code, status, expires_at)
+		VALUES (?, ?, ?, ?)
+	`, req.DeviceCode, req.UserCode, req.Status, req.ExpiresAt)
+	return err
+}
+
+func (d *DB) GetVaultAuthByDeviceCode(deviceCode string) (*VaultAuthRequest, error) {
+	var req VaultAuthRequest
+	var sub, tok *string
+	err := d.conn.QueryRow(`
+		SELECT device_code, user_code, subdomain, token, status, expires_at, created_at
+		FROM vault_auth_requests WHERE device_code = ?
+	`, deviceCode).Scan(&req.DeviceCode, &req.UserCode, &sub, &tok, &req.Status, &req.ExpiresAt, &req.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if sub != nil {
+		req.Subdomain = *sub
+	}
+	if tok != nil {
+		req.Token = *tok
+	}
+	return &req, nil
+}
+
+func (d *DB) GetVaultAuthByUserCode(userCode string) (*VaultAuthRequest, error) {
+	var req VaultAuthRequest
+	var sub, tok *string
+	err := d.conn.QueryRow(`
+		SELECT device_code, user_code, subdomain, token, status, expires_at, created_at
+		FROM vault_auth_requests WHERE user_code = ?
+	`, userCode).Scan(&req.DeviceCode, &req.UserCode, &sub, &tok, &req.Status, &req.ExpiresAt, &req.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if sub != nil {
+		req.Subdomain = *sub
+	}
+	if tok != nil {
+		req.Token = *tok
+	}
+	return &req, nil
+}
+
+func (d *DB) ApproveVaultAuth(userCode, subdomain, token string) error {
+	_, err := d.conn.Exec(`
+		UPDATE vault_auth_requests
+		SET status = 'approved', subdomain = ?, token = ?
+		WHERE user_code = ? AND status = 'pending'
+	`, subdomain, token, userCode)
+	return err
+}
+
+func (d *DB) DenyVaultAuth(userCode string) error {
+	_, err := d.conn.Exec(`
+		UPDATE vault_auth_requests
+		SET status = 'denied'
+		WHERE user_code = ? AND status = 'pending'
+	`, userCode)
+	return err
+}
+

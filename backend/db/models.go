@@ -100,3 +100,13 @@ type VaultKVPair struct {
 	EncryptedValue string `json:"encrypted_value"`
 }
 
+type VaultAuthRequest struct {
+	DeviceCode string    `json:"device_code"`
+	UserCode   string    `json:"user_code"`
+	Subdomain  string    `json:"subdomain"`
+	Token      string    `json:"token"`
+	Status     string    `json:"status"` // pending, approved, denied, expired
+	ExpiresAt  time.Time `json:"expires_at"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+

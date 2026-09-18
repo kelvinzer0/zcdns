@@ -1,9 +1,35 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
+	"time"
+
 	"zcdns-backend/db"
+
+	"github.com/google/uuid"
 )
+
+func generateUserCode() string {
+	const charset = "BCDFGHJKLMNPQRSTVWXYZ23456789"
+	bytes := make([]byte, 8)
+	_, _ = rand.Read(bytes)
+	result := make([]byte, 8)
+	for i, b := range bytes {
+		result[i] = charset[int(b)%len(charset)]
+	}
+	return fmt.Sprintf("%s-%s", string(result[:4]), string(result[4:]))
+}
+
+func generateVaultToken() string {
+	b := make([]byte, 24)
+	_, _ = rand.Read(b)
+	return "zvt_" + hex.EncodeToString(b)
+}
 
 func (h *APIHandler) handleInitVault(w http.ResponseWriter, r *http.Request, subdomain string) {
 	repo, err := h.db.InitVault(subdomain)
@@ -43,4 +69,204 @@ func (h *APIHandler) handleGetVaultCommits(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, commits)
+}
+
+// Device Auth Flow (RFC 8628 style for zvault CLI)
+
+func (h *APIHandler) handleVaultDeviceAuth(w http.ResponseWriter, r *http.Request) {
+	h.setCorsHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	deviceCode := uuid.New().String()
+	userCode := generateUserCode()
+	expiresAt := time.Now().Add(10 * time.Minute)
+
+	req := &db.VaultAuthRequest{
+		DeviceCode: deviceCode,
+		UserCode:   userCode,
+		Status:     "pending",
+		ExpiresAt:  expiresAt,
+	}
+
+	if err := h.db.CreateVaultAuthRequest(req); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to create device auth: "+err.Error())
+		return
+	}
+
+	host := r.Host
+	if host == "" {
+		host = "zcdns.id"
+	}
+	// normalize host for clean display
+	if !strings.Contains(host, "zcdns.id") && !strings.Contains(host, "localhost") {
+		host = "zcdns.id"
+	}
+
+	scheme := "https"
+	if strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") {
+		scheme = "http"
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"device_code":               deviceCode,
+		"user_code":                 userCode,
+		"verification_uri":          fmt.Sprintf("%s://%s/vault/auth", scheme, host),
+		"verification_uri_complete": fmt.Sprintf("%s://%s/vault/auth?code=%s", scheme, host, userCode),
+		"expires_in":                600,
+		"interval":                  2,
+	})
+}
+
+type PollRequest struct {
+	DeviceCode string `json:"device_code"`
+}
+
+func (h *APIHandler) handleVaultPollAuth(w http.ResponseWriter, r *http.Request) {
+	h.setCorsHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var req PollRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DeviceCode == "" {
+		writeJSONError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	authReq, err := h.db.GetVaultAuthByDeviceCode(req.DeviceCode)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, "Authentication request not found")
+		return
+	}
+
+	if time.Now().After(authReq.ExpiresAt) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "expired",
+			"error":  "expired_token",
+		})
+		return
+	}
+
+	if authReq.Status == "approved" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":    "approved",
+			"token":     authReq.Token,
+			"subdomain": authReq.Subdomain,
+		})
+		return
+	}
+
+	if authReq.Status == "denied" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "denied",
+			"error":  "access_denied",
+		})
+		return
+	}
+
+	// Still pending
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "pending",
+	})
+}
+
+func (h *APIHandler) handleVaultGetAuthInfo(w http.ResponseWriter, r *http.Request) {
+	h.setCorsHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	code := strings.TrimSpace(strings.ToUpper(r.URL.Query().Get("code")))
+	if code == "" {
+		writeJSONError(w, http.StatusBadRequest, "code is required")
+		return
+	}
+
+	authReq, err := h.db.GetVaultAuthByUserCode(code)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, "Kode otentikasi tidak ditemukan")
+		return
+	}
+
+	isExpired := time.Now().After(authReq.ExpiresAt)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user_code":  authReq.UserCode,
+		"status":     authReq.Status,
+		"is_expired": isExpired,
+		"subdomain":  authReq.Subdomain,
+	})
+}
+
+type VerifyRequest struct {
+	UserCode  string `json:"user_code"`
+	Action    string `json:"action"` // "approve" or "deny"
+	Subdomain string `json:"subdomain"`
+}
+
+func (h *APIHandler) handleVaultVerifyAuth(w http.ResponseWriter, r *http.Request) {
+	h.setCorsHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var req VerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	code := strings.TrimSpace(strings.ToUpper(req.UserCode))
+	if code == "" {
+		writeJSONError(w, http.StatusBadRequest, "user_code is required")
+		return
+	}
+
+	authReq, err := h.db.GetVaultAuthByUserCode(code)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, "Otentikasi tidak ditemukan")
+		return
+	}
+
+	if time.Now().After(authReq.ExpiresAt) {
+		writeJSONError(w, http.StatusBadRequest, "Kode otentikasi telah kadaluarsa")
+		return
+	}
+
+	if authReq.Status != "pending" {
+		writeJSONError(w, http.StatusBadRequest, "Kode ini sudah diproses sebelumnya ("+authReq.Status+")")
+		return
+	}
+
+	if req.Action == "deny" {
+		_ = h.db.DenyVaultAuth(code)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": true,
+			"status":  "denied",
+		})
+		return
+	}
+
+	sub := strings.TrimSpace(strings.ToLower(req.Subdomain))
+	if sub == "" {
+		writeJSONError(w, http.StatusBadRequest, "Subdomain profil diperlukan untuk otentikasi")
+		return
+	}
+
+	token := generateVaultToken()
+	if err := h.db.ApproveVaultAuth(code, sub, token); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal menyetujui otentikasi: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":   true,
+		"status":    "approved",
+		"subdomain": sub,
+	})
 }

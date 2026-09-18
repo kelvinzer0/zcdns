@@ -13,6 +13,7 @@ import { MobileMenu } from './mobile-menu';
 import { Partners } from './partners';
 import { Seo } from './Seo';
 import { Statistics } from './Statistics';
+import { VaultAuthPage } from './VaultAuthPage';
 import { routing } from '../i18n/routing';
 import { useState } from 'react';
 
@@ -80,6 +81,7 @@ export function LocalizedLayout() {
           <Route path="/abuse-report" element={<AbusePage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/vault/auth" element={<VaultAuthPage />} />
           <Route path="/docs/*" element={<DocPageWrapper />} />
           <Route path="/*" element={<Navigate to={`/${locale}`} replace />} />
         </Routes>
