@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { Shield, Terminal, CheckCircle, XCircle, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
 import { Button } from './ui/button';
+import { dashboardApi } from './dashboard/api';
 
 export function VaultAuthPage() {
   const [searchParams] = useSearchParams();
@@ -12,19 +13,13 @@ export function VaultAuthPage() {
   const [status, setStatus] = useState<'idle' | 'checking' | 'ready' | 'submitting' | 'approved' | 'denied' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Load existing session subdomain from localStorage if available
+  // Load existing session from backend
   useEffect(() => {
-    try {
-      const savedSession = localStorage.getItem('zcdns_session');
-      if (savedSession) {
-        const parsed = JSON.parse(savedSession);
-        if (parsed?.subdomain) {
-          setSubdomain(parsed.subdomain);
-        }
+    dashboardApi.getSession().then((session) => {
+      if (session && session.subdomain) {
+        setSubdomain(session.subdomain);
       }
-    } catch {
-      // ignore
-    }
+    }).catch(() => {});
   }, []);
 
   // If code is in URL, automatically check it
