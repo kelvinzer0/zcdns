@@ -1,10 +1,8 @@
 import { useState } from 'react';
 import { GitCommit, Key, Shield, ChevronDown } from 'lucide-react';
 import { Button } from '../ui/button';
-import { useTranslations } from '../../lib/useTranslations';
 
 export function VaultUI() {
-  const t = useTranslations('Dashboard');
   const [selectedBranch, setSelectedBranch] = useState('main');
   const [selectedCommit, setSelectedCommit] = useState(0);
 
