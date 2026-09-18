@@ -138,3 +138,10 @@ pre {
   white-space: pre-wrap !important;
   word-break: break-word !important;
 }
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
