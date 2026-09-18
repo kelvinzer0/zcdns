@@ -17,7 +17,13 @@ func cmdLog() {
 		return
 	}
 
-	req, _ := http.NewRequest("GET", apiBase+"/vault/commits", nil)
+	repoID, err := getRepoID(cfg)
+	if err != nil || repoID == "" {
+		fmt.Println("Failed to get remote repository ID")
+		return
+	}
+
+	req, _ := http.NewRequest("GET", apiBase+"/vault/commits?repo_id="+repoID, nil)
 	req.Header.Set("Authorization", "Bearer "+cfg.Token)
 	req.Header.Set("X-Subdomain", cfg.Subdomain)
 
@@ -64,7 +70,13 @@ func cmdBranch(args []string) {
 
 	if len(args) == 0 {
 		// List branches
-		req, _ := http.NewRequest("GET", apiBase+"/vault/branches", nil)
+		repoID, err := getRepoID(cfg)
+		if err != nil || repoID == "" {
+			fmt.Println("Failed to get remote repository ID")
+			return
+		}
+
+		req, _ := http.NewRequest("GET", apiBase+"/vault/branches?repo_id="+repoID, nil)
 		req.Header.Set("Authorization", "Bearer "+cfg.Token)
 		req.Header.Set("X-Subdomain", cfg.Subdomain)
 

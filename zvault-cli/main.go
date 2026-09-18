@@ -362,6 +362,62 @@ func cmdPush() {
 }
 
 func cmdPull() {
-	// Dummy pull
-	fmt.Println("Pull not fully implemented in stub, use push first.")
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Println("Please run 'zvault login' first.")
+		return
+	}
+
+	repoID, err := getRepoID(cfg)
+	if err != nil || repoID == "" {
+		fmt.Println("Failed to get remote repository ID")
+		return
+	}
+
+	// 1. Get latest commits
+	req, _ := http.NewRequest("GET", apiBase+"/vault/commits?repo_id="+repoID, nil)
+	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	req.Header.Set("X-Subdomain", cfg.Subdomain)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		fmt.Println("Failed to fetch remote commits")
+		return
+	}
+	defer resp.Body.Close()
+	var commits []VaultCommit
+	json.NewDecoder(resp.Body).Decode(&commits)
+	
+	if len(commits) == 0 {
+		fmt.Println("Remote repository is empty.")
+		return
+	}
+	latestCommit := commits[0].Hash
+
+	// 2. Fetch KV pairs for the latest commit
+	kvReq, _ := http.NewRequest("GET", apiBase+"/vault/kv?commit="+latestCommit, nil)
+	kvReq.Header.Set("Authorization", "Bearer "+cfg.Token)
+	kvReq.Header.Set("X-Subdomain", cfg.Subdomain)
+	kvResp, err := client.Do(kvReq)
+	if err != nil || kvResp.StatusCode != 200 {
+		fmt.Println("Failed to fetch remote KV pairs")
+		return
+	}
+	defer kvResp.Body.Close()
+	var pairs []VaultKVPair
+	json.NewDecoder(kvResp.Body).Decode(&pairs)
+
+	// 3. Save to local working tree
+	initProject()
+	working := make(map[string]string)
+	for _, p := range pairs {
+		working[p.KeyName] = p.EncryptedValue
+	}
+	
+	wb, _ := json.MarshalIndent(working, "", "  ")
+	os.WriteFile(".zvault/working.json", wb, 0644)
+	os.WriteFile(".zvault/head.json", wb, 0644)
+	os.WriteFile(".zvault/head_commit", []byte(latestCommit), 0644)
+
+	fmt.Printf("Successfully pulled latest changes (commit %s).\n", latestCommit)
 }
