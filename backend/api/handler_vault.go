@@ -250,13 +250,7 @@ type VerifyRequest struct {
 	Subdomain string `json:"subdomain"`
 }
 
-func (h *APIHandler) handleVaultVerifyAuth(w http.ResponseWriter, r *http.Request) {
-	h.setCorsHeaders(w)
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
+func (h *APIHandler) handleVaultVerifyAuth(w http.ResponseWriter, r *http.Request, sessionSubdomain string) {
 	var req VerifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "Invalid JSON payload")
@@ -294,9 +288,9 @@ func (h *APIHandler) handleVaultVerifyAuth(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	sub := strings.TrimSpace(strings.ToLower(req.Subdomain))
+	sub := strings.TrimSpace(strings.ToLower(sessionSubdomain))
 	if sub == "" {
-		writeJSONError(w, http.StatusBadRequest, "Subdomain profil diperlukan untuk otentikasi")
+		writeJSONError(w, http.StatusUnauthorized, "Sesi login tidak valid")
 		return
 	}
 

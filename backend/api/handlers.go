@@ -77,7 +77,7 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/vault/auth/device", h.handleVaultDeviceAuth)
 	mux.HandleFunc("POST /api/vault/auth/poll", h.handleVaultPollAuth)
 	mux.HandleFunc("GET /api/vault/auth/info", h.handleVaultGetAuthInfo)
-	mux.HandleFunc("POST /api/vault/auth/verify", h.handleVaultVerifyAuth)
+	mux.HandleFunc("POST /api/vault/auth/verify", h.requireSubdomain(h.handleVaultVerifyAuth))
 
 	mux.HandleFunc("GET /dns-query", h.handleDoH)
 	mux.HandleFunc("POST /dns-query", h.handleDoH)

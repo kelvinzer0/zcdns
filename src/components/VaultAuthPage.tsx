@@ -208,25 +208,27 @@ export function VaultAuthPage() {
               </div>
             </div>
 
-            {/* Subdomain profile selection */}
+            {/* Subdomain profile display */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-1">
-                Grant Access for Subdomain
+                Granting Access For
               </label>
-              <div className="flex items-center">
-                <input
-                  type="text"
-                  value={subdomain}
-                  onChange={(e) => setSubdomain(e.target.value.toLowerCase())}
-                  placeholder="e.g. seal13"
-                  className="flex-1 border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 focus:outline-none focus:ring-1 focus:ring-green-600 rounded-none"
-                />
-                <span className="bg-gray-100 border border-l-0 border-gray-300 px-3 py-2 text-xs font-mono text-gray-500">
-                  .zcdns.id
-                </span>
-              </div>
+              {subdomain ? (
+                <div className="flex items-center">
+                  <div className="flex-1 bg-gray-50 border border-gray-300 px-3 py-2 text-sm font-mono text-gray-700">
+                    {subdomain}
+                  </div>
+                  <span className="bg-gray-100 border border-l-0 border-gray-300 px-3 py-2 text-sm font-mono text-gray-500">
+                    .zcdns.id
+                  </span>
+                </div>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-700 text-xs">
+                  <span className="font-semibold">Sesi tidak ditemukan!</span> Anda harus <Link to="/" className="underline font-bold hover:text-amber-800">login</Link> terlebih dahulu untuk memberi izin akses.
+                </div>
+              )}
               <p className="text-[11px] text-gray-500 mt-1">
-                The zvault CLI will manage secrets for this specific vault repository.
+                The zvault CLI will be permanently bound to this specific vault repository.
               </p>
             </div>
 
