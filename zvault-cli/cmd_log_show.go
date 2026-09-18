@@ -85,6 +85,43 @@ func cmdBranch(args []string) {
 				fmt.Printf("  %s\n", name)
 			}
 		}
+	} else if len(args) == 2 && (args[0] == "-d" || args[0] == "--delete") {
+		branchName := args[1]
+		if branchName == "main" {
+			fmt.Println("Cannot delete main branch.")
+			return
+		}
+		
+		// Get repo_id from init
+		req, _ := http.NewRequest("POST", apiBase+"/vault/init", nil)
+		req.Header.Set("Authorization", "Bearer "+cfg.Token)
+		req.Header.Set("X-Subdomain", cfg.Subdomain)
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			fmt.Println("Error fetching repo ID:", err)
+			return
+		}
+		var initResp map[string]any
+		json.NewDecoder(resp.Body).Decode(&initResp)
+		resp.Body.Close()
+		repoID, _ := initResp["id"].(string)
+
+		delReq, _ := http.NewRequest("DELETE", apiBase+"/vault/branches?repo_id="+repoID+"&name="+branchName, nil)
+		delReq.Header.Set("Authorization", "Bearer "+cfg.Token)
+		delReq.Header.Set("X-Subdomain", cfg.Subdomain)
+		delResp, err := client.Do(delReq)
+		if err != nil {
+			fmt.Println("Error deleting branch:", err)
+			return
+		}
+		defer delResp.Body.Close()
+		if delResp.StatusCode == 200 {
+			fmt.Printf("Deleted branch '%s'\n", branchName)
+		} else {
+			b, _ := io.ReadAll(delResp.Body)
+			fmt.Println("Failed to delete branch:", string(b))
+		}
 	} else {
 		fmt.Println("Creating branches is not fully implemented yet.")
 	}
