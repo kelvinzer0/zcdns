@@ -65,13 +65,31 @@ func main() {
 		cmdLogin()
 	case "set":
 		cmdSet(os.Args[2:])
+	case "rm":
+		cmdRm(os.Args[2:])
 	case "commit":
 		cmdCommit(os.Args[2:])
 	case "push":
 		cmdPush()
 	case "pull":
 		cmdPull()
-	case "status", "rm", "log", "show", "diff", "branch", "switch", "revoke", "destroy":
+	case "status":
+		cmdStatus()
+	case "diff":
+		cmdDiff()
+	case "log":
+		cmdLog()
+	case "show":
+		cmdShow()
+	case "branch":
+		cmdBranch(os.Args[2:])
+	case "switch":
+		cmdSwitch(os.Args[2:])
+	case "revoke":
+		cmdRevoke(os.Args[2:])
+	case "destroy":
+		cmdDestroy()
+	case "rotate":
 		fmt.Printf("zvault: '%s' is in active preview mode. Implementation coming soon!\n", command)
 	default:
 		fmt.Printf("zvault: '%s' is not a valid command.\n", command)
