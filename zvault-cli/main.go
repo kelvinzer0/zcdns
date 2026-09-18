@@ -10,12 +10,14 @@ const version = "0.1.0"
 func printHelp() {
 	fmt.Printf("zvault v%s - Git-style version control for secrets\n\n", version)
 	fmt.Println("Usage: zvault <command> [arguments]")
-	fmt.Println("\nRepository & Workflow Commands:")
+	fmt.Println("\nAuthentication & Setup:")
+	fmt.Println("  login                 Authenticate CLI with your ZCDNS account")
 	fmt.Println("  init                  Initialize a new secrets vault")
 	fmt.Println("  clone <url>           Clone a remote vault repository")
+	fmt.Println("\nRepository & Workflow Commands:")
 	fmt.Println("  status                Show working tree status & modified secrets")
-	fmt.Println("  add <secret...>       Stage secrets for commit")
-	fmt.Println("  rm <secret...>        Remove secrets from vault")
+	fmt.Println("  set <key=value>       Add or update a secret value")
+	fmt.Println("  rm <key>              Remove a secret from vault")
 	fmt.Println("  commit -m <msg>       Record changes to the vault repository")
 	fmt.Println("  log                   Show commit logs")
 	fmt.Println("  show <commit>         Show metadata and changes in a commit")
@@ -46,7 +48,7 @@ func main() {
 		fmt.Printf("zvault version %s\n", version)
 	case "help", "-h", "--help":
 		printHelp()
-	case "init", "clone", "status", "add", "rm", "commit", "log", "show", "diff", "push", "pull", "branch", "switch", "destroy", "rotate", "revoke":
+	case "login", "init", "clone", "status", "set", "rm", "commit", "log", "show", "diff", "push", "pull", "branch", "switch", "destroy", "rotate", "revoke":
 		fmt.Printf("zvault: '%s' is in active preview mode. Implementation coming soon!\n", command)
 	default:
 		fmt.Printf("zvault: '%s' is not a valid command. Run 'zvault --help' for usage.\n", command)
