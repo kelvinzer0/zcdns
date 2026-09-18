@@ -287,7 +287,31 @@ export const RecordManager: React.FC<Props> = ({
         </div>
 
         {isLoading ? (
-          <div className="p-10 text-center text-gray-500 text-sm font-mono">{t('loading')}</div>
+          <div className="p-0">
+            <div className="animate-pulse flex flex-col">
+              {/* Header skeleton */}
+              <div className="bg-gray-50 border-b border-gray-200 py-3 px-5 flex gap-4">
+                <div className="h-3 w-1/4 bg-gray-200 rounded"></div>
+                <div className="h-3 w-16 bg-gray-200 rounded"></div>
+                <div className="h-3 w-1/3 bg-gray-200 rounded"></div>
+                <div className="h-3 w-12 bg-gray-200 rounded"></div>
+                <div className="h-3 w-12 bg-gray-200 rounded ml-auto"></div>
+              </div>
+              {/* Rows skeleton */}
+              {[1, 2, 3].map(i => (
+                <div key={i} className="py-3.5 px-5 flex items-center gap-4 border-b border-gray-100">
+                  <div className="h-4 w-1/4 bg-gray-200 rounded"></div>
+                  <div className="h-5 w-12 bg-gray-200 rounded"></div>
+                  <div className="h-4 w-1/3 bg-gray-200 rounded"></div>
+                  <div className="h-4 w-10 bg-gray-200 rounded"></div>
+                  <div className="flex gap-2 ml-auto">
+                    <div className="h-6 w-6 bg-gray-200 rounded"></div>
+                    <div className="h-6 w-6 bg-gray-200 rounded"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : records.length === 0 ? (
           <div className="p-8 sm:p-12 text-center">
             <div className="w-10 h-10 bg-gray-100 text-gray-400 mx-auto flex items-center justify-center mb-2">

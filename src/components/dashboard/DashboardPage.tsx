@@ -166,13 +166,50 @@ export function DashboardPage() {
     setActiveTab('records');
   };
 
-  // Loading state
+  // Loading state with beautiful skeleton
   if (isLoadingSession) {
     return (
-      <div className="min-h-screen pt-32 pb-20 flex items-center justify-center bg-gray-50">
-        <div className="text-center space-y-3">
-          <div className="w-10 h-10 border-4 border-green-600 border-t-transparent animate-spin mx-auto rounded-none" />
-          <p className="text-sm font-medium text-gray-600">{t('loading')}</p>
+      <div className="min-h-screen pt-24 sm:pt-28 pb-16 px-3 sm:px-6 lg:px-8 bg-gray-50/60">
+        <div className="container mx-auto max-w-6xl space-y-6">
+          {/* Header Skeleton */}
+          <div className="bg-white border border-gray-200 shadow-xs p-4 sm:p-6 flex flex-col lg:flex-row gap-4 justify-between">
+            <div className="space-y-3 w-full lg:w-1/2">
+              <div className="flex gap-2">
+                <div className="h-5 w-24 bg-gray-200 rounded animate-pulse"></div>
+                <div className="h-5 w-20 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+              <div className="h-8 w-3/4 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+            <div className="flex gap-2 items-center">
+              <div className="h-9 w-28 bg-gray-200 rounded animate-pulse"></div>
+              <div className="h-9 w-24 bg-gray-200 rounded animate-pulse"></div>
+              <div className="h-9 w-20 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+          </div>
+          
+          {/* Tabs Skeleton */}
+          <div className="flex gap-4 border-b border-gray-300 pb-2">
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="h-8 w-24 bg-gray-200 rounded animate-pulse"></div>
+            ))}
+          </div>
+
+          {/* Content Area Skeleton */}
+          <div className="bg-white border border-gray-200 p-6 space-y-4">
+            <div className="flex justify-between items-center mb-6">
+              <div className="h-6 w-1/4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="h-9 w-32 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-16 w-full bg-gray-100 rounded animate-pulse flex items-center px-4 justify-between border border-gray-100">
+                <div className="flex gap-4 w-1/2">
+                  <div className="h-6 w-16 bg-gray-200 rounded"></div>
+                  <div className="h-6 w-1/2 bg-gray-200 rounded"></div>
+                </div>
+                <div className="h-8 w-20 bg-gray-200 rounded"></div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
