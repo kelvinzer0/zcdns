@@ -68,3 +68,35 @@ type GrowthStats struct {
 	BlockedThreats   int `json:"blocked_threats"`
 	BlockedDomains   int `json:"blocked_domains"`
 }
+
+type VaultRepo struct {
+	ID        string    `json:"id"`
+	Subdomain string    `json:"subdomain"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type VaultBranch struct {
+	ID         string    `json:"id"`
+	RepoID     string    `json:"repo_id"`
+	Name       string    `json:"name"`
+	HeadCommit string    `json:"head_commit"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type VaultCommit struct {
+	ID         string    `json:"id"`
+	RepoID     string    `json:"repo_id"`
+	Hash       string    `json:"hash"`
+	ParentHash string    `json:"parent_hash"`
+	Message    string    `json:"message"`
+	Timestamp  time.Time `json:"timestamp"`
+	Author     string    `json:"author"`
+}
+
+type VaultKVPair struct {
+	ID             string `json:"id"`
+	CommitHash     string `json:"commit_hash"`
+	KeyName        string `json:"key_name"`
+	EncryptedValue string `json:"encrypted_value"`
+}
+

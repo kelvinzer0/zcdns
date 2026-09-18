@@ -4,9 +4,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/miekg/dns"
 	"zcdns-backend/config"
 	"zcdns-backend/db"
+
+	"github.com/miekg/dns"
 )
 
 func TestRobloxParentalFilter(t *testing.T) {

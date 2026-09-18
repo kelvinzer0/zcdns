@@ -88,6 +88,39 @@ func InitDB(dbPath string) (*DB, error) {
 		blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS vault_repos (
+		id TEXT PRIMARY KEY,
+		subdomain TEXT NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS vault_branches (
+		id TEXT PRIMARY KEY,
+		repo_id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		head_commit TEXT,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(repo_id, name)
+	);
+
+	CREATE TABLE IF NOT EXISTS vault_commits (
+		id TEXT PRIMARY KEY,
+		repo_id TEXT NOT NULL,
+		hash TEXT UNIQUE NOT NULL,
+		parent_hash TEXT,
+		message TEXT NOT NULL,
+		timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		author TEXT NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS vault_kv_pairs (
+		id TEXT PRIMARY KEY,
+		commit_hash TEXT NOT NULL,
+		key_name TEXT NOT NULL,
+		encrypted_value TEXT NOT NULL,
+		UNIQUE(commit_hash, key_name)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_records_subdomain ON records(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_records_lookup ON records(subdomain, name, type);
 	CREATE INDEX IF NOT EXISTS idx_requests_subdomain ON requests(subdomain);

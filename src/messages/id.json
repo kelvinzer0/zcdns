@@ -203,6 +203,7 @@
         "tab-tester": "Web Dig",
         "tab-experiments": "Eksperimen",
         "tab-parental": "Parental Control",
+        "tab-vault": "Vault",
         "btn-new-subdomain": "Subdomain Baru",
         "confirm-new-subdomain": "Apakah Anda yakin ingin membuat subdomain baru? Subdomain lama beserta seluruh record DNS miliknya akan dihapus secara permanen.",
         "confirm-new-subdomain-title": "Konfirmasi Buat Subdomain Baru",

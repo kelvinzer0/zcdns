@@ -11,9 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/miekg/dns"
 	"zcdns-backend/config"
 	"zcdns-backend/db"
+
+	"github.com/miekg/dns"
 )
 
 type QueryBroadcaster interface {

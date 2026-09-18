@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Sparkles, Database, Radio, Terminal, ArrowRight, Zap, Shield } from 'lucide-react';
+import { Sparkles, Database, Radio, Terminal, ArrowRight, Zap, Shield, Lock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { DashboardHeader } from './DashboardHeader';
 import { RecordManager } from './RecordManager';
@@ -7,6 +7,7 @@ import { LiveRequests } from './LiveRequests';
 import { DnsTester } from './DnsTester';
 import { Experiments } from './Experiments';
 import { ParentalControl } from './ParentalControl';
+import { VaultUI } from './VaultUI';
 import type { DnsRecord, DnsRequestLog, Experiment, RecordType, UserSession } from './types';
 import { dashboardApi } from './api';
 import { useTranslations } from '../../lib/useTranslations';
@@ -22,7 +23,7 @@ export function DashboardPage() {
   const [requests, setRequests] = useState<DnsRequestLog[]>([]);
   const [wsStatus, setWsStatus] = useState<'connected' | 'disconnected' | 'connecting'>('disconnected');
 
-  const [activeTab, setActiveTab] = useState<'records' | 'stream' | 'tester' | 'experiments' | 'parental'>('records');
+  const [activeTab, setActiveTab] = useState<'records' | 'stream' | 'tester' | 'experiments' | 'parental' | 'vault'>('records');
 
   // Load session on mount
   const loadSession = useCallback(async () => {
@@ -328,6 +329,18 @@ export function DashboardPage() {
             <Shield className="w-4 h-4 text-emerald-600" />
             <span>{t('tab-parental')}</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('vault')}
+            className={`flex items-center space-x-1.5 py-2.5 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer rounded-none ${
+              activeTab === 'vault'
+                ? 'border-green-600 text-green-700 bg-white'
+                : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            <Lock className="w-4 h-4 text-indigo-600" />
+            <span>{t('tab-vault')}</span>
+          </button>
         </div>
 
         {/* Tab Content */}
@@ -375,6 +388,10 @@ export function DashboardPage() {
               baseDomain={session.baseDomain || 'zcdns.id'}
               dnsPort={session.dnsPort || 53}
             />
+          )}
+
+          {activeTab === 'vault' && (
+            <VaultUI />
           )}
         </div>
       </div>

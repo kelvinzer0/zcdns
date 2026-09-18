@@ -203,6 +203,7 @@
     "tab-tester": "Web Dig",
     "tab-experiments": "Experiments",
     "tab-parental": "Parental Control",
+    "tab-vault": "Vault",
     "btn-new-subdomain": "New Subdomain",
     "confirm-new-subdomain": "Are you sure you want to create a new subdomain? Your old subdomain and all its DNS records will be permanently deleted.",
     "confirm-new-subdomain-title": "Confirm New Subdomain",
