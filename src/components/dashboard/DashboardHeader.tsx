@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, RefreshCw, Terminal, Globe, LogOut, ShieldCheck, Clock, AlertTriangle } from 'lucide-react';
+import { Copy, Check, RefreshCw, Terminal, Globe,  ShieldCheck, Clock, AlertTriangle } from 'lucide-react';
 import { Button } from '../ui/button';
 import type { UserSession } from './types';
 import { useTranslations } from '../../lib/useTranslations';
@@ -16,7 +16,6 @@ export const DashboardHeader: React.FC<Props> = ({
   session,
   wsStatus,
   onNewSession,
-  onLogout,
   onRenewSession,
 }) => {
   const t = useTranslations('Dashboard');
@@ -137,15 +136,6 @@ export const DashboardHeader: React.FC<Props> = ({
           >
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
             {t('btn-new-subdomain')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onLogout}
-            className="text-gray-500 hover:text-red-600 rounded-none h-9 text-xs sm:text-sm"
-          >
-            <LogOut className="w-3.5 h-3.5 mr-1.5" />
-            Logout
           </Button>
         </div>
       </div>

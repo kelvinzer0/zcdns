@@ -4,6 +4,8 @@ import { LocalizedLink as Link } from './LocalizedLink';
 import { X } from "lucide-react"
 import { cn } from "../lib/utils"
 import { useTranslations } from '../lib/useTranslations';
+import { dashboardApi } from './dashboard/api';
+import { useLocation } from 'react-router-dom';
 
 interface MobileMenuProps {
   isOpen: boolean;
@@ -12,6 +14,18 @@ interface MobileMenuProps {
 
 export function MobileMenu({ isOpen, onClose }: MobileMenuProps) {
   const t = useTranslations('Header');
+  const { pathname } = useLocation();
+  const isAppPage = pathname.includes('/dashboard') || pathname.includes('/admin');
+
+  const handleGlobalLogout = async () => {
+    try {
+      await dashboardApi.deleteSession();
+    } catch {}
+    localStorage.removeItem("zcdns_admin_token");
+    document.cookie = "zcdns_admin_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "zcdns_subdomain=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    window.location.href = '/';
+  };
 
   return (
     <>
@@ -63,11 +77,17 @@ export function MobileMenu({ isOpen, onClose }: MobileMenuProps) {
           </a>
           <div className="mt-auto pt-4 border-t border-gray-200">
             <LanguageSwitcher />
-            <Button asChild className="bg-[#012241] hover:bg-[#02365f] text-white w-full mt-4">
-              <Link to="https://www.zcdns.id/dashboard" target="_blank" onClick={onClose}>
-                {t('get-started-free')}
-              </Link>
-            </Button>
+            {isAppPage ? (
+              <Button onClick={handleGlobalLogout} className="bg-red-600 hover:bg-red-700 text-white w-full mt-4">
+                Logout
+              </Button>
+            ) : (
+              <Button asChild className="bg-[#012241] hover:bg-[#02365f] text-white w-full mt-4">
+                <Link to="https://www.zcdns.id/dashboard" target="_blank" onClick={onClose}>
+                  {t('get-started-free')}
+                </Link>
+              </Button>
+            )}
           </div>
         </nav>
       </div>

@@ -5,7 +5,7 @@ import {
   ShieldCheck,
   Search,
   Lock,
-  LogOut,
+  
   CheckCircle2,
   Trash2,
   Ban,
@@ -438,13 +438,6 @@ export function AdminPage() {
               title={t("tooltip-refresh")}
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
-            </button>
-            <button
-              onClick={handleLogout}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-none text-sm font-medium transition-colors border border-red-200"
-            >
-              <LogOut className="w-4 h-4" />
-              {t("logout")}
             </button>
           </div>
         </div>

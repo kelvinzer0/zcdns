@@ -8,12 +8,24 @@ import { Menu } from "lucide-react"
 import { WarningBanner } from './WarningBanner';
 import { cn } from "../lib/utils"
 import { useTranslations } from '../lib/useTranslations';
+import { dashboardApi } from './dashboard/api';
 
 export function Header({ setMobileMenuOpen }: { setMobileMenuOpen: (isOpen: boolean) => void }) {
   const t = useTranslations('Header');
   const [isScrolled, setIsScrolled] = useState(false)
   const { pathname } = useLocation();
   const isDocsPage = pathname.includes('/docs');
+  const isAppPage = pathname.includes('/dashboard') || pathname.includes('/admin');
+
+  const handleGlobalLogout = async () => {
+    try {
+      await dashboardApi.deleteSession();
+    } catch {}
+    localStorage.removeItem("zcdns_admin_token");
+    document.cookie = "zcdns_admin_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "zcdns_subdomain=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    window.location.href = '/';
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -65,12 +77,21 @@ export function Header({ setMobileMenuOpen }: { setMobileMenuOpen: (isOpen: bool
             {/* CTA Button */}
             <div className="hidden md:flex items-center space-x-4">
               <LanguageSwitcher />
-              <Button
-                asChild
-                className="bg-[#012241] hover:bg-[#02365f] text-white shadow-lg hover:shadow-xl transition-all duration-200"
-              >
-                <Link to="/dashboard">{t('get-started-free')}</Link>
-              </Button>
+              {isAppPage ? (
+                <Button
+                  onClick={handleGlobalLogout}
+                  className="bg-red-600 hover:bg-red-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer"
+                >
+                  Logout
+                </Button>
+              ) : (
+                <Button
+                  asChild
+                  className="bg-[#012241] hover:bg-[#02365f] text-white shadow-lg hover:shadow-xl transition-all duration-200"
+                >
+                  <Link to="/dashboard">{t('get-started-free')}</Link>
+                </Button>
+              )}
             </div>
 
             {/* Mobile Menu Button */}
