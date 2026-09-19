@@ -83,7 +83,7 @@ export function MobileMenu({ isOpen, onClose }: MobileMenuProps) {
               </Button>
             ) : (
               <Button asChild className="bg-[#012241] hover:bg-[#02365f] text-white w-full mt-4">
-                <Link to="https://www.zcdns.id/dashboard" target="_blank" onClick={onClose}>
+                <Link to="/dashboard" onClick={onClose}>
                   {t('get-started-free')}
                 </Link>
               </Button>
