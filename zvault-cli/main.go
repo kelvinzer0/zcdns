@@ -41,7 +41,9 @@ func printHelp() {
 	fmt.Println("  pull                  Fetch and integrate remote changes")
 	fmt.Println("  branch [-d name]      List all branches, or delete a branch with -d")
 	fmt.Println("  switch <branch>       Switch to a different branch")
-	fmt.Println("\nSecret Lifecycle Commands:")
+	fmt.Println("\nSecret Lifecycle & Environment:")
+	fmt.Println("  env                   Output vault secrets as shell environment variables")
+	fmt.Println("  env install           Add zvault hook to your shell profile (.bashrc, .zshrc, etc.)")
 	fmt.Println("  revoke <commit>       Revert the vault back to a specific commit hash")
 	fmt.Println("  destroy               Destroy and remove the local vault completely")
 	fmt.Println("\nOther Commands:")
@@ -89,6 +91,8 @@ func main() {
 		cmdRevoke(os.Args[2:])
 	case "destroy":
 		cmdDestroy()
+	case "env":
+		cmdEnv(os.Args[2:])
 	case "rotate":
 		fmt.Printf("zvault: '%s' is in active preview mode. Implementation coming soon!\n", command)
 	default:
