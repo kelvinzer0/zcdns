@@ -131,7 +131,7 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
       icon: Smartphone,
       archs: [
         { label: 'ARM64 / aarch64 (Most devices)', filename: 'zvault-android-arm64', url: '/bin/zvault-android-arm64' },
-        { label: 'ARM 32-bit (Older devices)', filename: 'zvault-android-arm', url: '/bin/zvault-android-arm' },
+        { label: 'ARM 32-bit (Older devices)', filename: 'zvault-linux-arm', url: '/bin/zvault-linux-arm' },
       ],
       getInstallCmd: (archFile: string) => `mkdir -p ~/.local/bin && curl -fsSL https://zcdns.id/bin/${archFile} -o ~/.local/bin/zvault && chmod +x ~/.local/bin/zvault`
     }
