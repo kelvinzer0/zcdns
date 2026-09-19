@@ -135,7 +135,216 @@ function defineBlocks() {
     },
   };
   javascriptGenerator.forBlock['dns_safe_search'] = () => '  flags.safeSearch = true;\n';
+
+  // ── IF / ELSE ────────────────────────────────────────────────────────────────
+
+  Blockly.Blocks['dns_if_else_category'] = {
+    init() {
+      this.appendValueInput('CATEGORY')
+        .setCheck('Category')
+        .appendField('🔀 If category is');
+      this.appendStatementInput('IF_ACTION').appendField('then');
+      this.appendStatementInput('ELSE_ACTION').appendField('else');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(210);
+      this.setTooltip('If category matches, do one thing. Otherwise, do another.');
+    },
+  };
+  javascriptGenerator.forBlock['dns_if_else_category'] = (block) => {
+    const category = javascriptGenerator.valueToCode(block, 'CATEGORY', Order.ATOMIC) || '""';
+    const ifAction = javascriptGenerator.statementToCode(block, 'IF_ACTION');
+    const elseAction = javascriptGenerator.statementToCode(block, 'ELSE_ACTION');
+    return `if (matchesCategory(${category})) {\n${ifAction}} else {\n${elseAction}}\n`;
+  };
+
+  // ── SWITCH / CASE ────────────────────────────────────────────────────────────
+
+  Blockly.Blocks['dns_switch_category'] = {
+    init() {
+      this.appendDummyInput().appendField('🔀 Switch on category');
+      this.appendValueInput('CASE_ADULT').setCheck('String').appendField('Adult →');
+      this.appendValueInput('CASE_SOCIAL').setCheck('String').appendField('Social Media →');
+      this.appendValueInput('CASE_GAMING').setCheck('String').appendField('Gaming →');
+      this.appendValueInput('CASE_GAMBLING').setCheck('String').appendField('Gambling →');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(190);
+      this.setTooltip('Apply different actions based on domain category');
+    },
+  };
+  javascriptGenerator.forBlock['dns_switch_category'] = (block) => {
+    const adult = javascriptGenerator.valueToCode(block, 'CASE_ADULT', Order.ATOMIC);
+    const social = javascriptGenerator.valueToCode(block, 'CASE_SOCIAL', Order.ATOMIC);
+    const gaming = javascriptGenerator.valueToCode(block, 'CASE_GAMING', Order.ATOMIC);
+    const gambling = javascriptGenerator.valueToCode(block, 'CASE_GAMBLING', Order.ATOMIC);
+    return `switch(getCategory()) {\n  case "ADULT": ${adult || 'action="BLOCK"'}; break;\n  case "SOCIAL": ${social || 'action="ALLOW"'}; break;\n  case "GAMING": ${gaming || 'action="ALLOW"'}; break;\n  case "GAMBLING": ${gambling || 'action="BLOCK"'}; break;\n}\n`;
+  };
+
+  // Block: action values for switch
+  Blockly.Blocks['dns_action_value'] = {
+    init() {
+      this.appendDummyInput()
+        .appendField(new Blockly.FieldDropdown([
+          ['Block', 'action="BLOCK"'],
+          ['Allow', 'action="ALLOW"'],
+        ]), 'ACTION');
+      this.setOutput(true, 'String');
+      this.setColour(60);
+    },
+  };
+  javascriptGenerator.forBlock['dns_action_value'] = (block) => {
+    const action = block.getFieldValue('ACTION');
+    return [action, Order.ATOMIC];
+  };
+
+  // ── TRY / CATCH ─────────────────────────────────────────────────────────────
+
+  Blockly.Blocks['dns_try_catch'] = {
+    init() {
+      this.appendStatementInput('TRY').appendField('🧪 Try');
+      this.appendStatementInput('CATCH').appendField('⚠️ If error, fallback');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(30);
+      this.setTooltip('Try a rule. If it fails (e.g., unknown category), run the fallback.');
+    },
+  };
+  javascriptGenerator.forBlock['dns_try_catch'] = (block) => {
+    const tryCode = javascriptGenerator.statementToCode(block, 'TRY');
+    const catchCode = javascriptGenerator.statementToCode(block, 'CATCH');
+    return `try {\n${tryCode}} catch(e) {\n${catchCode}}\n`;
+  };
+
+  // ── DAY OF WEEK ─────────────────────────────────────────────────────────────
+
+  Blockly.Blocks['dns_day_rule'] = {
+    init() {
+      this.appendDummyInput()
+        .appendField('📅 On day')
+        .appendField(new Blockly.FieldDropdown([
+          ['Monday', '1'],
+          ['Tuesday', '2'],
+          ['Wednesday', '3'],
+          ['Thursday', '4'],
+          ['Friday', '5'],
+          ['Saturday', '6'],
+          ['Sunday', '0'],
+        ]), 'DAY');
+      this.appendStatementInput('ACTION').appendField('then');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(65);
+      this.setTooltip('Apply rule only on a specific day of the week');
+    },
+  };
+  javascriptGenerator.forBlock['dns_day_rule'] = (block) => {
+    const day = block.getFieldValue('DAY');
+    const action = javascriptGenerator.statementToCode(block, 'ACTION');
+    return `if (new Date().getDay() === ${day}) {\n${action}}\n`;
+  };
+
+  Blockly.Blocks['dns_weekend_rule'] = {
+    init() {
+      this.appendDummyInput().appendField('📅 On Weekends');
+      this.appendStatementInput('ACTION').appendField('then');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(65);
+    },
+  };
+  javascriptGenerator.forBlock['dns_weekend_rule'] = (block) => {
+    const action = javascriptGenerator.statementToCode(block, 'ACTION');
+    return `if ([0,6].includes(new Date().getDay())) {\n${action}}\n`;
+  };
+
+  Blockly.Blocks['dns_weekday_rule'] = {
+    init() {
+      this.appendDummyInput().appendField('📅 On Weekdays (Mon-Fri)');
+      this.appendStatementInput('ACTION').appendField('then');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(65);
+    },
+  };
+  javascriptGenerator.forBlock['dns_weekday_rule'] = (block) => {
+    const action = javascriptGenerator.statementToCode(block, 'ACTION');
+    return `if (new Date().getDay() >= 1 && new Date().getDay() <= 5) {\n${action}}\n`;
+  };
+
+  // ── TIME RANGE (exact, with minutes) ─────────────────────────────────────────
+
+  Blockly.Blocks['dns_time_range_exact'] = {
+    init() {
+      this.appendDummyInput()
+        .appendField('⏰ From')
+        .appendField(new Blockly.FieldNumber(8, 0, 23), 'FROM_H')
+        .appendField(':')
+        .appendField(new Blockly.FieldNumber(0, 0, 59), 'FROM_M')
+        .appendField('to')
+        .appendField(new Blockly.FieldNumber(22, 0, 23), 'TO_H')
+        .appendField(':')
+        .appendField(new Blockly.FieldNumber(0, 0, 59), 'TO_M');
+      this.appendStatementInput('ACTION').appendField('then');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(290);
+      this.setTooltip('Apply rule within exact time range (hours:minutes)');
+    },
+  };
+  javascriptGenerator.forBlock['dns_time_range_exact'] = (block) => {
+    const fh = block.getFieldValue('FROM_H');
+    const fm = block.getFieldValue('FROM_M');
+    const th = block.getFieldValue('TO_H');
+    const tm = block.getFieldValue('TO_M');
+    const action = javascriptGenerator.statementToCode(block, 'ACTION');
+    return `{\n  const _now = new Date();\n  const _mins = _now.getHours()*60+_now.getMinutes();\n  if (_mins >= ${+fh*60 + +fm} && _mins <= ${+th*60 + +tm}) {\n${action}  }\n}\n`;
+  };
+
+  // ── DAY + TIME COMBINED ──────────────────────────────────────────────────────
+
+  Blockly.Blocks['dns_day_time_combined'] = {
+    init() {
+      this.appendDummyInput()
+        .appendField('📅⏰')
+        .appendField(new Blockly.FieldDropdown([
+          ['Weekdays', 'WEEKDAY'],
+          ['Weekends', 'WEEKEND'],
+          ['Monday', 'MON'],
+          ['Friday', 'FRI'],
+          ['Saturday', 'SAT'],
+          ['Sunday', 'SUN'],
+        ]), 'DAY_TYPE')
+        .appendField('between')
+        .appendField(new Blockly.FieldNumber(8, 0, 23), 'FROM')
+        .appendField('and')
+        .appendField(new Blockly.FieldNumber(22, 0, 23), 'TO')
+        .appendField(':00');
+      this.appendStatementInput('ACTION').appendField('then');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(280);
+      this.setTooltip('Apply rule on specific days within a time window');
+    },
+  };
+  javascriptGenerator.forBlock['dns_day_time_combined'] = (block) => {
+    const dayType = block.getFieldValue('DAY_TYPE');
+    const from = block.getFieldValue('FROM');
+    const to = block.getFieldValue('TO');
+    const action = javascriptGenerator.statementToCode(block, 'ACTION');
+    const dayChecks: Record<string, string> = {
+      WEEKDAY: 'new Date().getDay()>=1&&new Date().getDay()<=5',
+      WEEKEND: '[0,6].includes(new Date().getDay())',
+      MON: 'new Date().getDay()===1',
+      FRI: 'new Date().getDay()===5',
+      SAT: 'new Date().getDay()===6',
+      SUN: 'new Date().getDay()===0',
+    };
+    const dayCheck = dayChecks[dayType] || 'true';
+    return `if ((${dayCheck}) && isTimeBetween(${from}, ${to})) {\n${action}}\n`;
+  };
 }
+
 
 // ── Toolbox ───────────────────────────────────────────────────────────────────
 
@@ -144,11 +353,34 @@ const TOOLBOX = {
   contents: [
     {
       kind: 'category',
-      name: '🛡️ Rules',
+      name: '🔀 Logic',
       colour: '210',
       contents: [
         { kind: 'block', type: 'dns_if_category' },
+        { kind: 'block', type: 'dns_if_else_category' },
+        { kind: 'block', type: 'dns_switch_category' },
+        { kind: 'block', type: 'dns_try_catch' },
+        { kind: 'block', type: 'dns_action_value' },
+      ],
+    },
+    {
+      kind: 'category',
+      name: '⏰ Time',
+      colour: '290',
+      contents: [
         { kind: 'block', type: 'dns_time_rule' },
+        { kind: 'block', type: 'dns_time_range_exact' },
+      ],
+    },
+    {
+      kind: 'category',
+      name: '📅 Day',
+      colour: '65',
+      contents: [
+        { kind: 'block', type: 'dns_day_rule' },
+        { kind: 'block', type: 'dns_weekend_rule' },
+        { kind: 'block', type: 'dns_weekday_rule' },
+        { kind: 'block', type: 'dns_day_time_combined' },
       ],
     },
     {
