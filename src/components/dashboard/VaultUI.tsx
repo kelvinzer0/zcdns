@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Laptop,
   Apple,
+  Smartphone,
   Eye,
   EyeOff
 } from 'lucide-react';
@@ -124,6 +125,15 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
         { label: 'Windows 64-bit (x86_64 .exe)', filename: 'zvault-windows-amd64.exe', url: '/bin/zvault-windows-amd64.exe' },
       ],
       getInstallCmd: (archFile: string) => `curl.exe -fsSL https://zcdns.id/bin/${archFile} -o zvault.exe`
+    },
+    {
+      os: 'Android (Termux)',
+      icon: Smartphone,
+      archs: [
+        { label: 'ARM64 / aarch64 (Most devices)', filename: 'zvault-android-arm64', url: '/bin/zvault-android-arm64' },
+        { label: 'ARM 32-bit (Older devices)', filename: 'zvault-android-arm', url: '/bin/zvault-android-arm' },
+      ],
+      getInstallCmd: (archFile: string) => `mkdir -p ~/.local/bin && curl -fsSL https://zcdns.id/bin/${archFile} -o ~/.local/bin/zvault && chmod +x ~/.local/bin/zvault`
     }
   ];
 
