@@ -1,9 +1,10 @@
-package main
+package cmd
 
 import (
 	"encoding/json"
 	"os"
 	"testing"
+	"zvault-cli/internal/workspace"
 )
 
 func TestLocalOperations(t *testing.T) {
@@ -17,7 +18,7 @@ func TestLocalOperations(t *testing.T) {
 	os.Chdir(tmpDir)
 	defer os.Chdir(origWd)
 
-	initProject()
+	workspace.InitProject()
 	if _, err := os.Stat(".zvault/commits"); os.IsNotExist(err) {
 		t.Error("Expected .zvault/commits to be created")
 	}

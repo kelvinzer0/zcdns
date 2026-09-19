@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"os"
@@ -6,7 +6,6 @@ import (
 )
 
 func TestDetectShell(t *testing.T) {
-	// Temporarily unset SHELL
 	origShell := os.Getenv("SHELL")
 	defer os.Setenv("SHELL", origShell)
 

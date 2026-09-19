@@ -1,11 +1,12 @@
-package main
+package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"zvault-cli/internal/workspace"
 )
 
 func detectShell() string {
@@ -19,14 +20,13 @@ func detectShell() string {
 			return "bash"
 		}
 	}
-	// Fallback for Windows or unknown
 	if os.Getenv("PSModulePath") != "" {
 		return "powershell"
 	}
 	if os.Getenv("COMSPEC") != "" {
 		return "cmd"
 	}
-	return "bash" // Default to bash
+	return "bash" 
 }
 
 func getEnvFormat(shell string, key string, value string) string {
@@ -40,7 +40,6 @@ func getEnvFormat(shell string, key string, value string) string {
 	case "nushell":
 		return fmt.Sprintf("$env.%s = \"%s\"", key, value)
 	default:
-		// bash, zsh
 		return fmt.Sprintf("export %s=\"%s\"", key, value)
 	}
 }
@@ -59,13 +58,8 @@ func cmdEnv(args []string) {
 		}
 	}
 
-	b, err := os.ReadFile(".zvault/working.json")
-	if err != nil {
-		return
-	}
-	var working map[string]string
-	json.Unmarshal(b, &working)
-	if len(working) == 0 {
+	working, err := workspace.LoadWorking()
+	if err != nil || len(working) == 0 {
 		return
 	}
 
@@ -106,7 +100,6 @@ func cmdEnvInstall() {
 		hookCmd = "\n# ZVault Hook\neval \"$(zvault env)\"\n"
 	}
 
-	// Create directory if needed (e.g. for fish)
 	os.MkdirAll(filepath.Dir(profilePath), 0755)
 
 	f, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)

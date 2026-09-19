@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"zvault-cli/internal/config"
 )
 
 func TestGetRepoID(t *testing.T) {
@@ -20,17 +21,16 @@ func TestGetRepoID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Override apiBase
-	origApiBase := apiBase
-	apiBase = server.URL
-	defer func() { apiBase = origApiBase }()
+	origBaseURL := BaseURL
+	BaseURL = server.URL
+	defer func() { BaseURL = origBaseURL }()
 
-	cfg := &Config{
+	cfg := &config.Config{
 		Token:     "mock-token",
 		Subdomain: "mock-sub",
 	}
 
-	repoID, err := getRepoID(cfg)
+	repoID, err := GetRepoID(cfg)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -40,7 +40,6 @@ func TestGetRepoID(t *testing.T) {
 }
 
 func TestLoadConfig(t *testing.T) {
-	// Set custom home dir for test
 	tmpDir, _ := os.MkdirTemp("", "zvault-config-*")
 	defer os.RemoveAll(tmpDir)
 
@@ -50,11 +49,11 @@ func TestLoadConfig(t *testing.T) {
 
 	os.MkdirAll(filepath.Join(tmpDir, ".zvault"), 0755)
 	
-	testCfg := Config{Token: "token123", Subdomain: "sub123"}
+	testCfg := config.Config{Token: "token123", Subdomain: "sub123"}
 	b, _ := json.Marshal(testCfg)
 	os.WriteFile(filepath.Join(tmpDir, ".zvault", "config.json"), b, 0644)
 
-	cfg, err := loadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
