@@ -33,3 +33,15 @@ backend/zcdns-backend
 *.sqlite-shm
 *.sqlite-wal
 public/bin/
+# Go binaries and build artifacts
+zvault-cli/zvault
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Vault local data
+.zvault/
