@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+const ParentalBlockly = lazy(() => import('./ParentalBlockly').then(m => ({ default: m.ParentalBlockly })));
 import {
   Shield,
   ShieldAlert,
@@ -44,6 +45,10 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
 
   // Setup tab state: 'android' | 'browser' | 'ios' | 'router'
   const [setupTab, setSetupTab] = useState<'android' | 'browser' | 'ios' | 'router'>('android');
+
+  // Mode: easy or advanced (blockly)
+  const [mode, setMode] = useState<'easy' | 'advanced'>('easy');
+  const [blocklyRules, setBlocklyRules] = useState<{ blockedDomains: string[]; allowedDomains: string[]; safeSearch: boolean; code: string } | null>(null);
 
   const guardDomain = `${subdomain}.guard.${baseDomain}`;
   const dohUrl = `https://${baseDomain}/dns-query/guard/${subdomain}`;
@@ -258,7 +263,88 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
         </div>
       </div>
 
-      {/* Categories Protection Grid */}
+      {/* Mode Switcher */}
+      <div className="flex items-center gap-0 border border-gray-200 rounded-none bg-white w-fit shadow-sm">
+        <button
+          onClick={() => setMode('easy')}
+          className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold transition-colors rounded-none border-r border-gray-200 ${
+            mode === 'easy'
+              ? 'bg-[#012241] text-white'
+              : 'bg-white text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <Shield className="w-4 h-4" />
+          Easy
+        </button>
+        <button
+          onClick={() => setMode('advanced')}
+          className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold transition-colors rounded-none ${
+            mode === 'advanced'
+              ? 'bg-[#012241] text-white'
+              : 'bg-white text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <Zap className="w-4 h-4" />
+          Advanced (Visual Logic)
+        </button>
+      </div>
+
+      {/* Advanced Mode: Blockly Editor */}
+      {mode === 'advanced' && (
+        <div className="bg-white border border-gray-200 p-4 sm:p-6 space-y-4 rounded-none">
+          <div>
+            <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-yellow-500" />
+              Visual Logic Builder
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Drag and drop blocks to build your custom DNS filtering rules. Blocks are executed top to bottom.
+            </p>
+          </div>
+          <Suspense fallback={
+            <div className="flex items-center justify-center h-48 border border-gray-200 rounded-none bg-gray-50">
+              <div className="text-sm text-gray-500 animate-pulse">Loading Blockly editor...</div>
+            </div>
+          }>
+            <ParentalBlockly
+              onRulesChange={(rules) => setBlocklyRules(rules)}
+            />
+          </Suspense>
+          {blocklyRules && (
+            <div className="border border-gray-200 rounded-none p-3 bg-gray-50 space-y-2">
+              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Generated Rules Preview</p>
+              {blocklyRules.blockedDomains.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500">🚫 Blocked domains: <span className="font-mono text-red-600">{blocklyRules.blockedDomains.join(', ')}</span></p>
+                </div>
+              )}
+              {blocklyRules.allowedDomains.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500">✅ Allowed domains: <span className="font-mono text-green-600">{blocklyRules.allowedDomains.join(', ')}</span></p>
+                </div>
+              )}
+              {blocklyRules.safeSearch && (
+                <p className="text-xs text-gray-500">🔍 Safe Search: <span className="text-blue-600 font-semibold">Enabled</span></p>
+              )}
+              <details className="mt-1">
+                <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">Show generated code</summary>
+                <pre className="mt-2 text-xs font-mono bg-gray-900 text-green-400 p-3 overflow-x-auto rounded">{blocklyRules.code || '// No blocks yet'}</pre>
+              </details>
+            </div>
+          )}
+          <Button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="bg-[#012241] hover:bg-[#02365f] text-white flex items-center space-x-1.5 px-4 h-9 text-sm font-semibold rounded-none"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>{isSaving ? 'Saving...' : 'Apply Rules'}</span>
+          </Button>
+        </div>
+      )}
+
+      {/* Easy Mode: Categories Protection Grid */}
+      {mode === 'easy' && (
       <div className="bg-white border border-gray-200 p-4 sm:p-6 space-y-4 rounded-none">
         <div>
           <h3 className="text-base font-bold text-gray-900 flex items-center space-x-2">
@@ -452,6 +538,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
           </div>
         </div>
       </div>
+      )} {/* end easy mode */}
 
       {/* Custom Blocklist & Allowlist */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
