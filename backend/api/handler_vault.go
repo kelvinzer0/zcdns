@@ -171,8 +171,8 @@ func (h *APIHandler) handleVaultDeviceAuth(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{
 		"device_code":               deviceCode,
 		"user_code":                 userCode,
-		"verification_uri":          fmt.Sprintf("%s://%s/vault/auth", scheme, host),
-		"verification_uri_complete": fmt.Sprintf("%s://%s/vault/auth?code=%s", scheme, host, userCode),
+		"verification_uri":          fmt.Sprintf("%s://%s/en/vault/auth", scheme, host),
+		"verification_uri_complete": fmt.Sprintf("%s://%s/en/vault/auth?code=%s", scheme, host, userCode),
 		"expires_in":                600,
 		"interval":                  2,
 	})
@@ -350,4 +350,30 @@ func (h *APIHandler) handleSyncVault(w http.ResponseWriter, r *http.Request, sub
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (h *APIHandler) handleDeleteVaultBranch(w http.ResponseWriter, r *http.Request, subdomain string) {
+	branchName := r.URL.Query().Get("name")
+	if branchName == "" {
+		writeJSONError(w, http.StatusBadRequest, "branch name is required")
+		return
+	}
+	if branchName == "main" {
+		writeJSONError(w, http.StatusBadRequest, "cannot delete main branch")
+		return
+	}
+
+	repoID := r.URL.Query().Get("repo_id")
+	if repoID == "" {
+		writeJSONError(w, http.StatusBadRequest, "repo_id is required")
+		return
+	}
+
+	err := h.db.DeleteBranch(repoID, branchName)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to delete branch")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Branch deleted"})
 }
