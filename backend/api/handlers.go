@@ -69,6 +69,7 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("POST /api/vault/init", h.requireSubdomain(h.handleInitVault))
 	mux.HandleFunc("GET /api/vault/branches", h.requireSubdomain(h.handleGetVaultBranches))
+	mux.HandleFunc("DELETE /api/vault/branches", h.requireSubdomain(h.handleDeleteVaultBranch))
 	mux.HandleFunc("GET /api/vault/commits", h.requireSubdomain(h.handleGetVaultCommits))
 	mux.HandleFunc("GET /api/vault/kv", h.requireSubdomain(h.handleGetVaultKV))
 	mux.HandleFunc("POST /api/vault/revert", h.requireSubdomain(h.handleRevertVaultCommit))

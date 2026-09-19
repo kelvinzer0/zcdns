@@ -278,3 +278,8 @@ func (d *DB) VerifyCommitOwnership(commitHash, subdomain string) bool {
 	}
 	return owner == subdomain
 }
+
+func (d *DB) DeleteBranch(repoID, branchName string) error {
+	_, err := d.conn.Exec(`DELETE FROM vault_branches WHERE repo_id = ? AND name = ?`, repoID, branchName)
+	return err
+}
