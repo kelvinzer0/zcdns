@@ -299,7 +299,7 @@
         "parental-setup-desc": "Panduan konfigurasi Private DNS & DoH di perangkat",
         "parental-custom-block-placeholder": "contoh: roblox.com atau reddit.com",
         "parental-custom-allow-placeholder": "contoh: wikipedia.org",
-        "parental-test-placeholder": "misal: pornhub.com, tiktok.com, google.com",
+        "parental-test-placeholder": "misal: roblox.com, tiktok.com, google.com",
         "parental-test-empty-answers": "Kosong",
         "parental-tab-android": "Android",
         "parental-tab-browser": "Browser",

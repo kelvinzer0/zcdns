@@ -679,7 +679,7 @@ export function ParentalControl({ subdomain, baseDomain }: Props) {
           <span className="text-[11px] text-gray-500 font-semibold mr-1 font-mono">Uji Cepat:</span>
           {[
             { label: 'Roblox (Game)', domain: 'roblox.com' },
-            { label: 'Pornhub (Adult)', domain: 'pornhub.com' },
+            { label: 'Bet365 (Gambling)', domain: 'bet365.com' },
             { label: 'DoubleClick (Ads)', domain: 'doubleclick.net' },
             { label: 'TikTok (Social)', domain: 'tiktok.com' },
             { label: 'Google (SafeSearch)', domain: 'google.com' },
