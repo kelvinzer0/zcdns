@@ -1,18 +1,38 @@
 #!/bin/bash
 set -e
 
-# === Certbot Hooks ===
+# === Certbot Hooks (use ZCDNS HTTP API, no sqlite3 needed) ===
+# Reads ADMIN_KEY from /opt/zcdns/.env or falls back to default
+
 cat > /opt/zcdns/certbot-router-auth.sh << 'HOOK'
 #!/bin/bash
-sqlite3 /opt/zcdns/zcdns.db "INSERT OR IGNORE INTO records (id, subdomain, name, type, value, ttl) VALUES (lower(hex(randomblob(16))), 'router', '_acme-challenge', 'TXT', '${CERTBOT_VALIDATION}', 60);"
-systemctl restart zcdns 2>/dev/null || true
-sleep 5
+# Read admin key from env file
+ADMIN_KEY=$(grep '^ADMIN_KEY=' /opt/zcdns/.env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo "@Kelvin123")
+# Insert _acme-challenge TXT record via ZCDNS API
+curl -sf -X POST http://127.0.0.1:8080/api/acme-challenge \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Key: ${ADMIN_KEY}" \
+  -d "{\"subdomain\":\"router\",\"value\":\"${CERTBOT_VALIDATION}\"}" \
+  && echo "[AUTH] TXT record added: ${CERTBOT_VALIDATION}" \
+  || echo "[AUTH] WARN: failed to add TXT record"
+sleep 10
 HOOK
 
 cat > /opt/zcdns/certbot-router-cleanup.sh << 'HOOK'
 #!/bin/bash
-sqlite3 /opt/zcdns/zcdns.db "DELETE FROM records WHERE subdomain='router' AND name='_acme-challenge' AND type='TXT' AND value='${CERTBOT_VALIDATION}';"
-systemctl restart zcdns 2>/dev/null || true
+# Read admin key from env file
+ADMIN_KEY=$(grep '^ADMIN_KEY=' /opt/zcdns/.env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo "@Kelvin123")
+# Get list of acme challenge records and delete matching one
+RECORD_ID=$(curl -sf http://127.0.0.1:8080/api/acme-challenge \
+  -H "X-Admin-Key: ${ADMIN_KEY}" | \
+  python3 -c "import sys,json; records=json.load(sys.stdin); \
+match=[r for r in records if r.get('value')=='${CERTBOT_VALIDATION}']; \
+print(match[0]['id'] if match else '')" 2>/dev/null || echo "")
+if [ -n "${RECORD_ID}" ]; then
+  curl -sf -X DELETE "http://127.0.0.1:8080/api/records/${RECORD_ID}" \
+    -H "X-Admin-Key: ${ADMIN_KEY}" \
+    && echo "[CLEANUP] TXT record removed" || true
+fi
 HOOK
 
 chmod +x /opt/zcdns/certbot-router-auth.sh /opt/zcdns/certbot-router-cleanup.sh
