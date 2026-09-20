@@ -129,8 +129,60 @@ jobs:
             # Configure shared-ip DoT mapping so port 853 traffic for guard.zcdns.id routes to zcdns-server
             shared-ip add guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
             shared-ip add "*.guard.zcdns.id" --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update "*.guard.zcdns.id" --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
+            
+            # Configure shared-ip HTTPS mapping for AI Router proxy
+            shared-ip add router.zcdns.id --localport=443 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update router.zcdns.id --localport=443 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
+            shared-ip add "*.router.zcdns.id" --localport=443 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update "*.router.zcdns.id" --localport=443 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
+
             systemctl restart zcdns &&
             systemctl is-active zcdns &&
+            
+            # Setup Certbot DNS Challenge for AI Router wildcard
+            cat << 'EOF_CERT' > /opt/zcdns/certbot-router-auth.sh
+            #!/bin/bash
+            sqlite3 /opt/zcdns/zcdns.db "INSERT INTO records (id, subdomain, name, type, value, ttl) VALUES (lower(hex(randomblob(16))), 'router', '_acme-challenge', 'TXT', '\${CERTBOT_VALIDATION}', 60);"
+            systemctl restart zcdns
+            sleep 3
+            EOF_CERT
+            
+            cat << 'EOF_CERT' > /opt/zcdns/certbot-router-cleanup.sh
+            #!/bin/bash
+            sqlite3 /opt/zcdns/zcdns.db "DELETE FROM records WHERE subdomain='router' AND name='_acme-challenge' AND type='TXT' AND value='\${CERTBOT_VALIDATION}';"
+            systemctl restart zcdns
+            EOF_CERT
+            
+            chmod +x /opt/zcdns/certbot-router-auth.sh /opt/zcdns/certbot-router-cleanup.sh
+            
+            if [ ! -d "/etc/letsencrypt/live/router.zcdns.id" ] && which certbot >/dev/null 2>&1; then
+              certbot certonly --manual --preferred-challenges=dns --manual-auth-hook /opt/zcdns/certbot-router-auth.sh --manual-cleanup-hook /opt/zcdns/certbot-router-cleanup.sh -d "*.router.zcdns.id" -d "router.zcdns.id" --agree-tos --register-unsafely-without-email --non-interactive || true
+            fi
+            
+            # Setup Nginx server block for router if cert exists
+            if [ -d "/etc/letsencrypt/live/router.zcdns.id" ] && [ -d "/etc/nginx/sites-available" ]; then
+              cat << 'EOF_NGINX' > /etc/nginx/sites-available/router.zcdns.id
+              server {
+                  listen 443 ssl http2;
+                  listen [::]:443 ssl http2;
+                  server_name router.zcdns.id *.router.zcdns.id;
+                  ssl_certificate /etc/letsencrypt/live/router.zcdns.id/fullchain.pem;
+                  ssl_certificate_key /etc/letsencrypt/live/router.zcdns.id/privkey.pem;
+                  location / {
+                      proxy_pass http://127.0.0.1:8080;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                      proxy_buffering off;
+                      proxy_cache off;
+                      proxy_read_timeout 86400s;
+                      proxy_send_timeout 86400s;
+                  }
+              }
+              EOF_NGINX
+              ln -sf /etc/nginx/sites-available/router.zcdns.id /etc/nginx/sites-enabled/
+              nginx -t && systemctl reload nginx || true
+            fi
+
             systemctl restart shared-ip &&
             systemctl is-active shared-ip &&
             ss -tulpn | grep -E '53|853' || true
