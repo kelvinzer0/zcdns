@@ -133,6 +133,17 @@ func InitDB(dbPath string) (*DB, error) {
 
 	CREATE INDEX IF NOT EXISTS idx_vault_auth_user_code ON vault_auth_requests(user_code);
 
+	CREATE TABLE IF NOT EXISTS ai_router_configs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		subdomain TEXT NOT NULL UNIQUE,
+		input_format TEXT NOT NULL DEFAULT 'openai',
+		output_format TEXT NOT NULL DEFAULT 'openai',
+		routing_rules_json TEXT NOT NULL DEFAULT '[]',
+		provider_keys_json TEXT NOT NULL DEFAULT '{}',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_records_subdomain ON records(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_records_lookup ON records(subdomain, name, type);
 	CREATE INDEX IF NOT EXISTS idx_requests_subdomain ON requests(subdomain);

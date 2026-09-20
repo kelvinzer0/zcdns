@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Sparkles, Database, Radio, Terminal, ArrowRight, Zap, Shield, Lock } from 'lucide-react';
+import { Sparkles, Database, Radio, Terminal, ArrowRight, Zap, Shield, Lock, Network } from 'lucide-react';
 import { Button } from '../ui/button';
 import { DashboardHeader } from './DashboardHeader';
 import { RecordManager } from './RecordManager';
@@ -8,6 +8,7 @@ import { DnsTester } from './DnsTester';
 import { Experiments } from './Experiments';
 import { ParentalControl } from './ParentalControl';
 import { VaultUI } from './VaultUI';
+import { AIRouterUI } from './AIRouterUI';
 import type { DnsRecord, DnsRequestLog, Experiment, RecordType, UserSession } from './types';
 import { dashboardApi } from './api';
 import { useTranslations } from '../../lib/useTranslations';
@@ -23,7 +24,7 @@ export function DashboardPage() {
   const [requests, setRequests] = useState<DnsRequestLog[]>([]);
   const [wsStatus, setWsStatus] = useState<'connected' | 'disconnected' | 'connecting'>('disconnected');
 
-  const [activeTab, setActiveTab] = useState<'records' | 'stream' | 'tester' | 'experiments' | 'parental' | 'vault'>('records');
+  const [activeTab, setActiveTab] = useState<'records' | 'stream' | 'tester' | 'experiments' | 'parental' | 'vault' | 'airouter'>('records');
 
   // Load session on mount
   const loadSession = useCallback(async () => {
@@ -378,6 +379,18 @@ export function DashboardPage() {
             <Lock className="w-4 h-4 text-indigo-600" />
             <span>{t('tab-vault')}</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('airouter')}
+            className={`flex items-center space-x-1.5 py-2.5 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer rounded-none ${
+              activeTab === 'airouter'
+                ? 'border-green-600 text-green-700 bg-white'
+                : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            <Network className="w-4 h-4 text-blue-600" />
+            <span>AI Router</span>
+          </button>
         </div>
 
         {/* Tab Content */}
@@ -429,6 +442,10 @@ export function DashboardPage() {
 
           {activeTab === 'vault' && (
             <VaultUI subdomain={session.subdomain!} />
+          )}
+
+          {activeTab === 'airouter' && (
+            <AIRouterUI subdomain={session.subdomain!} />
           )}
         </div>
       </div>

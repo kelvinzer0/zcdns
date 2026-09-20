@@ -80,6 +80,25 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/vault/auth/info", h.handleVaultGetAuthInfo)
 	mux.HandleFunc("POST /api/vault/auth/verify", h.requireSubdomain(h.handleVaultVerifyAuth))
 
+	// AI Router APIs
+	mux.HandleFunc("GET /api/airouter/config", h.handleGetAIRouterConfig)
+	mux.HandleFunc("POST /api/airouter/config", h.handleSaveAIRouterConfig)
+
+	// AI Router Proxy (Handle both /api/airouter/{subdomain}/... and host-based routing)
+	mux.HandleFunc("POST /api/airouter/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/v1/chat/completions") {
+			h.handleAIRouterOpenAI(w, r)
+		} else if strings.HasSuffix(r.URL.Path, "/v1/messages") {
+			h.handleAIRouterAnthropic(w, r)
+		} else {
+			writeJSONError(w, http.StatusNotFound, "not found")
+		}
+	})
+
+	// Host-based proxy endpoints (will match if the host condition matches in the handler)
+	mux.HandleFunc("POST /v1/chat/completions", h.handleAIRouterOpenAI)
+	mux.HandleFunc("POST /v1/messages", h.handleAIRouterAnthropic)
+
 	mux.HandleFunc("GET /dns-query", h.handleDoH)
 	mux.HandleFunc("POST /dns-query", h.handleDoH)
 	mux.HandleFunc("GET /dns-query/{subdomain}", h.handleDoH)

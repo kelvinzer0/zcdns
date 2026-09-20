@@ -344,7 +344,7 @@ func (h *APIHandler) handleSyncVault(w http.ResponseWriter, r *http.Request, sub
 		writeJSONError(w, http.StatusForbidden, "Akses ditolak")
 		return
 	}
-	
+
 	if err := h.db.SyncVault(req.RepoID, req.Commits, req.KVPairs, req.HeadCommitHash); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "Failed to sync vault: "+err.Error())
 		return

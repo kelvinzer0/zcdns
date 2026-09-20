@@ -26,7 +26,7 @@ func (d *DB) InitVault(subdomain string) (*VaultRepo, error) {
 
 	branchID := uuid.New().String()
 	commitHash := uuid.New().String()[:8]
-	
+
 	_, err = d.conn.Exec("INSERT INTO vault_commits (id, repo_id, hash, message, timestamp, author) VALUES (?, ?, ?, ?, ?, ?)",
 		uuid.New().String(), repo.ID, commitHash, "initial commit", time.Now(), "system")
 	if err != nil {
@@ -225,7 +225,6 @@ func (d *DB) DeleteCommit(repoID, commitHash string) error {
 	}
 	return err
 }
-
 
 func (d *DB) SyncVault(repoID string, commits []VaultCommit, kvPairs []VaultKVPair, headCommitHash string) error {
 	tx, err := d.conn.Begin()

@@ -2,6 +2,7 @@ package dns
 
 import (
 	"fmt"
+
 	"github.com/miekg/dns"
 )
 
