@@ -3,35 +3,63 @@ set -e
 
 # === Certbot Hooks (use ZCDNS HTTP API, no sqlite3 needed) ===
 # Reads ADMIN_KEY from /opt/zcdns/.env or falls back to default
+# NOTE: hook is called TWICE by certbot (once for *.domain, once for domain)
+#       Both TXT records must exist before LE verifies - we wait for AXFR propagation
 
-cat > /opt/zcdns/certbot-router-auth.sh << 'HOOK'
+ZCDNS_PORT=$(grep '^PORT=' /opt/zcdns/.env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo "8085")
+
+cat > /opt/zcdns/certbot-router-auth.sh << HOOK
 #!/bin/bash
-# Read admin key from env file
-ADMIN_KEY=$(grep '^ADMIN_KEY=' /opt/zcdns/.env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo "@Kelvin123")
+# Read admin key and port from env file
+ADMIN_KEY=\$(grep '^ADMIN_KEY=' /opt/zcdns/.env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo "@Kelvin123")
+ZCDNS_PORT=\$(grep '^PORT=' /opt/zcdns/.env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo "8085")
+
+echo "[AUTH] Adding TXT record for domain: \${CERTBOT_DOMAIN}, validation: \${CERTBOT_VALIDATION}"
+
 # Insert _acme-challenge TXT record via ZCDNS API
-curl -sf -X POST http://127.0.0.1:8080/api/acme-challenge \
-  -H "Content-Type: application/json" \
-  -H "X-Admin-Key: ${ADMIN_KEY}" \
-  -d "{\"subdomain\":\"router\",\"value\":\"${CERTBOT_VALIDATION}\"}" \
-  && echo "[AUTH] TXT record added: ${CERTBOT_VALIDATION}" \
-  || echo "[AUTH] WARN: failed to add TXT record"
-sleep 10
+RESULT=\$(curl -sf -X POST "http://127.0.0.1:\${ZCDNS_PORT}/api/acme-challenge" \\
+  -H "Content-Type: application/json" \\
+  -H "X-Admin-Key: \${ADMIN_KEY}" \\
+  -d "{\"subdomain\":\"router\",\"value\":\"\${CERTBOT_VALIDATION}\"}" 2>&1)
+
+if [ \$? -eq 0 ]; then
+  echo "[AUTH] TXT record added OK: \${CERTBOT_VALIDATION}"
+else
+  echo "[AUTH] WARN: curl failed: \${RESULT}"
+fi
+
+# Wait for AXFR to propagate to secondary NS (ns2.zcdns.id)
+# LE queries both nameservers - must wait for zone transfer
+echo "[AUTH] Waiting 60s for AXFR propagation to secondary NS..."
+sleep 60
+
+# Verify TXT is visible in DNS before returning
+DIG_RESULT=\$(dig @127.0.0.1 _acme-challenge.router.zcdns.id TXT +short 2>/dev/null || echo "")
+echo "[AUTH] DNS check result: \${DIG_RESULT}"
 HOOK
 
-cat > /opt/zcdns/certbot-router-cleanup.sh << 'HOOK'
+cat > /opt/zcdns/certbot-router-cleanup.sh << HOOK
 #!/bin/bash
 # Read admin key from env file
-ADMIN_KEY=$(grep '^ADMIN_KEY=' /opt/zcdns/.env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo "@Kelvin123")
-# Get list of acme challenge records and delete matching one
-RECORD_ID=$(curl -sf http://127.0.0.1:8080/api/acme-challenge \
-  -H "X-Admin-Key: ${ADMIN_KEY}" | \
-  python3 -c "import sys,json; records=json.load(sys.stdin); \
-match=[r for r in records if r.get('value')=='${CERTBOT_VALIDATION}']; \
+ADMIN_KEY=\$(grep '^ADMIN_KEY=' /opt/zcdns/.env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo "@Kelvin123")
+ZCDNS_PORT=\$(grep '^PORT=' /opt/zcdns/.env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo "8085")
+
+echo "[CLEANUP] Removing TXT record: \${CERTBOT_VALIDATION}"
+
+# Find and delete matching TXT record
+RECORD_ID=\$(curl -sf "http://127.0.0.1:\${ZCDNS_PORT}/api/acme-challenge" \\
+  -H "X-Admin-Key: \${ADMIN_KEY}" | \\
+  python3 -c "import sys,json
+records=json.load(sys.stdin)
+match=[r for r in records if r.get('value')=='\${CERTBOT_VALIDATION}']
 print(match[0]['id'] if match else '')" 2>/dev/null || echo "")
-if [ -n "${RECORD_ID}" ]; then
-  curl -sf -X DELETE "http://127.0.0.1:8080/api/records/${RECORD_ID}" \
-    -H "X-Admin-Key: ${ADMIN_KEY}" \
-    && echo "[CLEANUP] TXT record removed" || true
+
+if [ -n "\${RECORD_ID}" ]; then
+  curl -sf -X DELETE "http://127.0.0.1:\${ZCDNS_PORT}/api/records/\${RECORD_ID}" \\
+    -H "X-Admin-Key: \${ADMIN_KEY}" \\
+    && echo "[CLEANUP] TXT record removed" || echo "[CLEANUP] WARN: delete failed"
+else
+  echo "[CLEANUP] No matching TXT record found (may already be removed)"
 fi
 HOOK
 
