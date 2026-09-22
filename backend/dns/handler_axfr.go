@@ -75,28 +75,41 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("www.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
 		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("guard.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
 		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.guard.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
+		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("router.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
+		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.router.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300}, AAAA: serverIP},
 		// Wildcard AAAA: prevents HE.net slave from replying NXDOMAIN for active subdomains
 		&dns.AAAA{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.%s", base), Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 60}, AAAA: serverIP},
 	)
 
 	if fallbackIP := s.GetFallbackIPv4(); fallbackIP != nil {
 		records = append(records,
-			// ns1/ns2 are AAAA-only; A record only on base domain, www, guard, and wildcard
+			// ns1/ns2 are AAAA-only; A record only on base domain, www, guard, router, and wildcard
 			&dns.A{Hdr: dns.RR_Header{Name: base, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("www.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("guard.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.guard.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
+			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("router.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
+			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.router.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: fallbackIP},
 			&dns.A{Hdr: dns.RR_Header{Name: fmt.Sprintf("*.%s", base), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: fallbackIP},
 		)
 	}
 
-	// 3.5. ACME TXT challenges for guard domain
+	// 3.5. ACME TXT challenges for guard and router domains
 	seenChallenge := make(map[string]bool)
 	for _, val := range s.GetAcmeChallenges("guard") {
 		if !seenChallenge[val] {
 			seenChallenge[val] = true
 			records = append(records, &dns.TXT{
 				Hdr: dns.RR_Header{Name: fmt.Sprintf("_acme-challenge.guard.%s", base), Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 60},
+				Txt: []string{val},
+			})
+		}
+	}
+	for _, val := range s.GetAcmeChallenges("router") {
+		if !seenChallenge[val] {
+			seenChallenge[val] = true
+			records = append(records, &dns.TXT{
+				Hdr: dns.RR_Header{Name: fmt.Sprintf("_acme-challenge.router.%s", base), Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 60},
 				Txt: []string{val},
 			})
 		}
@@ -113,7 +126,7 @@ func (s *Server) handleAXFR(w dns.ResponseWriter, r *dns.Msg) {
 				fqdn = fmt.Sprintf("%s.%s.%s", dbr.Name, dbr.Subdomain, base)
 			}
 			if rr := s.buildRR(dbr, fqdn); rr != nil {
-				if dbr.Subdomain == "guard" && dbr.Name == "_acme-challenge" && dbr.Type == "TXT" {
+				if (dbr.Subdomain == "guard" || dbr.Subdomain == "router") && dbr.Name == "_acme-challenge" && dbr.Type == "TXT" {
 					val := strings.Trim(dbr.Value, "\"")
 					if seenChallenge[val] {
 						continue

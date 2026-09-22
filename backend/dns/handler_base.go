@@ -52,6 +52,17 @@ func (s *Server) handleDoTRequest(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
+	// Router domain (*.router.zcdns.id / router.zcdns.id)
+	routerBase := "router." + strings.ToLower(s.cfg.BaseDomain) + "."
+	if qName == routerBase || strings.HasSuffix(qName, "."+routerBase) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		m.Authoritative = true
+		s.handleRouterDomain(m, q, strings.TrimSuffix(qName, "."))
+		_ = w.WriteMsg(m)
+		return
+	}
+
 	// All other queries go through the parental engine for the SNI subdomain.
 	if s.parental != nil {
 		resp, err := s.parental.ProcessQuery(subdomain, clientIP, r)
@@ -179,6 +190,54 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		}
 
 		s.handleGuardDomain(m, q, strings.TrimSuffix(qName, "."))
+		_ = w.WriteMsg(m)
+		return
+	}
+
+	// Handle queries directly targeted at AI router domains (*.router.zcdns.id / router.zcdns.id)
+	if subdomain == "router" {
+		// 1. Check ACME challenge TXT records for router domain (_acme-challenge.router.zcdns.id)
+		if recordName == "_acme-challenge" && (q.Qtype == dns.TypeTXT || q.Qtype == dns.TypeANY) {
+			m.SetRcode(r, dns.RcodeSuccess)
+			seen := make(map[string]bool)
+			for _, val := range s.GetAcmeChallenges("router") {
+				if !seen[val] {
+					seen[val] = true
+					m.Answer = append(m.Answer, &dns.TXT{
+						Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 60},
+						Txt: []string{val},
+					})
+				}
+			}
+			if dbRecs, err := s.db.GetRecordsByNameAndType("router", "_acme-challenge", "TXT"); err == nil {
+				for _, rec := range dbRecs {
+					val := strings.Trim(rec.Value, "\"")
+					if !seen[val] {
+						seen[val] = true
+						m.Answer = append(m.Answer, &dns.TXT{
+							Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: uint32(rec.TTL)},
+							Txt: []string{val},
+						})
+					}
+				}
+			}
+			_ = w.WriteMsg(m)
+			return
+		}
+
+		// 2. Check other custom records in DB for router
+		if records, err := s.db.GetRecordsByNameAndType("router", recordName, qTypeStr); err == nil && len(records) > 0 {
+			m.SetRcode(r, dns.RcodeSuccess)
+			for _, rec := range records {
+				if rr := s.buildRR(rec, q.Name); rr != nil {
+					m.Answer = append(m.Answer, rr)
+				}
+			}
+			_ = w.WriteMsg(m)
+			return
+		}
+
+		s.handleRouterDomain(m, q, strings.TrimSuffix(qName, "."))
 		_ = w.WriteMsg(m)
 		return
 	}
