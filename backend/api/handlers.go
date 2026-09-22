@@ -80,22 +80,28 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/vault/auth/info", h.handleVaultGetAuthInfo)
 	mux.HandleFunc("POST /api/vault/auth/verify", h.requireSubdomain(h.handleVaultVerifyAuth))
 
-	// AI Router APIs
-	mux.HandleFunc("GET /api/airouter/config", h.handleGetAIRouterConfig)
-	mux.HandleFunc("POST /api/airouter/config", h.handleSaveAIRouterConfig)
+	// AI Router - Config
+	mux.HandleFunc("GET /api/airouter/config", h.requireSubdomain(h.handleGetAIRouterConfig))
+	mux.HandleFunc("POST /api/airouter/config", h.requireSubdomain(h.handleSaveAIRouterConfig))
 
-	// AI Router Proxy (Handle both /api/airouter/{subdomain}/... and host-based routing)
+	// AI Router - Connections (multiple API keys per provider)
+	mux.HandleFunc("POST /api/airouter/connections", h.requireSubdomain(h.handleAddAIRouterConnection))
+	mux.HandleFunc("DELETE /api/airouter/connections/{id}", h.requireSubdomain(h.handleDeleteAIRouterConnection))
+
+	// AI Router - Combos
+	mux.HandleFunc("POST /api/airouter/combos", h.requireSubdomain(h.handleUpsertAIRouterCombo))
+	mux.HandleFunc("DELETE /api/airouter/combos/{id}", h.requireSubdomain(h.handleDeleteAIRouterCombo))
+
+	// AI Router - Aliases
+	mux.HandleFunc("POST /api/airouter/aliases", h.requireSubdomain(h.handleUpsertAIRouterAlias))
+	mux.HandleFunc("DELETE /api/airouter/aliases/{id}", h.requireSubdomain(h.handleDeleteAIRouterAlias))
+
+	// AI Router Proxy (path-based: /api/airouter/{subdomain}/v1/...)
 	mux.HandleFunc("POST /api/airouter/", func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/v1/chat/completions") {
-			h.handleAIRouterOpenAI(w, r)
-		} else if strings.HasSuffix(r.URL.Path, "/v1/messages") {
-			h.handleAIRouterAnthropic(w, r)
-		} else {
-			writeJSONError(w, http.StatusNotFound, "not found")
-		}
+		h.handleAIRouterProxy(w, r)
 	})
 
-	// Host-based proxy endpoints (will match if the host condition matches in the handler)
+	// Host-based proxy (*.router.zcdns.id)
 	mux.HandleFunc("POST /v1/chat/completions", h.handleAIRouterOpenAI)
 	mux.HandleFunc("POST /v1/messages", h.handleAIRouterAnthropic)
 

@@ -136,12 +136,41 @@ func InitDB(dbPath string) (*DB, error) {
 	CREATE TABLE IF NOT EXISTS ai_router_configs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		subdomain TEXT NOT NULL UNIQUE,
-		input_format TEXT NOT NULL DEFAULT 'openai',
+		input_format TEXT NOT NULL DEFAULT 'auto',
 		output_format TEXT NOT NULL DEFAULT 'openai',
-		routing_rules_json TEXT NOT NULL DEFAULT '[]',
-		provider_keys_json TEXT NOT NULL DEFAULT '{}',
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS ai_router_connections (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		subdomain TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		name TEXT NOT NULL,
+		api_key TEXT NOT NULL,
+		base_url TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'active',
+		rate_limited_until TIMESTAMP,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS ai_router_combos (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		subdomain TEXT NOT NULL,
+		name TEXT NOT NULL,
+		strategy TEXT NOT NULL DEFAULT 'fallback',
+		models_json TEXT NOT NULL DEFAULT '[]',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(subdomain, name)
+	);
+
+	CREATE TABLE IF NOT EXISTS ai_router_aliases (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		subdomain TEXT NOT NULL,
+		alias_name TEXT NOT NULL,
+		target_model TEXT NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(subdomain, alias_name)
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_records_subdomain ON records(subdomain);
@@ -150,6 +179,7 @@ func InitDB(dbPath string) (*DB, error) {
 	CREATE INDEX IF NOT EXISTS idx_requests_created_at ON requests(created_at);
 	CREATE INDEX IF NOT EXISTS idx_abuse_status ON abuse_reports(status);
 	CREATE INDEX IF NOT EXISTS idx_abuse_subdomain ON abuse_reports(subdomain);
+	CREATE INDEX IF NOT EXISTS idx_airouter_conn ON ai_router_connections(subdomain, provider, status);
 	`
 
 	if _, err := conn.Exec(schema); err != nil {
