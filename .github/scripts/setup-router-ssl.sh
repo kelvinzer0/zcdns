@@ -106,6 +106,12 @@ NGINX
 
   ln -sf /etc/nginx/sites-available/router.zcdns.id /etc/nginx/sites-enabled/router.zcdns.id
   nginx -t && systemctl reload nginx || echo "[WARN] nginx reload failed"
+
+  # Clean up any leftover ACME challenge records
+  sqlite3 /opt/zcdns/zcdns.db "DELETE FROM records WHERE subdomain='router' AND name='_acme-challenge';" 2>/dev/null || true
+  systemctl restart zcdns 2>/dev/null || true
+  echo "[INFO] Nginx configured and challenge records cleaned up successfully"
 else
   echo "[INFO] Skipping nginx setup: cert not yet issued or nginx not installed"
 fi
+
