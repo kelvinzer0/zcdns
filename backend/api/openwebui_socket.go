@@ -15,20 +15,71 @@ import (
 
 // SocketClient represents an active WebSocket connection
 type SocketClient struct {
-	conn       *websocket.Conn
-	sid        string
-	subdomain  string
-	userID     string
-	userName   string
-	lastSeenAt int64
-	rooms      map[string]bool
-	writeMu    sync.Mutex
+	conn        *websocket.Conn
+	sid         string
+	subdomain   string
+	userID      string
+	userName    string
+	role        string
+	email       string
+	lastSeenAt  int64
+	rooms       map[string]bool
+	writeMu     sync.Mutex
+	ackCounter  int64
+	ackMu       sync.Mutex
+	pendingAcks map[int64]chan any
 }
 
 func (c *SocketClient) write(msg []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	return c.conn.WriteMessage(websocket.TextMessage, msg)
+}
+
+// Call sends an RPC event to the client and blocks until the client returns an ACK or timeout expires
+func (c *SocketClient) Call(event string, data any, timeout time.Duration) (any, error) {
+	c.ackMu.Lock()
+	c.ackCounter++
+	ackID := c.ackCounter
+	respCh := make(chan any, 1)
+	if c.pendingAcks == nil {
+		c.pendingAcks = make(map[int64]chan any)
+	}
+	c.pendingAcks[ackID] = respCh
+	c.ackMu.Unlock()
+
+	defer func() {
+		c.ackMu.Lock()
+		delete(c.pendingAcks, ackID)
+		c.ackMu.Unlock()
+	}()
+
+	payloadBytes, err := json.Marshal([]any{event, data})
+	if err != nil {
+		return nil, err
+	}
+	msg := fmt.Sprintf("42%d%s", ackID, string(payloadBytes))
+	if err := c.write([]byte(msg)); err != nil {
+		return nil, err
+	}
+
+	select {
+	case res := <-respCh:
+		return res, nil
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("timeout waiting for client response")
+	}
+}
+
+func (c *SocketClient) resolveAck(ackID int64, result any) {
+	c.ackMu.Lock()
+	defer c.ackMu.Unlock()
+	if ch, ok := c.pendingAcks[ackID]; ok {
+		select {
+		case ch <- result:
+		default:
+		}
+	}
 }
 
 // SocketHub manages rooms and active Socket.IO connections
@@ -69,6 +120,24 @@ func (h *SocketHub) unregister(c *SocketClient) {
 	for _, sids := range h.usagePool {
 		delete(sids, c.sid)
 	}
+}
+
+func (h *SocketHub) getClient(sid string) *SocketClient {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.clients[sid]
+}
+
+func (h *SocketHub) getClientsByUserID(userID string) []*SocketClient {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var matches []*SocketClient
+	for _, client := range h.clients {
+		if client.userID == userID {
+			matches = append(matches, client)
+		}
+	}
+	return matches
 }
 
 func (h *SocketHub) joinRoom(c *SocketClient, room string) {
@@ -115,6 +184,52 @@ func (h *SocketHub) broadcastToRoom(room string, msg []byte, skipSid string) {
 	}
 }
 
+func (h *SocketHub) emitToUsers(event string, data any, userIDs []string) {
+	payload, err := json.Marshal([]any{event, data})
+	if err != nil {
+		return
+	}
+	msg := []byte("42" + string(payload))
+	for _, uID := range userIDs {
+		h.broadcastToRoom("user:"+uID, msg, "")
+	}
+}
+
+func (h *SocketHub) enterRoomForUsers(room string, userIDs []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, client := range h.clients {
+		for _, uID := range userIDs {
+			if client.userID == uID {
+				if client.rooms == nil {
+					client.rooms = make(map[string]bool)
+				}
+				client.rooms[room] = true
+				if h.rooms[room] == nil {
+					h.rooms[room] = make(map[string]*SocketClient)
+				}
+				h.rooms[room][client.sid] = client
+			}
+		}
+	}
+}
+
+func (h *SocketHub) disconnectUserSessions(userID string) {
+	h.mu.Lock()
+	var targets []*SocketClient
+	for _, client := range h.clients {
+		if client.userID == userID {
+			targets = append(targets, client)
+		}
+	}
+	h.mu.Unlock()
+
+	for _, client := range targets {
+		_ = client.conn.Close()
+		h.unregister(client)
+	}
+}
+
 func (h *SocketHub) getUserCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -131,6 +246,16 @@ func (h *SocketHub) recordUsage(model, sid string) {
 		h.usagePool[model] = make(map[string]int64)
 	}
 	h.usagePool[model][sid] = time.Now().Unix()
+}
+
+func (h *SocketHub) getModelsInUse() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var models []string
+	for m := range h.usagePool {
+		models = append(models, m)
+	}
+	return models
 }
 
 func (h *SocketHub) getRoomSids(room string) []string {
@@ -211,6 +336,12 @@ func init() {
 	globalSocketHub.startPruner()
 }
 
+func normalizeDocumentID(docID string) string {
+	docID = strings.TrimPrefix(docID, "doc_")
+	docID = strings.TrimPrefix(docID, "/")
+	return docID
+}
+
 // getFolderUnreadCounts computes hierarchical unread badge counts across folders
 func (h *APIHandler) getFolderUnreadCounts(subdomain, userID string) map[string]int {
 	folderList, err := h.db.GetOpenWebUIFolders(subdomain, userID)
@@ -259,6 +390,205 @@ func (h *APIHandler) EmitChatEvent(subdomain, userID, chatID, messageID, eventTy
 	}
 }
 
+// GetEventEmitter provides an event emitter for chat completion streaming and updates
+func (h *APIHandler) GetEventEmitter(subdomain, userID, chatID, messageID string, updateDB bool) func(eventData map[string]any) {
+	if strings.HasPrefix(chatID, "channel:") {
+		channelID := strings.TrimPrefix(chatID, "channel:")
+		return h.MakeChannelEmitter(subdomain, channelID, messageID)
+	}
+
+	return func(eventData map[string]any) {
+		if eventData == nil {
+			return
+		}
+		eventType, _ := eventData["type"].(string)
+
+		// Broadcast event to user room
+		room := "user:" + userID
+		payload, err := json.Marshal(map[string]any{
+			"chat_id":    chatID,
+			"message_id": messageID,
+			"data":       eventData,
+		})
+		if err == nil {
+			globalSocketHub.broadcastToRoom(room, []byte(fmt.Sprintf(`42["events",%s]`, string(payload))), "")
+		}
+
+		if !updateDB || messageID == "" || chatID == "" {
+			return
+		}
+
+		dataMap, _ := eventData["data"].(map[string]any)
+
+		switch eventType {
+		case "status":
+			if dataMap != nil {
+				_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID, func(msg map[string]interface{}) map[string]interface{} {
+					msg["status"] = dataMap
+					return msg
+				})
+			}
+		case "message":
+			if dataMap != nil {
+				chunk, _ := dataMap["content"].(string)
+				_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID, func(msg map[string]interface{}) map[string]interface{} {
+					curr, _ := msg["content"].(string)
+					msg["content"] = curr + chunk
+					return msg
+				})
+			}
+		case "replace":
+			if dataMap != nil {
+				content, _ := dataMap["content"].(string)
+				_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID, func(msg map[string]interface{}) map[string]interface{} {
+					msg["content"] = content
+					return msg
+				})
+			}
+		case "embeds":
+			if dataMap != nil {
+				embeds, _ := dataMap["embeds"].([]any)
+				replace, _ := dataMap["replace"].(bool)
+				_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID, func(msg map[string]interface{}) map[string]interface{} {
+					if replace || msg["embeds"] == nil {
+						msg["embeds"] = embeds
+					} else if existing, ok := msg["embeds"].([]any); ok {
+						msg["embeds"] = append(existing, embeds...)
+					}
+					return msg
+				})
+			}
+		case "files":
+			if dataMap != nil {
+				files, _ := dataMap["files"].([]any)
+				_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID, func(msg map[string]interface{}) map[string]interface{} {
+					if msg["files"] == nil {
+						msg["files"] = files
+					} else if existing, ok := msg["files"].([]any); ok {
+						msg["files"] = append(existing, files...)
+					}
+					return msg
+				})
+			}
+		case "source", "citation":
+			if dataMap != nil && dataMap["type"] != nil {
+				_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID, func(msg map[string]interface{}) map[string]interface{} {
+					var sources []any
+					if sList, ok := msg["sources"].([]any); ok {
+						sources = sList
+					}
+					sources = append(sources, dataMap)
+					msg["sources"] = sources
+					return msg
+				})
+			}
+		}
+	}
+}
+
+// MakeChannelEmitter translates chat completions into throttled channel message updates
+func (h *APIHandler) MakeChannelEmitter(subdomain, channelID, messageID string) func(eventData map[string]any) {
+	var mu sync.Mutex
+	var lastEmitAt float64
+	var output []any
+	throttleInterval := 0.15 // 150ms
+
+	return func(eventData map[string]any) {
+		if eventData == nil {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+
+		eventType, _ := eventData["type"].(string)
+		data, _ := eventData["data"].(map[string]any)
+		if data == nil {
+			data = make(map[string]any)
+		}
+
+		now := float64(time.Now().UnixNano()) / 1e9
+
+		if eventType == "chat:completion" {
+			outList, _ := data["output"].([]any)
+			if outList != nil {
+				output = outList
+			}
+			content, _ := data["content"].(string)
+			done, _ := data["done"].(bool)
+			flush, _ := data["flush"].(bool)
+
+			if content == "" && len(output) == 0 && !done {
+				return
+			}
+
+			if done || flush || (now-lastEmitAt >= throttleInterval) {
+				lastEmitAt = now
+				updatePayload, _ := json.Marshal(map[string]any{
+					"channel_id": channelID,
+					"message_id": messageID,
+					"data": map[string]any{
+						"type": "message:update",
+						"data": map[string]any{
+							"id":         messageID,
+							"channel_id": channelID,
+							"content":    content,
+							"done":       done,
+							"output":     output,
+						},
+					},
+				})
+				globalSocketHub.broadcastToRoom("channel:"+channelID, []byte(fmt.Sprintf(`42["events:channel",%s]`, string(updatePayload))), "")
+			}
+		} else if eventType == "chat:message:error" {
+			errMap, _ := data["error"].(map[string]any)
+			errContent := "An error occurred"
+			if errMap != nil {
+				if msg, ok := errMap["content"].(string); ok && msg != "" {
+					errContent = msg
+				}
+			}
+			updatePayload, _ := json.Marshal(map[string]any{
+				"channel_id": channelID,
+				"message_id": messageID,
+				"data": map[string]any{
+					"type": "message:update",
+					"data": map[string]any{
+						"id":         messageID,
+						"channel_id": channelID,
+						"content":    "Error: " + errContent,
+						"done":       true,
+					},
+				},
+			})
+			globalSocketHub.broadcastToRoom("channel:"+channelID, []byte(fmt.Sprintf(`42["events:channel",%s]`, string(updatePayload))), "")
+		}
+	}
+}
+
+// GetEventCall provides an RPC caller to send events to a specific client session and await response
+func (h *APIHandler) GetEventCall(subdomain, userID, sessionID, chatID, messageID string) func(eventData map[string]any) (any, error) {
+	client := globalSocketHub.getClient(sessionID)
+	if client == nil || client.userID != userID {
+		return func(eventData map[string]any) (any, error) {
+			return map[string]any{"error": "Client session disconnected."}, nil
+		}
+	}
+
+	return func(eventData map[string]any) (any, error) {
+		req := map[string]any{
+			"chat_id":    chatID,
+			"message_id": messageID,
+			"data":       eventData,
+		}
+		// 30-second timeout matching WEBSOCKET_EVENT_CALLER_TIMEOUT
+		resp, err := client.Call("events", req, 30*time.Second)
+		if err != nil {
+			return map[string]any{"error": "Event call timed out. The browser tab may be inactive or closed."}, nil
+		}
+		return resp, nil
+	}
+}
+
 // parseSocketIOEvent parses a Socket.IO message like: 42["user-join",{"auth":...}] or 421[...]
 func parseSocketIOEvent(msg string) (ackID string, eventName string, eventData map[string]interface{}) {
 	if !strings.HasPrefix(msg, "42") {
@@ -286,6 +616,26 @@ func parseSocketIOEvent(msg string) (ackID string, eventName string, eventData m
 	return ackID, eventName, eventData
 }
 
+// parseSocketIOAck parses a Socket.IO ack response like: 431[{"ok":true}]
+func parseSocketIOAck(msg string) (int64, any) {
+	if !strings.HasPrefix(msg, "43") {
+		return 0, nil
+	}
+	rest := msg[2:]
+	idx := strings.Index(rest, "[")
+	if idx < 0 {
+		return 0, nil
+	}
+	var ackID int64
+	_, _ = fmt.Sscanf(rest[:idx], "%d", &ackID)
+	jsonPart := rest[idx:]
+	var arr []any
+	if err := json.Unmarshal([]byte(jsonPart), &arr); err == nil && len(arr) > 0 {
+		return ackID, arr[0]
+	}
+	return ackID, nil
+}
+
 // handleOpenWebUISocketIO handles WebSocket and Engine.IO polling on /ws/socket.io/
 func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Request) {
 	if websocket.IsWebSocketUpgrade(r) {
@@ -301,13 +651,14 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 
 		subdomain := h.resolveSubdomain(r)
 		client := &SocketClient{
-			conn:       conn,
-			sid:        sid,
-			subdomain:  subdomain,
-			userID:     "usr_guest",
-			userName:   "Guest",
-			lastSeenAt: time.Now().Unix(),
-			rooms:      make(map[string]bool),
+			conn:        conn,
+			sid:         sid,
+			subdomain:   subdomain,
+			userID:      "usr_guest",
+			userName:    "Guest",
+			lastSeenAt:  time.Now().Unix(),
+			rooms:       make(map[string]bool),
+			pendingAcks: make(map[int64]chan any),
 		}
 
 		globalSocketHub.register(client)
@@ -316,7 +667,11 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 			for rName := range client.rooms {
 				if strings.HasPrefix(rName, "doc_") {
 					docID := strings.TrimPrefix(rName, "doc_")
-					leaveEvt := fmt.Sprintf(`42["ydoc:user:left",{"document_id":"%s","user_id":"%s"}]`, docID, client.userID)
+					leavePayload, _ := json.Marshal(map[string]interface{}{
+						"document_id": docID,
+						"user_id":     client.userID,
+					})
+					leaveEvt := fmt.Sprintf(`42["ydoc:user:left",%s]`, string(leavePayload))
 					globalSocketHub.broadcastToRoom(rName, []byte(leaveEvt), client.sid)
 				}
 			}
@@ -340,6 +695,11 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 			} else if strings.HasPrefix(s, "40") { // Socket.IO CONNECT
 				connectResp := fmt.Sprintf(`40{"sid":"%s"}`, sid)
 				_ = client.write([]byte(connectResp))
+			} else if strings.HasPrefix(s, "43") { // Socket.IO ACK response from client
+				ackID, result := parseSocketIOAck(s)
+				if ackID > 0 {
+					client.resolveAck(ackID, result)
+				}
 			} else if strings.HasPrefix(s, "42") { // Socket.IO EVENT
 				ackID, eventName, eventData := parseSocketIOEvent(s)
 				if eventData == nil {
@@ -364,10 +724,16 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 					u := h.resolveUserFromToken(subdomain, token)
 					client.userID = u.ID
 					client.userName = u.Name
+					client.role = u.Role
+					client.email = u.Email
 					client.lastSeenAt = time.Now().Unix()
 
 					globalSocketHub.joinRoom(client, "user:"+u.ID)
 					globalSocketHub.joinRoom(client, "user_all")
+					globalSocketHub.joinRoom(client, "channel:general")
+					if u.ID != "" {
+						globalSocketHub.joinRoom(client, "channel:"+u.ID)
+					}
 
 					// Reply with ACK if requested
 					if ackID != "" {
@@ -398,8 +764,12 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 						_ = client.write([]byte(fmt.Sprintf(`43%s[true]`, ackID)))
 					}
 
-				case "join-channels":
-					globalSocketHub.joinRoom(client, "channel:general")
+				case "join-channel", "join-channels":
+					channelID, _ := eventData["channel_id"].(string)
+					if channelID == "" {
+						channelID = "general"
+					}
+					globalSocketHub.joinRoom(client, "channel:"+channelID)
 					if client.userID != "" {
 						globalSocketHub.joinRoom(client, "channel:"+client.userID)
 					}
@@ -419,9 +789,11 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 					channelID, _ := eventData["channel_id"].(string)
 					room := "channel:" + channelID
 					if ed, ok := eventData["data"].(map[string]interface{}); ok {
-						if ed["type"] == "typing" {
+						eventType, _ := ed["type"].(string)
+						if eventType == "typing" {
 							broadcastPayload, _ := json.Marshal(map[string]interface{}{
 								"channel_id": channelID,
+								"message_id": eventData["message_id"],
 								"data":       ed,
 								"user": map[string]string{
 									"id":   client.userID,
@@ -430,6 +802,8 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 							})
 							evtMsg := fmt.Sprintf(`42["events:channel",%s]`, string(broadcastPayload))
 							globalSocketHub.broadcastToRoom(room, []byte(evtMsg), client.sid)
+						} else if eventType == "last_read_at" {
+							// Channel read ack
 						}
 					}
 					if ackID != "" {
@@ -465,7 +839,8 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 					}
 
 				case "ydoc:document:join":
-					docID, _ := eventData["document_id"].(string)
+					rawDocID, _ := eventData["document_id"].(string)
+					docID := normalizeDocumentID(rawDocID)
 					if docID != "" {
 						room := "doc_" + docID
 						globalSocketHub.joinRoom(client, room)
@@ -494,7 +869,8 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 					}
 
 				case "ydoc:document:state":
-					docID, _ := eventData["document_id"].(string)
+					rawDocID, _ := eventData["document_id"].(string)
+					docID := normalizeDocumentID(rawDocID)
 					if docID != "" {
 						room := "doc_" + docID
 						statePayload, _ := json.Marshal(map[string]interface{}{
@@ -510,7 +886,8 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 					}
 
 				case "ydoc:document:update":
-					docID, _ := eventData["document_id"].(string)
+					rawDocID, _ := eventData["document_id"].(string)
+					docID := normalizeDocumentID(rawDocID)
 					update := eventData["update"]
 					if docID != "" && update != nil {
 						globalSocketHub.appendYDocUpdate(docID, update)
@@ -529,7 +906,8 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 					}
 
 				case "ydoc:document:leave":
-					docID, _ := eventData["document_id"].(string)
+					rawDocID, _ := eventData["document_id"].(string)
+					docID := normalizeDocumentID(rawDocID)
 					if docID != "" {
 						room := "doc_" + docID
 						globalSocketHub.leaveRoom(client, room)
@@ -549,7 +927,8 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 					}
 
 				case "ydoc:awareness:update":
-					docID, _ := eventData["document_id"].(string)
+					rawDocID, _ := eventData["document_id"].(string)
+					docID := normalizeDocumentID(rawDocID)
 					update := eventData["update"]
 					if docID != "" && update != nil {
 						room := "doc_" + docID

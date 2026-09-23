@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
@@ -191,6 +192,41 @@ func (d *DB) DeleteOpenWebUIChat(subdomain, userID, id string) error {
 
 func (d *DB) DeleteAllOpenWebUIChats(subdomain, userID string) error {
 	_, err := d.conn.Exec(`DELETE FROM openwebui_chats WHERE subdomain = ? AND user_id = ?`, subdomain, userID)
+	return err
+}
+
+// UpdateOpenWebUIMessageInChat modifies or appends to a message inside openwebui_chats chat_json
+func (d *DB) UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID string, updateFn func(msg map[string]interface{}) map[string]interface{}) error {
+	var chatJSON string
+	err := d.conn.QueryRow(`SELECT chat_json FROM openwebui_chats WHERE subdomain = ? AND user_id = ? AND id = ?`, subdomain, userID, chatID).Scan(&chatJSON)
+	if err != nil {
+		return err
+	}
+	var chatObj map[string]interface{}
+	if err := json.Unmarshal([]byte(chatJSON), &chatObj); err != nil {
+		return err
+	}
+	history, _ := chatObj["history"].(map[string]interface{})
+	if history == nil {
+		history = make(map[string]interface{})
+		chatObj["history"] = history
+	}
+	messages, _ := history["messages"].(map[string]interface{})
+	if messages == nil {
+		messages = make(map[string]interface{})
+		history["messages"] = messages
+	}
+	targetMsg, _ := messages[messageID].(map[string]interface{})
+	if targetMsg == nil {
+		targetMsg = make(map[string]interface{})
+	}
+	messages[messageID] = updateFn(targetMsg)
+	newChatJSON, err := json.Marshal(chatObj)
+	if err != nil {
+		return err
+	}
+	now := time.Now().Unix()
+	_, err = d.conn.Exec(`UPDATE openwebui_chats SET chat_json = ?, updated_at = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, string(newChatJSON), now, subdomain, userID, chatID)
 	return err
 }
 
