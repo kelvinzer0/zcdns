@@ -136,6 +136,9 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/chat/completions", h.handleAIRouterOpenAI)
 	mux.HandleFunc("/api/v1/chats", h.handleOpenWebUIChats)
 	mux.HandleFunc("/api/v1/chats/", h.handleOpenWebUIChats)
+	// WebSocket / Socket.IO handler
+	mux.HandleFunc("/ws/socket.io/", h.handleOpenWebUISocketIO)
+	mux.HandleFunc("/ws/", h.handleOpenWebUISocketIO)
 	// Common optional OpenWebUI collection routes
 	emptyList := func(w http.ResponseWriter, r *http.Request) {
 		if setOWUCors(w, r) {

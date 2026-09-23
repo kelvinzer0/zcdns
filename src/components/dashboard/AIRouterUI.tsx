@@ -717,7 +717,9 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
             </p>
           </div>
           <a
-            href={`https://${subdomain}.router.zcdns.id/`}
+            href={userKeys.length > 0
+              ? `https://${subdomain}.router.zcdns.id/?key=${encodeURIComponent(userKeys[0].key_value)}`
+              : `https://${subdomain}.router.zcdns.id/`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-none hover:bg-primary/90 transition-colors"
