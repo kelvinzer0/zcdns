@@ -3,6 +3,8 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -260,6 +262,25 @@ func (d *DB) GetOpenWebUIFolders(subdomain, userID string) ([]OpenWebUIFolderDB,
 	return folders, nil
 }
 
+func (d *DB) GetOpenWebUIFolderByID(subdomain, userID, id string) (*OpenWebUIFolderDB, error) {
+	var f OpenWebUIFolderDB
+	var parentID sql.NullString
+	var isExpanded int
+	err := d.conn.QueryRow(`
+		SELECT id, subdomain, user_id, name, parent_id, is_expanded, created_at, updated_at
+		FROM openwebui_folders
+		WHERE subdomain = ? AND user_id = ? AND id = ?
+	`, subdomain, userID, id).Scan(&f.ID, &f.Subdomain, &f.UserID, &f.Name, &parentID, &isExpanded, &f.CreatedAt, &f.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if parentID.Valid {
+		f.ParentID = parentID.String
+	}
+	f.IsExpanded = isExpanded == 1
+	return &f, nil
+}
+
 func (d *DB) CreateOpenWebUIFolder(subdomain, userID, id, name, parentID string) error {
 	now := time.Now().Unix()
 	_, err := d.conn.Exec(`
@@ -437,5 +458,60 @@ func (d *DB) MarkOpenWebUIChatUnread(subdomain, userID, id string) error {
 		WHERE subdomain = ? AND user_id = ? AND id = ?
 	`, subdomain, userID, id)
 	return err
+}
+
+func (d *DB) MarkOpenWebUIChatsReadByFolderIDs(subdomain, userID string, folderIDs []string) (int64, error) {
+	if len(folderIDs) == 0 {
+		return 0, nil
+	}
+	now := time.Now().Unix()
+	placeholders := make([]string, len(folderIDs))
+	args := []interface{}{now, subdomain, userID}
+	for i, fID := range folderIDs {
+		placeholders[i] = "?"
+		args = append(args, fID)
+	}
+	query := fmt.Sprintf(`
+		UPDATE openwebui_chats
+		SET last_read_at = ?
+		WHERE subdomain = ? AND user_id = ? AND archived = 0 AND updated_at > last_read_at AND folder_id IN (%s)
+	`, strings.Join(placeholders, ","))
+	res, err := d.conn.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (d *DB) GetOpenWebUISubtreeFolderIDs(subdomain, userID, rootFolderID string) ([]string, error) {
+	folders, err := d.GetOpenWebUIFolders(subdomain, userID)
+	if err != nil {
+		return []string{rootFolderID}, err
+	}
+	// Build parent -> children map
+	childrenOf := make(map[string][]string)
+	for _, f := range folders {
+		if f.ParentID != "" {
+			childrenOf[f.ParentID] = append(childrenOf[f.ParentID], f.ID)
+		}
+	}
+	var result []string
+	seen := make(map[string]bool)
+	queue := []string{rootFolderID}
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+		if seen[curr] {
+			continue
+		}
+		seen[curr] = true
+		result = append(result, curr)
+		for _, childID := range childrenOf[curr] {
+			if !seen[childID] {
+				queue = append(queue, childID)
+			}
+		}
+	}
+	return result, nil
 }
 

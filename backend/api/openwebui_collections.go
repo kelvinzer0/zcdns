@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -158,33 +159,104 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 	if path != "" {
 		parts := strings.Split(path, "/")
 		folderID := parts[0]
-		subAction := ""
-		if len(parts) > 1 {
-			subAction = parts[1]
+
+		if len(parts) == 1 {
+			if r.Method == http.MethodGet {
+				folder, err := h.db.GetOpenWebUIFolderByID(subdomain, u.ID, folderID)
+				if err != nil {
+					writeJSONError(w, http.StatusNotFound, "Folder not found")
+					return
+				}
+				unreadCounts := h.getFolderUnreadCounts(subdomain, u.ID)
+				var parent *string
+				if folder.ParentID != "" {
+					p := folder.ParentID
+					parent = &p
+				}
+				writeJSON(w, http.StatusOK, OpenWebUIFolderNameIdResponse{
+					ID:          folder.ID,
+					Name:        folder.Name,
+					ParentID:    parent,
+					IsExpanded:  folder.IsExpanded,
+					UnreadCount: int64(unreadCounts[folder.ID]),
+					CreatedAt:   folder.CreatedAt,
+					UpdatedAt:   folder.UpdatedAt,
+				})
+				return
+			}
+			if r.Method == http.MethodDelete {
+				_ = h.db.DeleteOpenWebUIFolder(subdomain, u.ID, folderID)
+				writeJSON(w, http.StatusOK, true)
+				return
+			}
 		}
 
-		if subAction == "read" {
-			writeJSON(w, http.StatusOK, map[string]int{"updated_count": 0})
-			return
-		}
-		if subAction == "update" {
-			body, _ := io.ReadAll(r.Body)
-			var form map[string]string
-			_ = json.Unmarshal(body, &form)
-			if name, ok := form["name"]; ok && name != "" {
-				_ = h.db.UpdateOpenWebUIFolderName(subdomain, u.ID, folderID, name)
+		if len(parts) >= 2 {
+			action := parts[1]
+			subAction := ""
+			if len(parts) >= 3 {
+				subAction = parts[2]
 			}
-			writeJSON(w, http.StatusOK, true)
-			return
+
+			if action == "read" {
+				folderIDs, _ := h.db.GetOpenWebUISubtreeFolderIDs(subdomain, u.ID, folderID)
+				updatedCount, _ := h.db.MarkOpenWebUIChatsReadByFolderIDs(subdomain, u.ID, folderIDs)
+				unreadCounts := h.getFolderUnreadCounts(subdomain, u.ID)
+
+				payload, _ := json.Marshal(map[string]interface{}{
+					"folder_id":            folderID,
+					"folder_ids":           folderIDs,
+					"updated_count":        updatedCount,
+					"folder_unread_counts": unreadCounts,
+				})
+				globalSocketHub.broadcastToRoom("user:"+u.ID, []byte(fmt.Sprintf(`42["events",{"type":"chat:list","data":%s}]`, string(payload))), "")
+
+				writeJSON(w, http.StatusOK, map[string]interface{}{
+					"folder_id":            folderID,
+					"folder_ids":           folderIDs,
+					"updated_count":        updatedCount,
+					"folder_unread_counts": unreadCounts,
+				})
+				return
+			}
+
+			if action == "update" {
+				body, _ := io.ReadAll(r.Body)
+				if subAction == "parent" {
+					var form map[string]string
+					_ = json.Unmarshal(body, &form)
+					parentID := form["parent_id"]
+					_ = h.db.UpdateOpenWebUIFolderParent(subdomain, u.ID, folderID, parentID)
+					writeJSON(w, http.StatusOK, true)
+					return
+				}
+				if subAction == "expanded" {
+					var form map[string]bool
+					_ = json.Unmarshal(body, &form)
+					_ = h.db.UpdateOpenWebUIFolderExpanded(subdomain, u.ID, folderID, form["is_expanded"])
+					writeJSON(w, http.StatusOK, true)
+					return
+				}
+				// Default update: name
+				var form map[string]string
+				_ = json.Unmarshal(body, &form)
+				if name, ok := form["name"]; ok && name != "" {
+					_ = h.db.UpdateOpenWebUIFolderName(subdomain, u.ID, folderID, name)
+				}
+				writeJSON(w, http.StatusOK, true)
+				return
+			}
+
+			if action == "expanded" {
+				body, _ := io.ReadAll(r.Body)
+				var form map[string]bool
+				_ = json.Unmarshal(body, &form)
+				_ = h.db.UpdateOpenWebUIFolderExpanded(subdomain, u.ID, folderID, form["is_expanded"])
+				writeJSON(w, http.StatusOK, true)
+				return
+			}
 		}
-		if subAction == "expanded" {
-			body, _ := io.ReadAll(r.Body)
-			var form map[string]bool
-			_ = json.Unmarshal(body, &form)
-			_ = h.db.UpdateOpenWebUIFolderExpanded(subdomain, u.ID, folderID, form["is_expanded"])
-			writeJSON(w, http.StatusOK, true)
-			return
-		}
+
 		if r.Method == http.MethodDelete {
 			_ = h.db.DeleteOpenWebUIFolder(subdomain, u.ID, folderID)
 			writeJSON(w, http.StatusOK, true)
