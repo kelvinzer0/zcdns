@@ -64,7 +64,7 @@ func (d *DB) GetBranches(repoID string) ([]VaultBranch, error) {
 }
 
 func (d *DB) GetCommits(repoID string) ([]VaultCommit, error) {
-	rows, err := d.conn.Query("SELECT id, repo_id, hash, parent_hash, message, timestamp, author FROM vault_commits WHERE repo_id = ?", repoID)
+	rows, err := d.conn.Query("SELECT id, repo_id, hash, parent_hash, message, timestamp, author FROM vault_commits WHERE repo_id = ? ORDER BY timestamp DESC, id DESC", repoID)
 	if err != nil {
 		return nil, err
 	}

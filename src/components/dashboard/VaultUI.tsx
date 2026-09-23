@@ -57,8 +57,9 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
     fetch(`/api/vault/commits?repo_id=${repo.id}`, {
       headers: { 'X-Subdomain': subdomain }
     }).then(r => r.json()).then(data => {
-      setCommits(data || []);
-      if (data && data.length > 0) {
+      const sorted = (data || []).sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setCommits(sorted);
+      if (sorted.length > 0) {
         setSelectedCommitIdx(0);
       }
     });
@@ -94,7 +95,8 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
     fetch(`/api/vault/commits?repo_id=${repo.id}`, {
       headers: { 'X-Subdomain': subdomain }
     }).then(r => r.json()).then(data => {
-      setCommits(data || []);
+      const sorted = (data || []).sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setCommits(sorted);
       setSelectedCommitIdx(0);
     });
   };
@@ -225,7 +227,14 @@ export function VaultUI({ subdomain }: { subdomain: string }) {
                       <GitCommit className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{commit.message}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-sm font-medium text-gray-900 truncate">{commit.message}</p>
+                        {index === 0 && (
+                          <span className="text-[10px] bg-green-100 text-green-800 font-semibold px-1.5 py-0.5 rounded border border-green-200 shrink-0">
+                            Current
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center mt-1 text-xs text-gray-500 space-x-2">
                         <span className="font-mono bg-gray-100 px-1 py-0.2 rounded text-[11px]">{commit.hash}</span>
                         <span>•</span>

@@ -348,7 +348,16 @@ func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget,
 
 // handleAIRouterProxy is the core proxy entrypoint
 func (h *APIHandler) handleAIRouterProxy(w http.ResponseWriter, r *http.Request) {
-	h.setCorsHeaders(w)
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		origin = "*"
+	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "*")
+	w.Header().Set("Access-Control-Max-Age", "86400")
+
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return

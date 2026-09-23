@@ -98,13 +98,14 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/airouter/aliases/{id}", h.requireSubdomain(h.handleDeleteAIRouterAlias))
 
 	// AI Router Proxy (path-based: /api/airouter/{subdomain}/v1/...)
-	mux.HandleFunc("POST /api/airouter/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/airouter/", func(w http.ResponseWriter, r *http.Request) {
 		h.handleAIRouterProxy(w, r)
 	})
 
-	// Host-based proxy (*.router.zcdns.id)
-	mux.HandleFunc("POST /v1/chat/completions", h.handleAIRouterOpenAI)
-	mux.HandleFunc("POST /v1/messages", h.handleAIRouterAnthropic)
+	// Host-based proxy (*.router.zcdns.id) - matches POST, OPTIONS, GET
+	mux.HandleFunc("/v1/chat/completions", h.handleAIRouterOpenAI)
+	mux.HandleFunc("/v1/messages", h.handleAIRouterAnthropic)
+	mux.HandleFunc("/v1/", h.handleAIRouterProxy)
 
 	mux.HandleFunc("GET /dns-query", h.handleDoH)
 	mux.HandleFunc("POST /dns-query", h.handleDoH)
