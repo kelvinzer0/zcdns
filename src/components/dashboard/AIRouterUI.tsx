@@ -80,6 +80,37 @@ const MODEL_SUGGESTIONS: Record<string, string[]> = {
   openrouter: ['openrouter/anthropic/claude-3.5-sonnet', 'openrouter/openai/gpt-4o'],
 };
 
+interface RouterSectionProps {
+  title: string;
+  count?: number;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}
+
+function RouterSection({ title, count, expanded, onToggle, children }: RouterSectionProps) {
+  return (
+    <div className="bg-card rounded-none border border-border overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-4 py-3 bg-muted/20 hover:bg-muted/40 transition-colors"
+      >
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+          <span>{title}</span>
+          {count !== undefined && (
+            <span className="text-[11px] bg-background border border-border px-1.5 py-0.2 font-mono font-normal">
+              {count}
+            </span>
+          )}
+        </div>
+      </button>
+      {expanded && <div className="p-4 border-t border-border space-y-3">{children}</div>}
+    </div>
+  );
+}
+
 export function AIRouterUI({ subdomain }: { subdomain: string }) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -319,80 +350,67 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   const openaiUrl = `https://${subdomain}.router.zcdns.id/v1/chat/completions`;
   const anthropicUrl = `https://${subdomain}.router.zcdns.id/v1/messages`;
 
-  const Section = ({ id, title, count, children }: { id: string, title: string, count?: number, children: React.ReactNode }) => (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <button onClick={() => toggle(id)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors">
-        <div className="flex items-center gap-2 font-semibold">
-          {expanded[id] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          {title}
-          {count !== undefined && <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{count}</span>}
-        </div>
-      </button>
-      {expanded[id] && <div className="px-5 pb-5">{children}</div>}
-    </div>
-  );
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Network className="w-6 h-6 text-primary" /> AI Router
+          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+            <Network className="w-5 h-5 text-primary" /> AI Router
           </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Personal AI proxy with multi-provider fallback, combos, and model aliases.
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Personal AI proxy.
           </p>
         </div>
       </div>
 
       {/* Endpoint URLs */}
-      <div className="bg-card border border-border rounded-lg p-5 space-y-4">
+      <div className="bg-card border border-border rounded-none p-4 space-y-3">
         <div>
-          <h3 className="font-semibold text-base mb-1">Your Proxy Endpoints</h3>
+          <h3 className="font-semibold text-sm mb-0.5">Proxy Endpoints</h3>
           <p className="text-xs text-muted-foreground">
-            Configure your AI tool (Cursor, Claude Code, Cline, etc.) to use these endpoints. Format is auto-detected.
+            Endpoints for clients.
           </p>
         </div>
 
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {[
             { label: 'OpenAI-compatible (/v1/chat/completions)', url: openaiUrl },
             { label: 'Anthropic-compatible (/v1/messages)', url: anthropicUrl },
           ].map(({ label, url }) => (
             <div key={url}>
-              <span className="text-xs font-medium text-muted-foreground">{label}</span>
+              <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
               <div className="flex mt-1">
-                <input readOnly value={url} className="flex-1 bg-muted px-3 py-2 text-sm font-mono rounded-l-md border border-border" />
-                <button onClick={() => copyUrl(url)} className="px-3 border border-l-0 border-border rounded-r-md hover:bg-muted flex items-center">
-                  {copiedUrl === url ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                <input readOnly value={url} className="flex-1 bg-muted px-3 py-1.5 text-xs font-mono rounded-none border border-border" />
+                <button onClick={() => copyUrl(url)} className="px-3 border border-l-0 border-border rounded-none hover:bg-muted flex items-center">
+                  {copiedUrl === url ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-primary/80 bg-primary/5 border border-primary/10 rounded-md px-3 py-2">
+        <div className="flex items-center gap-2 text-xs text-primary/80 bg-primary/5 border border-primary/10 rounded-none px-2.5 py-1.5">
           <span>✨</span>
-          <span><strong>Auto Format & Output:</strong> Input format is automatically detected from request path and headers. Response output always matches your input format without manual configuration.</span>
+          <span><strong>Auto Format:</strong> Format auto-detected. Output matches input.</span>
         </div>
 
         {/* Client API Keys Management */}
-        <div className="pt-3 border-t border-border space-y-3">
+        <div className="pt-3 border-t border-border space-y-2.5">
           <div className="flex items-center justify-between">
             <div>
-              <h4 className="text-sm font-semibold flex items-center gap-1.5">
-                <Key className="w-4 h-4 text-primary" /> Proxy API Keys & Client Credentials
+              <h4 className="text-xs font-semibold flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-primary" /> Client Keys
               </h4>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-[11px] text-muted-foreground mt-0.5">
                 {userKeys.length > 0
-                  ? 'Client requests must provide a valid API key in Authorization: Bearer <key> or x-api-key.'
-                  : 'No keys created yet. Proxy requests are currently open (auth by subdomain). Create a key to require authentication.'}
+                  ? 'Pass key via Bearer or x-api-key.'
+                  : 'Open access. Add key to secure.'}
               </p>
             </div>
             {userKeys.length > 0 && (
-              <span className="text-xs bg-primary/10 text-primary font-mono px-2 py-0.5 rounded-full">
-                {userKeys.length} {userKeys.length === 1 ? 'key' : 'keys'} active
+              <span className="text-[11px] bg-primary/10 text-primary font-mono px-1.5 py-0.5 rounded-none">
+                {userKeys.length} {userKeys.length === 1 ? 'key' : 'keys'}
               </span>
             )}
           </div>
@@ -402,38 +420,38 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
             <input
               value={newKeyName}
               onChange={e => setNewKeyName(e.target.value)}
-              placeholder="Client label (e.g. Cursor, Claude Code, Cline)"
-              className="flex-1 min-w-[220px] max-w-sm border border-border rounded px-2.5 py-1.5 text-sm bg-background"
+              placeholder="Client label (e.g. Cursor)"
+              className="flex-1 min-w-[200px] max-w-sm border border-border rounded-none px-2.5 py-1.5 text-xs bg-background"
             />
             <button
               onClick={createKey}
               disabled={creatingKey}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-none text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
             >
-              {creatingKey ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-              Create API Key
+              {creatingKey ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+              Add Key
             </button>
           </div>
 
           {/* List of keys */}
           {userKeys.length > 0 && (
-            <div className="space-y-2 mt-2">
+            <div className="space-y-1.5 mt-2">
               {userKeys.map(k => (
-                <div key={k.id} className="flex items-center justify-between gap-3 p-3 bg-muted/40 rounded border border-border text-sm flex-wrap">
+                <div key={k.id} className="flex items-center justify-between gap-3 p-2.5 bg-muted/40 rounded-none border border-border text-xs flex-wrap">
                   <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-green-500 shrink-0" />
+                    <ShieldCheck className="w-3.5 h-3.5 text-green-500 shrink-0" />
                     <span className="font-medium text-foreground">{k.name}</span>
-                    <span className="text-[11px] text-muted-foreground">• {new Date(k.created_at).toLocaleDateString()}</span>
+                    <span className="text-[10px] text-muted-foreground">• {new Date(k.created_at).toLocaleDateString()}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <code className="font-mono text-xs bg-background border border-border px-2 py-1 rounded select-all">
+                    <code className="font-mono text-xs bg-background border border-border px-2 py-0.5 rounded-none select-all">
                       {k.key_value}
                     </code>
                     <button onClick={() => copyKey(k.key_value)} className="p-1 hover:text-primary transition-colors" title="Copy key">
-                      {copiedKey === k.key_value ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                      {copiedKey === k.key_value ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                     <button onClick={() => deleteKey(k.id)} className="p-1 text-destructive hover:text-destructive/80 transition-colors" title="Revoke key">
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -444,9 +462,9 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
       </div>
 
       {/* Connections */}
-      <Section id="connections" title="Provider Connections" count={connections.length}>
-        <div className="flex justify-between items-center mb-3">
-          <p className="text-sm text-muted-foreground">Add multiple API keys per provider. When one is rate-limited, next is auto-selected.</p>
+      <RouterSection title="Provider Connections" count={connections.length} expanded={!!expanded.connections} onToggle={() => toggle('connections')}>
+        <div className="flex justify-between items-center mb-2">
+          <p className="text-xs text-muted-foreground">Multi-key provider failover.</p>
           <button onClick={() => setShowKeys(!showKeys)} className="text-xs flex items-center gap-1 text-muted-foreground">
             {showKeys ? <><EyeOff className="w-3 h-3" /> Hide</> : <><Eye className="w-3 h-3" /> Show Keys</>}
           </button>
@@ -454,17 +472,17 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
 
         {/* Existing connections */}
         {connections.length > 0 && (
-          <div className="mb-4 space-y-2">
+          <div className="mb-3 space-y-1.5">
             {connections.map(c => (
-              <div key={c.id} className="flex items-center gap-2 p-3 bg-muted/40 rounded border border-border text-sm">
-                <span className="font-mono text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">{c.provider}</span>
+              <div key={c.id} className="flex items-center gap-2 p-2.5 bg-muted/40 rounded-none border border-border text-xs">
+                <span className="font-mono text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-none">{c.provider}</span>
                 <span className="font-medium flex-1">{c.name}</span>
                 <span className="font-mono text-muted-foreground text-xs">{showKeys ? c.api_key : c.api_key}</span>
                 {c.status === 'active'
-                  ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-                  : <span title="Rate limited"><AlertCircle className="w-4 h-4 text-yellow-500 shrink-0" /></span>}
+                  ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                  : <span title="Rate limited"><AlertCircle className="w-3.5 h-3.5 text-yellow-500 shrink-0" /></span>}
                 <button onClick={() => deleteConnection(c.id)} className="text-destructive hover:text-destructive/80 shrink-0">
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             ))}
@@ -472,27 +490,27 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
         )}
 
         {/* Add new connection form */}
-        <div className="border border-dashed border-border rounded-lg p-4 space-y-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Add Connection</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="border border-border rounded-none p-3 space-y-2.5 bg-card">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Add Connection</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div>
               <label className="text-xs mb-1 block">Provider</label>
               <select value={newConn.provider} onChange={e => setNewConn(c => ({ ...c, provider: e.target.value }))}
-                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background">
+                className="w-full border border-border rounded-none px-2 py-1.5 text-xs bg-background">
                 {PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs mb-1 block">Label (e.g. "Personal Key")</label>
+              <label className="text-xs mb-1 block">Label</label>
               <input value={newConn.name} onChange={e => setNewConn(c => ({ ...c, name: e.target.value }))}
-                placeholder="My OpenAI key" className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+                placeholder="My OpenAI key" className="w-full border border-border rounded-none px-2 py-1.5 text-xs bg-background" />
             </div>
             <div>
               <div className="flex justify-between items-center mb-1">
                 <label className="text-xs">API Key</label>
                 {vaultSecrets.length > 0 ? (
                   <select
-                    className="text-[11px] text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded px-1.5 py-0.5 cursor-pointer font-medium"
+                    className="text-[11px] text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded-none px-1.5 py-0.5 cursor-pointer font-medium"
                     onChange={e => {
                       const found = vaultSecrets.find(s => s.key === e.target.value);
                       if (found) {
@@ -517,7 +535,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                 )}
               </div>
               <input type="password" value={newConn.api_key} onChange={e => setNewConn(c => ({ ...c, api_key: e.target.value }))}
-                placeholder="sk-... or choose from Vault" className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background font-mono" />
+                placeholder="sk-... or choose from Vault" className="w-full border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono" />
             </div>
             {newConn.provider === 'custom' && (
               <div>
@@ -525,7 +543,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                   <label className="text-xs">Base URL</label>
                   {vaultSecrets.length > 0 ? (
                     <select
-                      className="text-[11px] text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded px-1.5 py-0.5 cursor-pointer font-medium"
+                      className="text-[11px] text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded-none px-1.5 py-0.5 cursor-pointer font-medium"
                       onChange={e => {
                         const found = vaultSecrets.find(s => s.key === e.target.value);
                         if (found) {
@@ -550,38 +568,38 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                   )}
                 </div>
                 <input value={newConn.base_url} onChange={e => setNewConn(c => ({ ...c, base_url: e.target.value }))}
-                  placeholder="https://localhost:11434 or choose from Vault" className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+                  placeholder="https://localhost:11434 or choose from Vault" className="w-full border border-border rounded-none px-2 py-1.5 text-xs bg-background" />
               </div>
             )}
           </div>
           <button onClick={addConnection} disabled={savingConn}
-            className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded text-sm">
-            {savingConn ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Add Connection
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-none text-xs font-medium">
+            {savingConn ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Add Connection
           </button>
         </div>
-      </Section>
+      </RouterSection>
 
       {/* Combos */}
-      <Section id="combos" title="Combos" count={combos.length}>
-        <p className="text-sm text-muted-foreground mb-3">
-          Group models into a combo. Reference a combo by name (e.g. <code className="bg-muted px-1 rounded">best-coding</code>) as the model in your tool.
+      <RouterSection title="Model Combos" count={combos.length} expanded={!!expanded.combos} onToggle={() => toggle('combos')}>
+        <p className="text-xs text-muted-foreground mb-2">
+          Group models by strategy.
         </p>
 
         {combos.length > 0 && (
-          <div className="mb-4 space-y-2">
+          <div className="mb-3 space-y-1.5">
             {combos.map(c => {
               const models: string[] = JSON.parse(c.models_json || '[]');
               return (
-                <div key={c.id} className="p-3 bg-muted/40 rounded border border-border text-sm">
+                <div key={c.id} className="p-2.5 bg-muted/40 rounded-none border border-border text-xs">
                   <div className="flex items-center gap-2">
                     <code className="font-mono font-bold text-primary">{c.name}</code>
-                    <span className="text-xs bg-secondary px-2 py-0.5 rounded">{c.strategy}</span>
+                    <span className="text-[11px] bg-secondary px-1.5 py-0.5 rounded-none">{c.strategy}</span>
                     <button onClick={() => deleteCombo(c.id)} className="ml-auto text-destructive">
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {models.map(m => <span key={m} className="text-xs bg-muted border border-border px-2 py-0.5 rounded font-mono">{m}</span>)}
+                    {models.map(m => <span key={m} className="text-[11px] bg-muted border border-border px-1.5 py-0.5 rounded-none font-mono">{m}</span>)}
                   </div>
                 </div>
               );
@@ -589,24 +607,24 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
           </div>
         )}
 
-        <div className="border border-dashed border-border rounded-lg p-4 space-y-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Create Combo</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="border border-border rounded-none p-3 space-y-2.5 bg-card">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Add Combo</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div>
               <label className="text-xs mb-1 block">Combo Name</label>
               <input value={newCombo.name} onChange={e => setNewCombo(c => ({ ...c, name: e.target.value }))}
-                placeholder="best-coding" className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background font-mono" />
+                placeholder="best-coding" className="w-full border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono" />
             </div>
             <div>
               <label className="text-xs mb-1 block">Strategy</label>
               <select value={newCombo.strategy} onChange={e => setNewCombo(c => ({ ...c, strategy: e.target.value }))}
-                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background">
+                className="w-full border border-border rounded-none px-2 py-1.5 text-xs bg-background">
                 {STRATEGIES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
           </div>
-          <div className="space-y-2">
-            <label className="text-xs block">Models (in order of priority)</label>
+          <div className="space-y-1.5">
+            <label className="text-xs block">Models</label>
             {newCombo.models.map((m, i) => (
               <div key={i} className="flex gap-2">
                 <input value={m} onChange={e => {
@@ -615,64 +633,63 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                   setNewCombo(c => ({ ...c, models }));
                 }}
                   list={`model-suggestions-${i}`}
-                  placeholder="openai/gpt-4o or groq/llama-3.3-70b-versatile"
-                  className="flex-1 border border-border rounded px-2 py-1.5 text-sm bg-background font-mono" />
+                  placeholder="openai/gpt-4o"
+                  className="flex-1 border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono" />
                 <datalist id={`model-suggestions-${i}`}>
                   {Object.values(MODEL_SUGGESTIONS).flat().map(s => <option key={s} value={s} />)}
                 </datalist>
                 {newCombo.models.length > 1 && (
                   <button onClick={() => setNewCombo(c => ({ ...c, models: c.models.filter((_, j) => j !== i) }))}
-                    className="text-destructive px-2"><Trash2 className="w-4 h-4" /></button>
+                    className="text-destructive px-2"><Trash2 className="w-3.5 h-3.5" /></button>
                 )}
               </div>
             ))}
             <button onClick={() => setNewCombo(c => ({ ...c, models: [...c.models, ''] }))}
               className="text-xs text-primary flex items-center gap-1 mt-1">
-              <Plus className="w-3.5 h-3.5" /> Add model
+              <Plus className="w-3 h-3" /> Add model
             </button>
           </div>
           <button onClick={saveCombo} disabled={savingCombo}
-            className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded text-sm">
-            {savingCombo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save Combo
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-none text-xs font-medium">
+            {savingCombo ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save Combo
           </button>
         </div>
-      </Section>
+      </RouterSection>
 
       {/* Aliases */}
-      <Section id="aliases" title="Model Aliases" count={aliases.length}>
-        <p className="text-sm text-muted-foreground mb-3">
-          Map any model name to a real <code className="bg-muted px-1 rounded">provider/model</code> or a combo name.
-          E.g. <code className="bg-muted px-1 rounded">claude</code> → <code className="bg-muted px-1 rounded">anthropic/claude-3-5-sonnet-20241022</code>
+      <RouterSection title="Model Aliases" count={aliases.length} expanded={!!expanded.aliases} onToggle={() => toggle('aliases')}>
+        <p className="text-xs text-muted-foreground mb-2">
+          Map aliases to models.
         </p>
 
         {aliases.length > 0 && (
-          <div className="mb-4 space-y-2">
+          <div className="mb-3 space-y-1.5">
             {aliases.map(a => (
-              <div key={a.id} className="flex items-center gap-3 p-3 bg-muted/40 rounded border border-border text-sm">
+              <div key={a.id} className="flex items-center gap-3 p-2.5 bg-muted/40 rounded-none border border-border text-xs">
                 <code className="font-mono font-bold text-primary">{a.alias_name}</code>
                 <span className="text-muted-foreground">→</span>
-                <code className="font-mono text-sm flex-1">{a.target_model}</code>
-                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded font-mono">
+                <code className="font-mono text-xs flex-1">{a.target_model}</code>
+                <span className="text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-none font-mono">
                   {formatContextSize(a.context_size)} ctx
                 </span>
                 <button onClick={() => deleteAlias(a.id)} className="text-destructive">
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             ))}
           </div>
         )}
 
-        <div className="border border-dashed border-border rounded-lg p-4 space-y-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Add Alias</p>
-          <div className="flex gap-3 flex-wrap items-center">
+        <div className="border border-border rounded-none p-3 space-y-2.5 bg-card">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Add Alias</p>
+          <div className="flex gap-2 flex-wrap items-center">
             <input value={newAlias.alias_name} onChange={e => setNewAlias(a => ({ ...a, alias_name: e.target.value }))}
-              placeholder="claude" className="border border-border rounded px-2 py-1.5 text-sm bg-background font-mono w-36" />
+              placeholder="claude" className="border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono w-28" />
             <span className="self-center text-muted-foreground">→</span>
             <input value={newAlias.target_model} onChange={e => setNewAlias(a => ({ ...a, target_model: e.target.value }))}
               list="alias-target-list"
-              placeholder="anthropic/claude-3-5-sonnet-20241022 or combo-name"
-              className="flex-1 min-w-[200px] border border-border rounded px-2 py-1.5 text-sm bg-background font-mono" />
+              placeholder="anthropic/claude-3-5-sonnet or combo"
+              className="flex-1 min-w-[180px] border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono" />
             <datalist id="alias-target-list">
               {Object.values(MODEL_SUGGESTIONS).flat().map(s => <option key={s} value={s} />)}
               {combos.map(c => <option key={c.name} value={c.name} />)}
@@ -691,7 +708,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                     setNewAlias(a => ({ ...a, context_size: val }));
                   }
                 }}
-                className="border border-border rounded px-2 py-1.5 text-sm bg-background font-mono"
+                className="border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono"
               >
                 {CONTEXT_PRESETS.map(p => (
                   <option key={p.value} value={p.value}>{p.label}</option>
@@ -700,36 +717,36 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
               {isCustomCtx && (
                 <input
                   type="number"
-                  placeholder="Tokens (e.g. 64000)"
+                  placeholder="Tokens"
                   value={newAlias.context_size || ''}
                   onChange={e => setNewAlias(a => ({ ...a, context_size: parseInt(e.target.value, 10) || 0 }))}
-                  className="border border-border rounded px-2 py-1.5 text-sm bg-background font-mono w-28"
+                  className="border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono w-24"
                 />
               )}
             </div>
 
             <button onClick={saveAlias} disabled={savingAlias}
-              className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded text-sm">
-              {savingAlias ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Add
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-none text-xs font-medium">
+              {savingAlias ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Add
             </button>
           </div>
         </div>
-      </Section>
+      </RouterSection>
 
       {/* Quick Test */}
-      <div className="bg-card border border-border rounded-lg p-5">
-        <h3 className="font-semibold mb-3">Quick Test</h3>
-        <div className="flex gap-2 mb-3 flex-wrap">
+      <div className="bg-card border border-border rounded-none p-4">
+        <h3 className="font-semibold text-sm mb-2.5">Quick Test</h3>
+        <div className="flex gap-2 mb-2.5 flex-wrap">
           <input value={testModel} onChange={e => setTestModel(e.target.value)}
-            placeholder="Model or alias or combo name" className="border border-border rounded px-2 py-1.5 text-sm bg-background font-mono w-56" />
+            placeholder="Model or alias" className="border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono w-48" />
           <input value={testMsg} onChange={e => setTestMsg(e.target.value)}
-            placeholder="Message..." className="flex-1 border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            placeholder="Message..." className="flex-1 border border-border rounded-none px-2 py-1.5 text-xs bg-background" />
           <button onClick={runTest} disabled={testing}
-            className="flex items-center gap-2 px-3 py-1.5 bg-secondary text-secondary-foreground rounded text-sm">
-            {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />} Test
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground rounded-none text-xs font-medium">
+            {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <PlayCircle className="w-3 h-3" />} Test
           </button>
         </div>
-        <pre className="bg-muted p-4 rounded border border-border text-xs font-mono whitespace-pre-wrap min-h-[80px] max-h-[300px] overflow-auto">
+        <pre className="bg-muted p-3 rounded-none border border-border text-xs font-mono whitespace-pre-wrap min-h-[70px] max-h-[250px] overflow-auto">
           {testResult || 'Response will appear here...'}
         </pre>
       </div>
