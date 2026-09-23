@@ -92,6 +92,7 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 				writeJSON(w, http.StatusOK, []any{})
 				return
 			}
+			unreadCounts := h.getFolderUnreadCounts(subdomain, u.ID)
 			var list []OpenWebUIFolderNameIdResponse
 			for _, rf := range rawFolders {
 				var parent *string
@@ -104,7 +105,7 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 					Name:        rf.Name,
 					ParentID:    parent,
 					IsExpanded:  rf.IsExpanded,
-					UnreadCount: 0,
+					UnreadCount: int64(unreadCounts[rf.ID]),
 					CreatedAt:   rf.CreatedAt,
 					UpdatedAt:   rf.UpdatedAt,
 				})

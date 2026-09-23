@@ -154,6 +154,12 @@ func (h *SocketHub) appendYDocUpdate(docID string, update any) {
 	h.ydocUpdates[docID] = append(h.ydocUpdates[docID], update)
 }
 
+func (h *SocketHub) clearYDoc(docID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.ydocUpdates, docID)
+}
+
 func (h *SocketHub) getYDocState(docID string) []any {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -161,6 +167,96 @@ func (h *SocketHub) getYDocState(docID string) []any {
 		return updates
 	}
 	return []any{}
+}
+
+func (h *SocketHub) startPruner() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			now := time.Now().Unix()
+			h.mu.Lock()
+			// 1. Prune usage pool (> 300s)
+			for model, sids := range h.usagePool {
+				for sid, ts := range sids {
+					if now-ts > 300 {
+						delete(sids, sid)
+					}
+				}
+				if len(sids) == 0 {
+					delete(h.usagePool, model)
+				}
+			}
+			// 2. Prune dead client sessions (> 300s without heartbeat)
+			for sid, client := range h.clients {
+				if now-client.lastSeenAt > 300 {
+					_ = client.conn.Close()
+					delete(h.clients, sid)
+					for room := range client.rooms {
+						if set, ok := h.rooms[room]; ok {
+							delete(set, sid)
+							if len(set) == 0 {
+								delete(h.rooms, room)
+							}
+						}
+					}
+				}
+			}
+			h.mu.Unlock()
+		}
+	}()
+}
+
+func init() {
+	globalSocketHub.startPruner()
+}
+
+// getFolderUnreadCounts computes hierarchical unread badge counts across folders
+func (h *APIHandler) getFolderUnreadCounts(subdomain, userID string) map[string]int {
+	folderList, err := h.db.GetOpenWebUIFolders(subdomain, userID)
+	if err != nil {
+		return map[string]int{}
+	}
+
+	parentByID := make(map[string]string)
+	unreadCounts := make(map[string]int)
+	for _, f := range folderList {
+		parentByID[f.ID] = f.ParentID
+		unreadCounts[f.ID] = 0
+	}
+
+	directUnread, err := h.db.CountOpenWebUIUnreadByFolder(subdomain, userID)
+	if err == nil {
+		for folderID, count := range directUnread {
+			curr := folderID
+			seen := make(map[string]bool)
+			for curr != "" && !seen[curr] {
+				seen[curr] = true
+				if _, ok := unreadCounts[curr]; ok {
+					unreadCounts[curr] += count
+				}
+				curr = parentByID[curr]
+			}
+		}
+	}
+
+	return unreadCounts
+}
+
+// EmitChatEvent emits an event (token chunks, title, status, etc.) to all user sessions
+func (h *APIHandler) EmitChatEvent(subdomain, userID, chatID, messageID, eventType string, eventData any) {
+	room := "user:" + userID
+	payload, err := json.Marshal(map[string]interface{}{
+		"chat_id":    chatID,
+		"message_id": messageID,
+		"data": map[string]interface{}{
+			"type": eventType,
+			"data": eventData,
+		},
+	})
+	if err == nil {
+		globalSocketHub.broadcastToRoom(room, []byte(fmt.Sprintf(`42["events",%s]`, string(payload))), "")
+	}
 }
 
 // parseSocketIOEvent parses a Socket.IO message like: 42["user-join",{"auth":...}] or 421[...]
@@ -344,9 +440,24 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 					chatID, _ := eventData["chat_id"].(string)
 					if ed, ok := eventData["data"].(map[string]interface{}); ok {
 						if ed["type"] == "last_read_at" {
-							now := time.Now().Unix()
-							respEvt := fmt.Sprintf(`42["events",{"chat_id":"%s","data":{"type":"chat:list","data":{"chat_id":"%s","last_read_at":%d}}}]`, chatID, chatID, now)
-							globalSocketHub.broadcastToRoom("user:"+client.userID, []byte(respEvt), "")
+							lastReadAt, wasUnread, err := h.db.UpdateOpenWebUIChatLastReadAt(subdomain, client.userID, chatID)
+							if err == nil {
+								responseData := map[string]interface{}{
+									"chat_id":      chatID,
+									"last_read_at": lastReadAt,
+								}
+								if wasUnread {
+									responseData["folder_unread_counts"] = h.getFolderUnreadCounts(subdomain, client.userID)
+								}
+								respPayload, _ := json.Marshal(map[string]interface{}{
+									"chat_id": chatID,
+									"data": map[string]interface{}{
+										"type": "chat:list",
+										"data": responseData,
+									},
+								})
+								globalSocketHub.broadcastToRoom("user:"+client.userID, []byte(fmt.Sprintf(`42["events",%s]`, string(respPayload))), "")
+							}
 						}
 					}
 					if ackID != "" {
@@ -428,6 +539,10 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 						})
 						leaveEvt := fmt.Sprintf(`42["ydoc:user:left",%s]`, string(leavePayload))
 						globalSocketHub.broadcastToRoom(room, []byte(leaveEvt), client.sid)
+
+						if len(globalSocketHub.getRoomSids(room)) == 0 {
+							globalSocketHub.clearYDoc(docID)
+						}
 					}
 					if ackID != "" {
 						_ = client.write([]byte(fmt.Sprintf(`43%s[true]`, ackID)))

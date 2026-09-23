@@ -6,13 +6,14 @@ import (
 )
 
 type OpenWebUIChatSummary struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Pinned    bool   `json:"pinned"`
-	Archived  bool   `json:"archived"`
-	FolderID  string `json:"folder_id,omitempty"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Pinned     bool   `json:"pinned"`
+	Archived   bool   `json:"archived"`
+	FolderID   string `json:"folder_id,omitempty"`
+	CreatedAt  int64  `json:"created_at"`
+	UpdatedAt  int64  `json:"updated_at"`
+	LastReadAt int64  `json:"last_read_at"`
 }
 
 type OpenWebUIFolderDB struct {
@@ -41,7 +42,7 @@ type OpenWebUIPromptDB struct {
 
 func (d *DB) GetOpenWebUIChats(subdomain, userID string, includeArchived, includePinned bool) ([]OpenWebUIChatSummary, error) {
 	query := `
-		SELECT id, title, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at
+		SELECT id, title, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at, COALESCE(last_read_at, 0)
 		FROM openwebui_chats
 		WHERE subdomain = ? AND user_id = ?
 	`
@@ -63,7 +64,7 @@ func (d *DB) GetOpenWebUIChats(subdomain, userID string, includeArchived, includ
 	for rows.Next() {
 		var c OpenWebUIChatSummary
 		var p, a int
-		if err := rows.Scan(&c.ID, &c.Title, &p, &a, &c.FolderID, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Title, &p, &a, &c.FolderID, &c.CreatedAt, &c.UpdatedAt, &c.LastReadAt); err != nil {
 			continue
 		}
 		c.Pinned = p == 1
@@ -78,7 +79,7 @@ func (d *DB) GetOpenWebUIChats(subdomain, userID string, includeArchived, includ
 
 func (d *DB) GetOpenWebUIPinnedChats(subdomain, userID string) ([]OpenWebUIChatSummary, error) {
 	rows, err := d.conn.Query(`
-		SELECT id, title, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at
+		SELECT id, title, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at, COALESCE(last_read_at, 0)
 		FROM openwebui_chats
 		WHERE subdomain = ? AND user_id = ? AND pinned = 1 AND archived = 0
 		ORDER BY updated_at DESC
@@ -92,7 +93,7 @@ func (d *DB) GetOpenWebUIPinnedChats(subdomain, userID string) ([]OpenWebUIChatS
 	for rows.Next() {
 		var c OpenWebUIChatSummary
 		var p, a int
-		if err := rows.Scan(&c.ID, &c.Title, &p, &a, &c.FolderID, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Title, &p, &a, &c.FolderID, &c.CreatedAt, &c.UpdatedAt, &c.LastReadAt); err != nil {
 			continue
 		}
 		c.Pinned = true
@@ -107,7 +108,7 @@ func (d *DB) GetOpenWebUIPinnedChats(subdomain, userID string) ([]OpenWebUIChatS
 
 func (d *DB) GetOpenWebUIArchivedChats(subdomain, userID string) ([]OpenWebUIChatSummary, error) {
 	rows, err := d.conn.Query(`
-		SELECT id, title, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at
+		SELECT id, title, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at, COALESCE(last_read_at, 0)
 		FROM openwebui_chats
 		WHERE subdomain = ? AND user_id = ? AND archived = 1
 		ORDER BY updated_at DESC
@@ -121,7 +122,7 @@ func (d *DB) GetOpenWebUIArchivedChats(subdomain, userID string) ([]OpenWebUICha
 	for rows.Next() {
 		var c OpenWebUIChatSummary
 		var p, a int
-		if err := rows.Scan(&c.ID, &c.Title, &p, &a, &c.FolderID, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Title, &p, &a, &c.FolderID, &c.CreatedAt, &c.UpdatedAt, &c.LastReadAt); err != nil {
 			continue
 		}
 		c.Pinned = p == 1
@@ -327,3 +328,78 @@ func (d *DB) SetOpenWebUIUserSettings(subdomain, userID, settingsJSON string) er
 	`, subdomain, userID, settingsJSON, now)
 	return err
 }
+
+// ── Chat Read Status & Unread Counts ──────────────────────────────────────────
+
+func (d *DB) UpdateOpenWebUIChatLastReadAt(subdomain, userID, chatID string) (int64, bool, error) {
+	now := time.Now().Unix()
+	var updatedAt int64
+	var lastReadAt int64
+	err := d.conn.QueryRow(`
+		SELECT updated_at, last_read_at
+		FROM openwebui_chats
+		WHERE subdomain = ? AND user_id = ? AND id = ?
+	`, subdomain, userID, chatID).Scan(&updatedAt, &lastReadAt)
+	if err != nil {
+		return now, false, err
+	}
+
+	wasUnread := updatedAt > lastReadAt
+
+	_, err = d.conn.Exec(`
+		UPDATE openwebui_chats
+		SET last_read_at = ?
+		WHERE subdomain = ? AND user_id = ? AND id = ?
+	`, now, subdomain, userID, chatID)
+	if err != nil {
+		return now, wasUnread, err
+	}
+
+	return now, wasUnread, nil
+}
+
+func (d *DB) CountOpenWebUIUnreadByFolder(subdomain, userID string) (map[string]int, error) {
+	rows, err := d.conn.Query(`
+		SELECT COALESCE(folder_id, ''), COUNT(*)
+		FROM openwebui_chats
+		WHERE subdomain = ? AND user_id = ? AND archived = 0 AND updated_at > last_read_at
+		GROUP BY folder_id
+	`, subdomain, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var folderID string
+		var count int
+		if err := rows.Scan(&folderID, &count); err == nil && folderID != "" {
+			counts[folderID] = count
+		}
+	}
+	return counts, nil
+}
+
+func (d *DB) MarkAllOpenWebUIChatsRead(subdomain, userID string) (int64, error) {
+	now := time.Now().Unix()
+	res, err := d.conn.Exec(`
+		UPDATE openwebui_chats
+		SET last_read_at = ?
+		WHERE subdomain = ? AND user_id = ? AND archived = 0 AND updated_at > last_read_at
+	`, now, subdomain, userID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (d *DB) MarkOpenWebUIChatUnread(subdomain, userID, id string) error {
+	_, err := d.conn.Exec(`
+		UPDATE openwebui_chats
+		SET last_read_at = 0
+		WHERE subdomain = ? AND user_id = ? AND id = ?
+	`, subdomain, userID, id)
+	return err
+}
+

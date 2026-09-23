@@ -192,7 +192,8 @@ func InitDB(dbPath string) (*DB, error) {
 		archived INTEGER NOT NULL DEFAULT 0,
 		folder_id TEXT,
 		created_at INTEGER NOT NULL DEFAULT 0,
-		updated_at INTEGER NOT NULL DEFAULT 0
+		updated_at INTEGER NOT NULL DEFAULT 0,
+		last_read_at INTEGER NOT NULL DEFAULT 0
 	);
 
 	CREATE TABLE IF NOT EXISTS openwebui_folders (
@@ -245,6 +246,7 @@ func InitDB(dbPath string) (*DB, error) {
 	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;")
 	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;")
 	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN folder_id TEXT;")
+	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN last_read_at INTEGER NOT NULL DEFAULT 0;")
 	_, _ = conn.Exec("ALTER TABLE openwebui_folders ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default';")
 	_, _ = conn.Exec("ALTER TABLE openwebui_prompts ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default';")
 

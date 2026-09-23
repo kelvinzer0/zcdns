@@ -40,13 +40,19 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 			}
 			var list []OpenWebUIChatTitleIdResponse
 			for _, rc := range rawChats {
+				var lastRead *int64
+				if rc.LastReadAt > 0 {
+					lr := rc.LastReadAt
+					lastRead = &lr
+				}
 				list = append(list, OpenWebUIChatTitleIdResponse{
-					ID:        rc.ID,
-					Title:     rc.Title,
-					CreatedAt: rc.CreatedAt,
-					UpdatedAt: rc.UpdatedAt,
-					Archived:  rc.Archived,
-					Pinned:    rc.Pinned,
+					ID:         rc.ID,
+					Title:      rc.Title,
+					CreatedAt:  rc.CreatedAt,
+					UpdatedAt:  rc.UpdatedAt,
+					LastReadAt: lastRead,
+					Archived:   rc.Archived,
+					Pinned:     rc.Pinned,
 				})
 			}
 			if list == nil {
@@ -69,13 +75,19 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 		}
 		var list []OpenWebUIChatTitleIdResponse
 		for _, rc := range rawChats {
+			var lastRead *int64
+			if rc.LastReadAt > 0 {
+				lr := rc.LastReadAt
+				lastRead = &lr
+			}
 			list = append(list, OpenWebUIChatTitleIdResponse{
-				ID:        rc.ID,
-				Title:     rc.Title,
-				CreatedAt: rc.CreatedAt,
-				UpdatedAt: rc.UpdatedAt,
-				Archived:  rc.Archived,
-				Pinned:    true,
+				ID:         rc.ID,
+				Title:      rc.Title,
+				CreatedAt:  rc.CreatedAt,
+				UpdatedAt:  rc.UpdatedAt,
+				LastReadAt: lastRead,
+				Archived:   rc.Archived,
+				Pinned:     true,
 			})
 		}
 		if list == nil {
@@ -92,13 +104,19 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 		}
 		var list []OpenWebUIChatTitleIdResponse
 		for _, rc := range rawChats {
+			var lastRead *int64
+			if rc.LastReadAt > 0 {
+				lr := rc.LastReadAt
+				lastRead = &lr
+			}
 			list = append(list, OpenWebUIChatTitleIdResponse{
-				ID:        rc.ID,
-				Title:     rc.Title,
-				CreatedAt: rc.CreatedAt,
-				UpdatedAt: rc.UpdatedAt,
-				Archived:  true,
-				Pinned:    rc.Pinned,
+				ID:         rc.ID,
+				Title:      rc.Title,
+				CreatedAt:  rc.CreatedAt,
+				UpdatedAt:  rc.UpdatedAt,
+				LastReadAt: lastRead,
+				Archived:   true,
+				Pinned:     rc.Pinned,
 			})
 		}
 		if list == nil {
@@ -121,7 +139,19 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 		return
 
 	case path == "read":
-		writeJSON(w, http.StatusOK, map[string]any{"updated_count": 0, "folder_unread_counts": map[string]int{}})
+		if r.Method == http.MethodPost {
+			count, _ := h.db.MarkAllOpenWebUIChatsRead(subdomain, u.ID)
+			unreadCounts := h.getFolderUnreadCounts(subdomain, u.ID)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"updated_count":        count,
+				"folder_unread_counts": unreadCounts,
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"updated_count":        0,
+			"folder_unread_counts": h.getFolderUnreadCounts(subdomain, u.ID),
+		})
 		return
 
 	case path == "config":
@@ -285,8 +315,18 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 				})
 				return
 
+			case "unread":
+				_ = h.db.MarkOpenWebUIChatUnread(subdomain, u.ID, chatID)
+				unreadCounts := h.getFolderUnreadCounts(subdomain, u.ID)
+				writeJSON(w, http.StatusOK, map[string]any{
+					"chat_id":              chatID,
+					"last_read_at":         0,
+					"folder_unread_counts": unreadCounts,
+				})
+				return
+
 			default:
-				if strings.HasPrefix(subAction, "messages/") || subAction == "unread" {
+				if strings.HasPrefix(subAction, "messages/") {
 					writeJSON(w, http.StatusOK, true)
 					return
 				}
