@@ -41,11 +41,12 @@ type AIRouterCombo struct {
 // ── Model Aliases ─────────────────────────────────────────────────────────────
 
 type AIRouterAlias struct {
-	ID         int64     `json:"id"`
-	Subdomain  string    `json:"subdomain"`
-	AliasName  string    `json:"alias_name"`   // what user sends, e.g. "claude"
-	TargetModel string   `json:"target_model"` // "anthropic/claude-3-5-sonnet-20241022" or combo name
-	CreatedAt  time.Time `json:"created_at"`
+	ID          int64     `json:"id"`
+	Subdomain   string    `json:"subdomain"`
+	AliasName   string    `json:"alias_name"`   // what user sends, e.g. "claude"
+	TargetModel string    `json:"target_model"` // "anthropic/claude-3-5-sonnet-20241022" or combo name
+	ContextSize int       `json:"context_size"` // e.g. 4096, 8192, 16384, 32768, 64000, 128000, 200000
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // ── DB Methods ────────────────────────────────────────────────────────────────
@@ -185,7 +186,7 @@ func (d *DB) GetAIRouterComboByName(subdomain, name string) (*AIRouterCombo, err
 
 // Aliases
 func (d *DB) GetAIRouterAliases(subdomain string) ([]AIRouterAlias, error) {
-	rows, err := d.conn.Query(`SELECT id, subdomain, alias_name, target_model, created_at FROM ai_router_aliases WHERE subdomain=? ORDER BY alias_name`, subdomain)
+	rows, err := d.conn.Query(`SELECT id, subdomain, alias_name, target_model, context_size, created_at FROM ai_router_aliases WHERE subdomain=? ORDER BY alias_name`, subdomain)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +194,7 @@ func (d *DB) GetAIRouterAliases(subdomain string) ([]AIRouterAlias, error) {
 	var aliases []AIRouterAlias
 	for rows.Next() {
 		var a AIRouterAlias
-		if err := rows.Scan(&a.ID, &a.Subdomain, &a.AliasName, &a.TargetModel, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Subdomain, &a.AliasName, &a.TargetModel, &a.ContextSize, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		aliases = append(aliases, a)
@@ -201,11 +202,20 @@ func (d *DB) GetAIRouterAliases(subdomain string) ([]AIRouterAlias, error) {
 	return aliases, nil
 }
 
+func (d *DB) GetAIRouterAlias(subdomain, aliasName string) (*AIRouterAlias, error) {
+	row := d.conn.QueryRow(`SELECT id, subdomain, alias_name, target_model, context_size, created_at FROM ai_router_aliases WHERE subdomain=? AND alias_name=?`, subdomain, aliasName)
+	var a AIRouterAlias
+	if err := row.Scan(&a.ID, &a.Subdomain, &a.AliasName, &a.TargetModel, &a.ContextSize, &a.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
 func (d *DB) UpsertAIRouterAlias(alias *AIRouterAlias) error {
-	_, err := d.conn.Exec(`INSERT INTO ai_router_aliases (subdomain, alias_name, target_model)
-		VALUES (?, ?, ?)
-		ON CONFLICT(subdomain, alias_name) DO UPDATE SET target_model=excluded.target_model`,
-		alias.Subdomain, alias.AliasName, alias.TargetModel)
+	_, err := d.conn.Exec(`INSERT INTO ai_router_aliases (subdomain, alias_name, target_model, context_size)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(subdomain, alias_name) DO UPDATE SET target_model=excluded.target_model, context_size=excluded.context_size`,
+		alias.Subdomain, alias.AliasName, alias.TargetModel, alias.ContextSize)
 	return err
 }
 

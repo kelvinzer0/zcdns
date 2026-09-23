@@ -169,6 +169,7 @@ func InitDB(dbPath string) (*DB, error) {
 		subdomain TEXT NOT NULL,
 		alias_name TEXT NOT NULL,
 		target_model TEXT NOT NULL,
+		context_size INTEGER NOT NULL DEFAULT 0,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE(subdomain, alias_name)
 	);
@@ -185,6 +186,9 @@ func InitDB(dbPath string) (*DB, error) {
 	if _, err := conn.Exec(schema); err != nil {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
+
+	// Migrations for existing databases
+	_, _ = conn.Exec("ALTER TABLE ai_router_aliases ADD COLUMN context_size INTEGER NOT NULL DEFAULT 0;")
 
 	return &DB{conn: conn}, nil
 }

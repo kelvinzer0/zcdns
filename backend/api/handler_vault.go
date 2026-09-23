@@ -377,3 +377,22 @@ func (h *APIHandler) handleDeleteVaultBranch(w http.ResponseWriter, r *http.Requ
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Branch deleted"})
 }
+
+func (h *APIHandler) handleGetVaultLatestKV(w http.ResponseWriter, r *http.Request, subdomain string) {
+	repo, err := h.db.InitVault(subdomain)
+	if err != nil || repo == nil {
+		writeJSON(w, http.StatusOK, []db.VaultKVPair{})
+		return
+	}
+	branches, err := h.db.GetBranches(repo.ID)
+	if err != nil || len(branches) == 0 || branches[0].HeadCommit == "" {
+		writeJSON(w, http.StatusOK, []db.VaultKVPair{})
+		return
+	}
+	kv, err := h.db.GetVaultKVPairs(branches[0].HeadCommit)
+	if err != nil || kv == nil {
+		writeJSON(w, http.StatusOK, []db.VaultKVPair{})
+		return
+	}
+	writeJSON(w, http.StatusOK, kv)
+}

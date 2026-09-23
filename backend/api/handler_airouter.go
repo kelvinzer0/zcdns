@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,85 @@ import (
 )
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+func estimateInputTokens(bodyBytes []byte) int {
+	if len(bodyBytes) == 0 {
+		return 10
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		return len(bodyBytes) / 4
+	}
+	totalChars := 0
+	// OpenAI messages / Anthropic messages
+	if msgs, ok := body["messages"].([]interface{}); ok {
+		for _, m := range msgs {
+			if mObj, ok := m.(map[string]interface{}); ok {
+				if content, ok := mObj["content"].(string); ok {
+					totalChars += len(content)
+				} else if contentArr, ok := mObj["content"].([]interface{}); ok {
+					for _, part := range contentArr {
+						if partObj, ok := part.(map[string]interface{}); ok {
+							if text, ok := partObj["text"].(string); ok {
+								totalChars += len(text)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	// System prompt (Anthropic or OpenAI)
+	if sys, ok := body["system"].(string); ok {
+		totalChars += len(sys)
+	}
+	// Prompt (legacy completions)
+	if p, ok := body["prompt"].(string); ok {
+		totalChars += len(p)
+	}
+
+	if totalChars == 0 {
+		totalChars = len(bodyBytes)
+	}
+
+	tokens := totalChars / 4
+	if tokens < 10 {
+		tokens = 10
+	}
+	return tokens
+}
+
+func getDefaultContextSize(modelName string) int {
+	s := strings.ToLower(modelName)
+	switch {
+	case strings.Contains(s, "claude-3-5") || strings.Contains(s, "claude-3"):
+		return 200000
+	case strings.Contains(s, "gpt-4o") || strings.Contains(s, "o1") || strings.Contains(s, "o3"):
+		return 128000
+	case strings.Contains(s, "llama-3.1") || strings.Contains(s, "llama-3.3") || strings.Contains(s, "llama-3.2"):
+		return 128000
+	case strings.Contains(s, "llama-3-"):
+		return 8192
+	case strings.Contains(s, "gemma-2") || strings.Contains(s, "gemma2"):
+		return 8192
+	case strings.Contains(s, "mistral-large"):
+		return 128000
+	case strings.Contains(s, "mixtral"):
+		return 32768
+	case strings.Contains(s, "gpt-4-turbo"):
+		return 128000
+	case strings.Contains(s, "gpt-4-32k"):
+		return 32768
+	case strings.Contains(s, "gpt-4"):
+		return 8192
+	case strings.Contains(s, "gpt-3.5-turbo-16k"):
+		return 16384
+	case strings.Contains(s, "gpt-3.5"):
+		return 4096
+	default:
+		return 128000
+	}
+}
 
 func extractSubdomainFromHost(host string) string {
 	host = strings.Split(host, ":")[0]
@@ -78,13 +158,13 @@ func rrNext(key string, n int) int {
 // ── Proxy core ────────────────────────────────────────────────────────────────
 
 type proxyTarget struct {
-	conn    *db.AIRouterConnection
-	model   string
+	conn     *db.AIRouterConnection
+	model    string
 	provider string
 }
 
-// resolveTarget picks provider+model based on model string (alias → combo or direct)
-func (h *APIHandler) resolveTargets(subdomain, modelStr, endpoint string, excludeConnIDs []int64) ([]proxyTarget, error) {
+// resolveTargets picks provider+model based on model string (alias → combo or direct)
+func (h *APIHandler) resolveTargets(subdomain, modelStr, endpoint string, bodyBytes []byte, excludeConnIDs []int64) ([]proxyTarget, error) {
 	// 1. Resolve alias
 	resolved := h.db.ResolveAIRouterAlias(subdomain, modelStr)
 
@@ -101,11 +181,64 @@ func (h *APIHandler) resolveTargets(subdomain, modelStr, endpoint string, exclud
 		case "round_robin", "round_robin_sticky":
 			idx := rrNext(subdomain+"/"+combo.Name, len(models))
 			m := models[idx]
-			return h.resolveTargets(subdomain, m, endpoint, excludeConnIDs)
+			return h.resolveTargets(subdomain, m, endpoint, bodyBytes, excludeConnIDs)
+
+		case "smart_context":
+			tokens := estimateInputTokens(bodyBytes)
+			type candidate struct {
+				model   string
+				ctxSize int
+			}
+			var candidates []candidate
+			for _, m := range models {
+				ctx := 0
+				if alias, err := h.db.GetAIRouterAlias(subdomain, m); err == nil && alias != nil && alias.ContextSize > 0 {
+					ctx = alias.ContextSize
+				} else {
+					ctx = getDefaultContextSize(m)
+				}
+				candidates = append(candidates, candidate{model: m, ctxSize: ctx})
+			}
+			// Sort candidates by context size ascending
+			sort.Slice(candidates, func(i, j int) bool {
+				return candidates[i].ctxSize < candidates[j].ctxSize
+			})
+
+			// Split into models that can comfortably fit the context vs smaller ones
+			var suitable []string
+			var tooSmall []string
+			for _, c := range candidates {
+				if c.ctxSize >= tokens {
+					suitable = append(suitable, c.model)
+				} else {
+					tooSmall = append(tooSmall, c.model)
+				}
+			}
+
+			// Smallest capable model first, then larger models as fallback
+			var ordered []string
+			if len(suitable) > 0 {
+				ordered = append(suitable, tooSmall...)
+			} else {
+				// All models are too small: try the largest available first
+				for i := len(candidates) - 1; i >= 0; i-- {
+					ordered = append(ordered, candidates[i].model)
+				}
+			}
+
+			var targets []proxyTarget
+			for _, m := range ordered {
+				t, err := h.resolveTargets(subdomain, m, endpoint, bodyBytes, excludeConnIDs)
+				if err == nil {
+					targets = append(targets, t...)
+				}
+			}
+			return targets, nil
+
 		default: // fallback: return all in order
 			var targets []proxyTarget
 			for _, m := range models {
-				t, err := h.resolveTargets(subdomain, m, endpoint, excludeConnIDs)
+				t, err := h.resolveTargets(subdomain, m, endpoint, bodyBytes, excludeConnIDs)
 				if err == nil {
 					targets = append(targets, t...)
 				}
@@ -269,7 +402,7 @@ func (h *APIHandler) handleAIRouterProxy(w http.ResponseWriter, r *http.Request)
 	var lastErr string
 
 	for attempts := 0; attempts < 5; attempts++ {
-		targets, err := h.resolveTargets(subdomain, requestedModel, r.URL.Path, excludeConnIDs)
+		targets, err := h.resolveTargets(subdomain, requestedModel, r.URL.Path, bodyBytes, excludeConnIDs)
 		if err != nil {
 			writeJSONError(w, http.StatusServiceUnavailable, err.Error())
 			return

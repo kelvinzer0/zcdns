@@ -25,6 +25,7 @@ interface Alias {
   id: number;
   alias_name: string;
   target_model: string;
+  context_size: number;
 }
 
 interface Config {
@@ -42,10 +43,30 @@ const PROVIDERS = [
 ];
 
 const STRATEGIES = [
+  { value: 'smart_context', label: 'Smart Context — route by context size (small -> small model, large -> large model)' },
   { value: 'fallback', label: 'Fallback — try in order, next if fail' },
   { value: 'round_robin', label: 'Round Robin — rotate each request' },
   { value: 'round_robin_sticky', label: 'Round Robin Sticky — rotate per session' },
 ];
+
+const CONTEXT_PRESETS = [
+  { value: 0, label: 'Auto / Default' },
+  { value: 4096, label: '4k' },
+  { value: 8192, label: '8k' },
+  { value: 16384, label: '16k' },
+  { value: 32768, label: '32k' },
+  { value: 65536, label: '64k' },
+  { value: 131072, label: '128k' },
+  { value: 200000, label: '200k+' },
+  { value: -1, label: 'Custom...' },
+];
+
+function formatContextSize(size: number): string {
+  if (!size || size <= 0) return 'Auto';
+  if (size >= 1000000) return `${(size / 1000000).toFixed(1)}M`;
+  if (size >= 1000) return `${Math.round(size / 1000)}k`;
+  return `${size}`;
+}
 
 const MODEL_SUGGESTIONS: Record<string, string[]> = {
   openai: ['openai/gpt-4o', 'openai/gpt-4o-mini', 'openai/o1-mini'],
@@ -63,6 +84,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [combos, setCombos] = useState<Combo[]>([]);
   const [aliases, setAliases] = useState<Alias[]>([]);
+  const [vaultSecrets, setVaultSecrets] = useState<{ key: string; value: string }[]>([]);
 
   const [copiedUrl, setCopiedUrl] = useState('');
   const [showKeys, setShowKeys] = useState(false);
@@ -77,7 +99,8 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   const [savingCombo, setSavingCombo] = useState(false);
 
   // New alias form
-  const [newAlias, setNewAlias] = useState({ alias_name: '', target_model: '' });
+  const [newAlias, setNewAlias] = useState({ alias_name: '', target_model: '', context_size: 0 });
+  const [isCustomCtx, setIsCustomCtx] = useState(false);
   const [savingAlias, setSavingAlias] = useState(false);
 
   // Quick test
@@ -97,6 +120,15 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
       setConnections(data.connections || []);
       setCombos(data.combos || []);
       setAliases(data.aliases || []);
+
+      // Fetch vault secrets for selection
+      try {
+        const vRes = await fetch('/api/vault/latest-kv', { headers: { 'X-Subdomain': subdomain } });
+        if (vRes.ok) {
+          const vData = await vRes.json();
+          setVaultSecrets(vData || []);
+        }
+      } catch {}
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
@@ -197,7 +229,8 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
         body: JSON.stringify(newAlias)
       });
       if (!res.ok) throw new Error(await res.text());
-      setNewAlias({ alias_name: '', target_model: '' });
+      setNewAlias({ alias_name: '', target_model: '', context_size: 0 });
+      setIsCustomCtx(false);
       await fetchAll();
       toast({ title: 'Alias saved' });
     } catch (e: any) {
@@ -358,15 +391,69 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                 placeholder="My OpenAI key" className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
             </div>
             <div>
-              <label className="text-xs mb-1 block">API Key</label>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs">API Key</label>
+                {vaultSecrets.length > 0 ? (
+                  <select
+                    className="text-[11px] text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded px-1.5 py-0.5 cursor-pointer font-medium"
+                    onChange={e => {
+                      const found = vaultSecrets.find(s => s.key === e.target.value);
+                      if (found) {
+                        setNewConn(c => ({
+                          ...c,
+                          api_key: found.value,
+                          name: c.name || `Vault: ${found.key}`
+                        }));
+                        toast({ title: `Key '${found.key}' selected from Vault` });
+                      }
+                      e.target.value = "";
+                    }}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>⚡ Select from Vault ({vaultSecrets.length} keys)...</option>
+                    {vaultSecrets.map(s => (
+                      <option key={s.key} value={s.key}>{s.key}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground">(Vault empty)</span>
+                )}
+              </div>
               <input type="password" value={newConn.api_key} onChange={e => setNewConn(c => ({ ...c, api_key: e.target.value }))}
-                placeholder="sk-..." className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background font-mono" />
+                placeholder="sk-... or choose from Vault" className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background font-mono" />
             </div>
             {newConn.provider === 'custom' && (
               <div>
-                <label className="text-xs mb-1 block">Base URL</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs">Base URL</label>
+                  {vaultSecrets.length > 0 ? (
+                    <select
+                      className="text-[11px] text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded px-1.5 py-0.5 cursor-pointer font-medium"
+                      onChange={e => {
+                        const found = vaultSecrets.find(s => s.key === e.target.value);
+                        if (found) {
+                          setNewConn(c => ({
+                            ...c,
+                            base_url: found.value,
+                            name: c.name || `Vault: ${found.key}`
+                          }));
+                          toast({ title: `Base URL '${found.key}' selected from Vault` });
+                        }
+                        e.target.value = "";
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>⚡ Select from Vault ({vaultSecrets.length} keys)...</option>
+                      {vaultSecrets.map(s => (
+                        <option key={s.key} value={s.key}>{s.key}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">(Vault empty)</span>
+                  )}
+                </div>
                 <input value={newConn.base_url} onChange={e => setNewConn(c => ({ ...c, base_url: e.target.value }))}
-                  placeholder="https://localhost:11434" className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+                  placeholder="https://localhost:11434 or choose from Vault" className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
               </div>
             )}
           </div>
@@ -468,6 +555,9 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                 <code className="font-mono font-bold text-primary">{a.alias_name}</code>
                 <span className="text-muted-foreground">→</span>
                 <code className="font-mono text-sm flex-1">{a.target_model}</code>
+                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded font-mono">
+                  {formatContextSize(a.context_size)} ctx
+                </span>
                 <button onClick={() => deleteAlias(a.id)} className="text-destructive">
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -478,18 +568,49 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
 
         <div className="border border-dashed border-border rounded-lg p-4 space-y-3">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Add Alias</p>
-          <div className="flex gap-3 flex-wrap">
+          <div className="flex gap-3 flex-wrap items-center">
             <input value={newAlias.alias_name} onChange={e => setNewAlias(a => ({ ...a, alias_name: e.target.value }))}
-              placeholder="claude" className="border border-border rounded px-2 py-1.5 text-sm bg-background font-mono w-40" />
+              placeholder="claude" className="border border-border rounded px-2 py-1.5 text-sm bg-background font-mono w-36" />
             <span className="self-center text-muted-foreground">→</span>
             <input value={newAlias.target_model} onChange={e => setNewAlias(a => ({ ...a, target_model: e.target.value }))}
               list="alias-target-list"
               placeholder="anthropic/claude-3-5-sonnet-20241022 or combo-name"
-              className="flex-1 border border-border rounded px-2 py-1.5 text-sm bg-background font-mono" />
+              className="flex-1 min-w-[200px] border border-border rounded px-2 py-1.5 text-sm bg-background font-mono" />
             <datalist id="alias-target-list">
               {Object.values(MODEL_SUGGESTIONS).flat().map(s => <option key={s} value={s} />)}
               {combos.map(c => <option key={c.name} value={c.name} />)}
             </datalist>
+
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-muted-foreground whitespace-nowrap">Context:</label>
+              <select
+                value={isCustomCtx ? -1 : (newAlias.context_size || 0)}
+                onChange={e => {
+                  const val = parseInt(e.target.value, 10);
+                  if (val === -1) {
+                    setIsCustomCtx(true);
+                  } else {
+                    setIsCustomCtx(false);
+                    setNewAlias(a => ({ ...a, context_size: val }));
+                  }
+                }}
+                className="border border-border rounded px-2 py-1.5 text-sm bg-background font-mono"
+              >
+                {CONTEXT_PRESETS.map(p => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
+              {isCustomCtx && (
+                <input
+                  type="number"
+                  placeholder="Tokens (e.g. 64000)"
+                  value={newAlias.context_size || ''}
+                  onChange={e => setNewAlias(a => ({ ...a, context_size: parseInt(e.target.value, 10) || 0 }))}
+                  className="border border-border rounded px-2 py-1.5 text-sm bg-background font-mono w-28"
+                />
+              )}
+            </div>
+
             <button onClick={saveAlias} disabled={savingAlias}
               className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded text-sm">
               {savingAlias ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Add
