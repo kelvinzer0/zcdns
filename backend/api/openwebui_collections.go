@@ -180,3 +180,40 @@ func (h *APIHandler) handleOpenWebUIConfigs(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
+
+// handleOpenWebUIAPIFallback handles any unmatched /api/ or /api/v1/ endpoints
+func (h *APIHandler) handleOpenWebUIAPIFallback(w http.ResponseWriter, r *http.Request) {
+	if setOWUCors(w, r) {
+		return
+	}
+	path := strings.ToLower(r.URL.Path)
+
+	// Endpoints expecting paginated response: {"items": [], "total": 0}
+	if strings.HasSuffix(path, "/list") || strings.HasSuffix(path, "/search") ||
+		strings.Contains(path, "knowledge") || strings.Contains(path, "files") ||
+		strings.Contains(path, "skills/list") || strings.Contains(path, "prompts/list") {
+		writeJSON(w, http.StatusOK, OpenWebUIPaginatedListResponse{
+			Items: []any{},
+			Total: 0,
+		})
+		return
+	}
+
+	// Endpoints expecting an object/dict: configs, settings, info, status, details
+	if strings.HasSuffix(path, "/config") || strings.HasSuffix(path, "/settings") ||
+		strings.HasSuffix(path, "/details") || strings.HasSuffix(path, "/info") ||
+		strings.HasSuffix(path, "/status") || strings.HasSuffix(path, "/valves") ||
+		strings.HasSuffix(path, "/spec") {
+		writeJSON(w, http.StatusOK, map[string]any{})
+		return
+	}
+
+	// Default for GET collection queries
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+
+	// Default for POST/PUT/DELETE mutations
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}

@@ -10,16 +10,6 @@ import (
 	"time"
 )
 
-// OpenWebUIChatItem represents chat metadata compatible with OpenWebUI's ChatTitleIdResponse
-type OpenWebUIChatItem struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
-	Archived  bool   `json:"archived"`
-	Pinned    bool   `json:"pinned"`
-}
-
 // handleOpenWebUIChats handles GET/POST/DELETE on /api/v1/chats/*
 func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request) {
 	if setOWUCors(w, r) {
@@ -38,9 +28,9 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 				writeJSONError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			var list []OpenWebUIChatItem
+			var list []OpenWebUIChatTitleIdResponse
 			for _, rc := range rawChats {
-				list = append(list, OpenWebUIChatItem{
+				list = append(list, OpenWebUIChatTitleIdResponse{
 					ID:        rc.ID,
 					Title:     rc.Title,
 					CreatedAt: rc.CreatedAt,
@@ -50,7 +40,7 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 				})
 			}
 			if list == nil {
-				list = []OpenWebUIChatItem{}
+				list = []OpenWebUIChatTitleIdResponse{}
 			}
 			writeJSON(w, http.StatusOK, list)
 			return

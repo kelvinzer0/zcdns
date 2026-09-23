@@ -175,6 +175,10 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/terminals", emptyList)
 	mux.HandleFunc("/api/v1/terminals/", emptyList)
 
+	// API Fallback catch-alls for any unmapped OpenWebUI routes
+	mux.HandleFunc("/api/v1/", h.handleOpenWebUIAPIFallback)
+	mux.HandleFunc("/api/", h.handleOpenWebUIAPIFallback)
+
 	mux.HandleFunc("GET /dns-query", h.handleDoH)
 	mux.HandleFunc("POST /dns-query", h.handleDoH)
 	mux.HandleFunc("GET /dns-query/{subdomain}", h.handleDoH)
@@ -214,6 +218,10 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// If request is targeted at *.router.zcdns.id, serve OpenWebUI!
 		if sub := extractSubdomainFromHost(r.Host); sub != "" {
+			if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
+				h.handleOpenWebUIAPIFallback(w, r)
+				return
+			}
 			h.handleOpenWebUIStatic(w, r)
 			return
 		}
