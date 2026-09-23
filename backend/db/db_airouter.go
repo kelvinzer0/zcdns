@@ -290,6 +290,19 @@ func (d *DB) ValidateAIRouterUserKey(subdomain, keyValue string) bool {
 	return err == nil && count > 0
 }
 
+func (d *DB) GetAIRouterUserKeyByValue(subdomain, keyValue string) (*AIRouterUserKey, error) {
+	var k AIRouterUserKey
+	err := d.conn.QueryRow(`
+		SELECT id, subdomain, name, key_value, created_at
+		FROM ai_router_user_keys
+		WHERE subdomain = ? AND key_value = ?
+	`, subdomain, keyValue).Scan(&k.ID, &k.Subdomain, &k.Name, &k.KeyValue, &k.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &k, nil
+}
+
 func (d *DB) CountAIRouterUserKeys(subdomain string) int {
 	var count int
 	_ = d.conn.QueryRow(`SELECT COUNT(*) FROM ai_router_user_keys WHERE subdomain=?`, subdomain).Scan(&count)

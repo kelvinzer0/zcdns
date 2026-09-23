@@ -241,9 +241,12 @@ func InitDB(dbPath string) (*DB, error) {
 
 	// Migrations for existing databases
 	_, _ = conn.Exec("ALTER TABLE ai_router_aliases ADD COLUMN context_size INTEGER NOT NULL DEFAULT 0;")
+	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default';")
 	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;")
 	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;")
 	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN folder_id TEXT;")
+	_, _ = conn.Exec("ALTER TABLE openwebui_folders ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default';")
+	_, _ = conn.Exec("ALTER TABLE openwebui_prompts ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default';")
 
 	return &DB{conn: conn}, nil
 }

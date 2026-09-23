@@ -18,6 +18,7 @@ type OpenWebUIChatSummary struct {
 type OpenWebUIFolderDB struct {
 	ID          string `json:"id"`
 	Subdomain   string `json:"subdomain"`
+	UserID      string `json:"user_id"`
 	Name        string `json:"name"`
 	ParentID    string `json:"parent_id"`
 	IsExpanded  bool   `json:"is_expanded"`
@@ -28,6 +29,7 @@ type OpenWebUIFolderDB struct {
 type OpenWebUIPromptDB struct {
 	ID        string `json:"id"`
 	Subdomain string `json:"subdomain"`
+	UserID    string `json:"user_id"`
 	Command   string `json:"command"`
 	Name      string `json:"name"`
 	Content   string `json:"content"`
@@ -37,11 +39,11 @@ type OpenWebUIPromptDB struct {
 
 // ── Chats ──────────────────────────────────────────────────────────────────────
 
-func (d *DB) GetOpenWebUIChats(subdomain string, includeArchived, includePinned bool) ([]OpenWebUIChatSummary, error) {
+func (d *DB) GetOpenWebUIChats(subdomain, userID string, includeArchived, includePinned bool) ([]OpenWebUIChatSummary, error) {
 	query := `
 		SELECT id, title, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at
 		FROM openwebui_chats
-		WHERE subdomain = ?
+		WHERE subdomain = ? AND user_id = ?
 	`
 	if !includeArchived {
 		query += ` AND archived = 0`
@@ -51,7 +53,7 @@ func (d *DB) GetOpenWebUIChats(subdomain string, includeArchived, includePinned 
 	}
 	query += ` ORDER BY updated_at DESC`
 
-	rows, err := d.conn.Query(query, subdomain)
+	rows, err := d.conn.Query(query, subdomain, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -74,13 +76,13 @@ func (d *DB) GetOpenWebUIChats(subdomain string, includeArchived, includePinned 
 	return chats, nil
 }
 
-func (d *DB) GetOpenWebUIPinnedChats(subdomain string) ([]OpenWebUIChatSummary, error) {
+func (d *DB) GetOpenWebUIPinnedChats(subdomain, userID string) ([]OpenWebUIChatSummary, error) {
 	rows, err := d.conn.Query(`
 		SELECT id, title, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at
 		FROM openwebui_chats
-		WHERE subdomain = ? AND pinned = 1 AND archived = 0
+		WHERE subdomain = ? AND user_id = ? AND pinned = 1 AND archived = 0
 		ORDER BY updated_at DESC
-	`, subdomain)
+	`, subdomain, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -103,13 +105,13 @@ func (d *DB) GetOpenWebUIPinnedChats(subdomain string) ([]OpenWebUIChatSummary, 
 	return chats, nil
 }
 
-func (d *DB) GetOpenWebUIArchivedChats(subdomain string) ([]OpenWebUIChatSummary, error) {
+func (d *DB) GetOpenWebUIArchivedChats(subdomain, userID string) ([]OpenWebUIChatSummary, error) {
 	rows, err := d.conn.Query(`
 		SELECT id, title, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at
 		FROM openwebui_chats
-		WHERE subdomain = ? AND archived = 1
+		WHERE subdomain = ? AND user_id = ? AND archived = 1
 		ORDER BY updated_at DESC
-	`, subdomain)
+	`, subdomain, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -132,74 +134,74 @@ func (d *DB) GetOpenWebUIArchivedChats(subdomain string) ([]OpenWebUIChatSummary
 	return chats, nil
 }
 
-func (d *DB) GetOpenWebUIChatRaw(subdomain, id string) (string, string, bool, bool, string, int64, int64, error) {
+func (d *DB) GetOpenWebUIChatRaw(subdomain, userID, id string) (string, string, bool, bool, string, int64, int64, error) {
 	var title, chatJSON, folderID string
 	var pinned, archived int
 	var createdAt, updatedAt int64
 	err := d.conn.QueryRow(`
 		SELECT title, chat_json, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at
 		FROM openwebui_chats
-		WHERE subdomain = ? AND id = ?
-	`, subdomain, id).Scan(&title, &chatJSON, &pinned, &archived, &folderID, &createdAt, &updatedAt)
+		WHERE subdomain = ? AND user_id = ? AND id = ?
+	`, subdomain, userID, id).Scan(&title, &chatJSON, &pinned, &archived, &folderID, &createdAt, &updatedAt)
 	return title, chatJSON, pinned == 1, archived == 1, folderID, createdAt, updatedAt, err
 }
 
-func (d *DB) UpsertOpenWebUIChat(subdomain, id, title, chatJSON string, folderID string) error {
+func (d *DB) UpsertOpenWebUIChat(subdomain, userID, id, title, chatJSON string, folderID string) error {
 	now := time.Now().Unix()
 	_, err := d.conn.Exec(`
-		INSERT INTO openwebui_chats (id, subdomain, title, chat_json, folder_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO openwebui_chats (id, subdomain, user_id, title, chat_json, folder_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title = excluded.title,
 			chat_json = excluded.chat_json,
 			folder_id = excluded.folder_id,
 			updated_at = excluded.updated_at
-	`, id, subdomain, title, chatJSON, folderID, now, now)
+	`, id, subdomain, userID, title, chatJSON, folderID, now, now)
 	return err
 }
 
-func (d *DB) SetOpenWebUIChatPinned(subdomain, id string, pinned bool) error {
+func (d *DB) SetOpenWebUIChatPinned(subdomain, userID, id string, pinned bool) error {
 	p := 0
 	if pinned {
 		p = 1
 	}
-	_, err := d.conn.Exec(`UPDATE openwebui_chats SET pinned = ? WHERE subdomain = ? AND id = ?`, p, subdomain, id)
+	_, err := d.conn.Exec(`UPDATE openwebui_chats SET pinned = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, p, subdomain, userID, id)
 	return err
 }
 
-func (d *DB) SetOpenWebUIChatArchived(subdomain, id string, archived bool) error {
+func (d *DB) SetOpenWebUIChatArchived(subdomain, userID, id string, archived bool) error {
 	a := 0
 	if archived {
 		a = 1
 	}
-	_, err := d.conn.Exec(`UPDATE openwebui_chats SET archived = ? WHERE subdomain = ? AND id = ?`, a, subdomain, id)
+	_, err := d.conn.Exec(`UPDATE openwebui_chats SET archived = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, a, subdomain, userID, id)
 	return err
 }
 
-func (d *DB) SetOpenWebUIChatFolder(subdomain, id, folderID string) error {
-	_, err := d.conn.Exec(`UPDATE openwebui_chats SET folder_id = ? WHERE subdomain = ? AND id = ?`, folderID, subdomain, id)
+func (d *DB) SetOpenWebUIChatFolder(subdomain, userID, id, folderID string) error {
+	_, err := d.conn.Exec(`UPDATE openwebui_chats SET folder_id = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, folderID, subdomain, userID, id)
 	return err
 }
 
-func (d *DB) DeleteOpenWebUIChat(subdomain, id string) error {
-	_, err := d.conn.Exec(`DELETE FROM openwebui_chats WHERE subdomain = ? AND id = ?`, subdomain, id)
+func (d *DB) DeleteOpenWebUIChat(subdomain, userID, id string) error {
+	_, err := d.conn.Exec(`DELETE FROM openwebui_chats WHERE subdomain = ? AND user_id = ? AND id = ?`, subdomain, userID, id)
 	return err
 }
 
-func (d *DB) DeleteAllOpenWebUIChats(subdomain string) error {
-	_, err := d.conn.Exec(`DELETE FROM openwebui_chats WHERE subdomain = ?`, subdomain)
+func (d *DB) DeleteAllOpenWebUIChats(subdomain, userID string) error {
+	_, err := d.conn.Exec(`DELETE FROM openwebui_chats WHERE subdomain = ? AND user_id = ?`, subdomain, userID)
 	return err
 }
 
 // ── Folders ────────────────────────────────────────────────────────────────────
 
-func (d *DB) GetOpenWebUIFolders(subdomain string) ([]OpenWebUIFolderDB, error) {
+func (d *DB) GetOpenWebUIFolders(subdomain, userID string) ([]OpenWebUIFolderDB, error) {
 	rows, err := d.conn.Query(`
-		SELECT id, subdomain, name, COALESCE(parent_id, ''), is_expanded, created_at, updated_at
+		SELECT id, subdomain, user_id, name, COALESCE(parent_id, ''), is_expanded, created_at, updated_at
 		FROM openwebui_folders
-		WHERE subdomain = ?
+		WHERE subdomain = ? AND user_id = ?
 		ORDER BY created_at ASC
-	`, subdomain)
+	`, subdomain, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +211,7 @@ func (d *DB) GetOpenWebUIFolders(subdomain string) ([]OpenWebUIFolderDB, error) 
 	for rows.Next() {
 		var f OpenWebUIFolderDB
 		var exp int
-		if err := rows.Scan(&f.ID, &f.Subdomain, &f.Name, &f.ParentID, &exp, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.Subdomain, &f.UserID, &f.Name, &f.ParentID, &exp, &f.CreatedAt, &f.UpdatedAt); err != nil {
 			continue
 		}
 		f.IsExpanded = exp == 1
@@ -221,50 +223,50 @@ func (d *DB) GetOpenWebUIFolders(subdomain string) ([]OpenWebUIFolderDB, error) 
 	return folders, nil
 }
 
-func (d *DB) CreateOpenWebUIFolder(subdomain, id, name, parentID string) error {
+func (d *DB) CreateOpenWebUIFolder(subdomain, userID, id, name, parentID string) error {
 	now := time.Now().Unix()
 	_, err := d.conn.Exec(`
-		INSERT INTO openwebui_folders (id, subdomain, name, parent_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, id, subdomain, name, parentID, now, now)
+		INSERT INTO openwebui_folders (id, subdomain, user_id, name, parent_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, id, subdomain, userID, name, parentID, now, now)
 	return err
 }
 
-func (d *DB) UpdateOpenWebUIFolderName(subdomain, id, name string) error {
+func (d *DB) UpdateOpenWebUIFolderName(subdomain, userID, id, name string) error {
 	now := time.Now().Unix()
-	_, err := d.conn.Exec(`UPDATE openwebui_folders SET name = ?, updated_at = ? WHERE subdomain = ? AND id = ?`, name, now, subdomain, id)
+	_, err := d.conn.Exec(`UPDATE openwebui_folders SET name = ?, updated_at = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, name, now, subdomain, userID, id)
 	return err
 }
 
-func (d *DB) UpdateOpenWebUIFolderParent(subdomain, id, parentID string) error {
+func (d *DB) UpdateOpenWebUIFolderParent(subdomain, userID, id, parentID string) error {
 	now := time.Now().Unix()
-	_, err := d.conn.Exec(`UPDATE openwebui_folders SET parent_id = ?, updated_at = ? WHERE subdomain = ? AND id = ?`, parentID, now, subdomain, id)
+	_, err := d.conn.Exec(`UPDATE openwebui_folders SET parent_id = ?, updated_at = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, parentID, now, subdomain, userID, id)
 	return err
 }
 
-func (d *DB) UpdateOpenWebUIFolderExpanded(subdomain, id string, isExpanded bool) error {
+func (d *DB) UpdateOpenWebUIFolderExpanded(subdomain, userID, id string, isExpanded bool) error {
 	exp := 0
 	if isExpanded {
 		exp = 1
 	}
-	_, err := d.conn.Exec(`UPDATE openwebui_folders SET is_expanded = ? WHERE subdomain = ? AND id = ?`, exp, subdomain, id)
+	_, err := d.conn.Exec(`UPDATE openwebui_folders SET is_expanded = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, exp, subdomain, userID, id)
 	return err
 }
 
-func (d *DB) DeleteOpenWebUIFolder(subdomain, id string) error {
-	_, err := d.conn.Exec(`DELETE FROM openwebui_folders WHERE subdomain = ? AND id = ?`, subdomain, id)
+func (d *DB) DeleteOpenWebUIFolder(subdomain, userID, id string) error {
+	_, err := d.conn.Exec(`DELETE FROM openwebui_folders WHERE subdomain = ? AND user_id = ? AND id = ?`, subdomain, userID, id)
 	return err
 }
 
 // ── Prompts ────────────────────────────────────────────────────────────────────
 
-func (d *DB) GetOpenWebUIPrompts(subdomain string) ([]OpenWebUIPromptDB, error) {
+func (d *DB) GetOpenWebUIPrompts(subdomain, userID string) ([]OpenWebUIPromptDB, error) {
 	rows, err := d.conn.Query(`
-		SELECT id, subdomain, command, name, content, created_at, updated_at
+		SELECT id, subdomain, user_id, command, name, content, created_at, updated_at
 		FROM openwebui_prompts
-		WHERE subdomain = ?
+		WHERE subdomain = ? AND user_id = ?
 		ORDER BY updated_at DESC
-	`, subdomain)
+	`, subdomain, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +275,7 @@ func (d *DB) GetOpenWebUIPrompts(subdomain string) ([]OpenWebUIPromptDB, error) 
 	var prompts []OpenWebUIPromptDB
 	for rows.Next() {
 		var p OpenWebUIPromptDB
-		if err := rows.Scan(&p.ID, &p.Subdomain, &p.Command, &p.Name, &p.Content, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Subdomain, &p.UserID, &p.Command, &p.Name, &p.Content, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			continue
 		}
 		prompts = append(prompts, p)
@@ -284,44 +286,44 @@ func (d *DB) GetOpenWebUIPrompts(subdomain string) ([]OpenWebUIPromptDB, error) 
 	return prompts, nil
 }
 
-func (d *DB) UpsertOpenWebUIPrompt(subdomain, id, command, name, content string) error {
+func (d *DB) UpsertOpenWebUIPrompt(subdomain, userID, id, command, name, content string) error {
 	now := time.Now().Unix()
 	_, err := d.conn.Exec(`
-		INSERT INTO openwebui_prompts (id, subdomain, command, name, content, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO openwebui_prompts (id, subdomain, user_id, command, name, content, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			command = excluded.command,
 			name = excluded.name,
 			content = excluded.content,
 			updated_at = excluded.updated_at
-	`, id, subdomain, command, name, content, now, now)
+	`, id, subdomain, userID, command, name, content, now, now)
 	return err
 }
 
-func (d *DB) DeleteOpenWebUIPrompt(subdomain, id string) error {
-	_, err := d.conn.Exec(`DELETE FROM openwebui_prompts WHERE subdomain = ? AND id = ?`, subdomain, id)
+func (d *DB) DeleteOpenWebUIPrompt(subdomain, userID, id string) error {
+	_, err := d.conn.Exec(`DELETE FROM openwebui_prompts WHERE subdomain = ? AND user_id = ? AND id = ?`, subdomain, userID, id)
 	return err
 }
 
 // ── User Settings ──────────────────────────────────────────────────────────────
 
-func (d *DB) GetOpenWebUIUserSettings(subdomain string) (string, error) {
+func (d *DB) GetOpenWebUIUserSettings(subdomain, userID string) (string, error) {
 	var settings string
-	err := d.conn.QueryRow(`SELECT settings_json FROM openwebui_user_settings WHERE subdomain = ?`, subdomain).Scan(&settings)
+	err := d.conn.QueryRow(`SELECT settings_json FROM openwebui_user_settings WHERE subdomain = ? AND user_id = ?`, subdomain, userID).Scan(&settings)
 	if err == sql.ErrNoRows {
 		return "{}", nil
 	}
 	return settings, err
 }
 
-func (d *DB) SetOpenWebUIUserSettings(subdomain, settingsJSON string) error {
+func (d *DB) SetOpenWebUIUserSettings(subdomain, userID, settingsJSON string) error {
 	now := time.Now().Unix()
 	_, err := d.conn.Exec(`
-		INSERT INTO openwebui_user_settings (subdomain, settings_json, updated_at)
-		VALUES (?, ?, ?)
-		ON CONFLICT(subdomain) DO UPDATE SET
+		INSERT INTO openwebui_user_settings (subdomain, user_id, settings_json, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(subdomain, user_id) DO UPDATE SET
 			settings_json = excluded.settings_json,
 			updated_at = excluded.updated_at
-	`, subdomain, settingsJSON, now)
+	`, subdomain, userID, settingsJSON, now)
 	return err
 }

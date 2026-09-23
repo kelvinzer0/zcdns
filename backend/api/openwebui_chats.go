@@ -24,6 +24,7 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 	}
 
 	subdomain := h.resolveSubdomain(r)
+	u := h.resolveUser(r)
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/chats")
 	path = strings.TrimPrefix(path, "/")
 
@@ -32,7 +33,7 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 		if r.Method == http.MethodGet {
 			includePinned := r.URL.Query().Get("include_pinned") == "true"
 			includeArchived := r.URL.Query().Get("include_archived") == "true"
-			rawChats, err := h.db.GetOpenWebUIChats(subdomain, includeArchived, includePinned)
+			rawChats, err := h.db.GetOpenWebUIChats(subdomain, u.ID, includeArchived, includePinned)
 			if err != nil {
 				writeJSONError(w, http.StatusInternalServerError, err.Error())
 				return
@@ -55,13 +56,13 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if r.Method == http.MethodDelete {
-			_ = h.db.DeleteAllOpenWebUIChats(subdomain)
+			_ = h.db.DeleteAllOpenWebUIChats(subdomain, u.ID)
 			writeJSON(w, http.StatusOK, true)
 			return
 		}
 
 	case path == "pinned":
-		rawChats, err := h.db.GetOpenWebUIPinnedChats(subdomain)
+		rawChats, err := h.db.GetOpenWebUIPinnedChats(subdomain, u.ID)
 		if err != nil {
 			writeJSON(w, http.StatusOK, []any{})
 			return
@@ -84,7 +85,7 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 		return
 
 	case path == "all/archived" || path == "archived":
-		rawChats, err := h.db.GetOpenWebUIArchivedChats(subdomain)
+		rawChats, err := h.db.GetOpenWebUIArchivedChats(subdomain, u.ID)
 		if err != nil {
 			writeJSON(w, http.StatusOK, []any{})
 			return
@@ -107,7 +108,7 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 		return
 
 	case path == "archived/count":
-		rawChats, _ := h.db.GetOpenWebUIArchivedChats(subdomain)
+		rawChats, _ := h.db.GetOpenWebUIArchivedChats(subdomain, u.ID)
 		writeJSON(w, http.StatusOK, len(rawChats))
 		return
 
@@ -168,11 +169,11 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 			}
 
 			now := time.Now().Unix()
-			_ = h.db.UpsertOpenWebUIChat(subdomain, id, title, string(body), folderID)
+			_ = h.db.UpsertOpenWebUIChat(subdomain, u.ID, id, title, string(body), folderID)
 
 			writeJSON(w, http.StatusOK, OpenWebUIChatResponse{
 				ID:        id,
-				UserID:    "admin",
+				UserID:    u.ID,
 				Title:     title,
 				Chat:      parsed["chat"],
 				CreatedAt: now,
@@ -196,18 +197,18 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 			switch subAction {
 			case "pin":
 				// Toggle pin status
-				title, chatJSON, pinned, archived, folderID, createdAt, updatedAt, err := h.db.GetOpenWebUIChatRaw(subdomain, chatID)
+				title, chatJSON, pinned, archived, folderID, createdAt, updatedAt, err := h.db.GetOpenWebUIChatRaw(subdomain, u.ID, chatID)
 				if err != nil {
 					writeJSONError(w, http.StatusNotFound, "chat not found")
 					return
 				}
 				newPinned := !pinned
-				_ = h.db.SetOpenWebUIChatPinned(subdomain, chatID, newPinned)
+				_ = h.db.SetOpenWebUIChatPinned(subdomain, u.ID, chatID, newPinned)
 				var chatObj any
 				_ = json.Unmarshal([]byte(chatJSON), &chatObj)
 				writeJSON(w, http.StatusOK, OpenWebUIChatResponse{
 					ID:        chatID,
-					UserID:    "admin",
+					UserID:    u.ID,
 					Title:     title,
 					Chat:      chatObj,
 					CreatedAt: createdAt,
@@ -219,7 +220,7 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 				return
 
 			case "pinned":
-				_, _, pinned, _, _, _, _, err := h.db.GetOpenWebUIChatRaw(subdomain, chatID)
+				_, _, pinned, _, _, _, _, err := h.db.GetOpenWebUIChatRaw(subdomain, u.ID, chatID)
 				if err != nil {
 					writeJSON(w, http.StatusOK, false)
 					return
@@ -228,18 +229,18 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 				return
 
 			case "archive":
-				title, chatJSON, pinned, archived, folderID, createdAt, updatedAt, err := h.db.GetOpenWebUIChatRaw(subdomain, chatID)
+				title, chatJSON, pinned, archived, folderID, createdAt, updatedAt, err := h.db.GetOpenWebUIChatRaw(subdomain, u.ID, chatID)
 				if err != nil {
 					writeJSONError(w, http.StatusNotFound, "chat not found")
 					return
 				}
 				newArchived := !archived
-				_ = h.db.SetOpenWebUIChatArchived(subdomain, chatID, newArchived)
+				_ = h.db.SetOpenWebUIChatArchived(subdomain, u.ID, chatID, newArchived)
 				var chatObj any
 				_ = json.Unmarshal([]byte(chatJSON), &chatObj)
 				writeJSON(w, http.StatusOK, OpenWebUIChatResponse{
 					ID:        chatID,
-					UserID:    "admin",
+					UserID:    u.ID,
 					Title:     title,
 					Chat:      chatObj,
 					CreatedAt: createdAt,
@@ -255,12 +256,12 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 				var form map[string]string
 				_ = json.Unmarshal(body, &form)
 				folderID := form["folder_id"]
-				_ = h.db.SetOpenWebUIChatFolder(subdomain, chatID, folderID)
+				_ = h.db.SetOpenWebUIChatFolder(subdomain, u.ID, chatID, folderID)
 				writeJSON(w, http.StatusOK, true)
 				return
 
 			case "clone":
-				title, chatJSON, _, _, folderID, _, _, err := h.db.GetOpenWebUIChatRaw(subdomain, chatID)
+				title, chatJSON, _, _, folderID, _, _, err := h.db.GetOpenWebUIChatRaw(subdomain, u.ID, chatID)
 				if err != nil {
 					writeJSONError(w, http.StatusNotFound, "chat not found")
 					return
@@ -269,12 +270,12 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 				_, _ = rand.Read(randBytes)
 				newID := hex.EncodeToString(randBytes)
 				now := time.Now().Unix()
-				_ = h.db.UpsertOpenWebUIChat(subdomain, newID, title+" (Copy)", chatJSON, folderID)
+				_ = h.db.UpsertOpenWebUIChat(subdomain, u.ID, newID, title+" (Copy)", chatJSON, folderID)
 				var chatObj any
 				_ = json.Unmarshal([]byte(chatJSON), &chatObj)
 				writeJSON(w, http.StatusOK, OpenWebUIChatResponse{
 					ID:        newID,
-					UserID:    "admin",
+					UserID:    u.ID,
 					Title:     title + " (Copy)",
 					Chat:      chatObj,
 					CreatedAt: now,
@@ -293,7 +294,7 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 		}
 
 		if r.Method == http.MethodGet {
-			title, chatJSON, pinned, archived, folderID, createdAt, updatedAt, err := h.db.GetOpenWebUIChatRaw(subdomain, chatID)
+			title, chatJSON, pinned, archived, folderID, createdAt, updatedAt, err := h.db.GetOpenWebUIChatRaw(subdomain, u.ID, chatID)
 			if err != nil {
 				writeJSONError(w, http.StatusNotFound, "chat not found")
 				return
@@ -307,7 +308,7 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 
 			writeJSON(w, http.StatusOK, OpenWebUIChatResponse{
 				ID:        chatID,
-				UserID:    "admin",
+				UserID:    u.ID,
 				Title:     title,
 				Chat:      chatObj,
 				CreatedAt: createdAt,
@@ -338,11 +339,11 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 				folderID = fid
 			}
 
-			_ = h.db.UpsertOpenWebUIChat(subdomain, chatID, title, string(body), folderID)
+			_ = h.db.UpsertOpenWebUIChat(subdomain, u.ID, chatID, title, string(body), folderID)
 			now := time.Now().Unix()
 			writeJSON(w, http.StatusOK, OpenWebUIChatResponse{
 				ID:        chatID,
-				UserID:    "admin",
+				UserID:    u.ID,
 				Title:     title,
 				Chat:      parsed["chat"],
 				CreatedAt: now,
@@ -355,7 +356,7 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 		}
 
 		if r.Method == http.MethodDelete {
-			_ = h.db.DeleteOpenWebUIChat(subdomain, chatID)
+			_ = h.db.DeleteOpenWebUIChat(subdomain, u.ID, chatID)
 			writeJSON(w, http.StatusOK, true)
 			return
 		}

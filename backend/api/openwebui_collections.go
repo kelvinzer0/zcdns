@@ -16,18 +16,19 @@ func (h *APIHandler) handleOpenWebUIPrompts(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	subdomain := h.resolveSubdomain(r)
+	u := h.resolveUser(r)
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/prompts")
 	path = strings.TrimPrefix(path, "/")
 
 	if path == "list" {
-		prompts, _ := h.db.GetOpenWebUIPrompts(subdomain)
+		prompts, _ := h.db.GetOpenWebUIPrompts(subdomain, u.ID)
 		var items []any
 		for _, p := range prompts {
 			items = append(items, map[string]any{
 				"command":    p.Command,
 				"name":       p.Name,
 				"content":    p.Content,
-				"user_id":    "admin",
+				"user_id":    u.ID,
 				"created_at": p.CreatedAt,
 				"updated_at": p.UpdatedAt,
 			})
@@ -49,7 +50,7 @@ func (h *APIHandler) handleOpenWebUIPrompts(w http.ResponseWriter, r *http.Reque
 		randBytes := make([]byte, 8)
 		_, _ = rand.Read(randBytes)
 		pID := hex.EncodeToString(randBytes)
-		_ = h.db.UpsertOpenWebUIPrompt(subdomain, pID, form["command"], form["name"], form["content"])
+		_ = h.db.UpsertOpenWebUIPrompt(subdomain, u.ID, pID, form["command"], form["name"], form["content"])
 		writeJSON(w, http.StatusOK, map[string]any{"command": form["command"], "name": form["name"]})
 		return
 	}
@@ -59,7 +60,7 @@ func (h *APIHandler) handleOpenWebUIPrompts(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	prompts, _ := h.db.GetOpenWebUIPrompts(subdomain)
+	prompts, _ := h.db.GetOpenWebUIPrompts(subdomain, u.ID)
 	var list []any
 	for _, p := range prompts {
 		list = append(list, map[string]any{
@@ -80,12 +81,13 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	subdomain := h.resolveSubdomain(r)
+	u := h.resolveUser(r)
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/folders")
 	path = strings.TrimPrefix(path, "/")
 
 	if path == "" || path == "/" {
 		if r.Method == http.MethodGet {
-			rawFolders, err := h.db.GetOpenWebUIFolders(subdomain)
+			rawFolders, err := h.db.GetOpenWebUIFolders(subdomain, u.ID)
 			if err != nil {
 				writeJSON(w, http.StatusOK, []any{})
 				return
@@ -131,7 +133,7 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 			randBytes := make([]byte, 8)
 			_, _ = rand.Read(randBytes)
 			folderID := hex.EncodeToString(randBytes)
-			_ = h.db.CreateOpenWebUIFolder(subdomain, folderID, name, parentID)
+			_ = h.db.CreateOpenWebUIFolder(subdomain, u.ID, folderID, name, parentID)
 
 			now := time.Now().Unix()
 			var parent *string
@@ -169,7 +171,7 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 			var form map[string]string
 			_ = json.Unmarshal(body, &form)
 			if name, ok := form["name"]; ok && name != "" {
-				_ = h.db.UpdateOpenWebUIFolderName(subdomain, folderID, name)
+				_ = h.db.UpdateOpenWebUIFolderName(subdomain, u.ID, folderID, name)
 			}
 			writeJSON(w, http.StatusOK, true)
 			return
@@ -178,12 +180,12 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 			body, _ := io.ReadAll(r.Body)
 			var form map[string]bool
 			_ = json.Unmarshal(body, &form)
-			_ = h.db.UpdateOpenWebUIFolderExpanded(subdomain, folderID, form["is_expanded"])
+			_ = h.db.UpdateOpenWebUIFolderExpanded(subdomain, u.ID, folderID, form["is_expanded"])
 			writeJSON(w, http.StatusOK, true)
 			return
 		}
 		if r.Method == http.MethodDelete {
-			_ = h.db.DeleteOpenWebUIFolder(subdomain, folderID)
+			_ = h.db.DeleteOpenWebUIFolder(subdomain, u.ID, folderID)
 			writeJSON(w, http.StatusOK, true)
 			return
 		}

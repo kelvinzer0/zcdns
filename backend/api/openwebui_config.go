@@ -1,12 +1,137 @@
 package api
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 )
+
+func sanitizeUserEmail(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	var sb strings.Builder
+	for _, ch := range name {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' {
+			sb.WriteRune(ch)
+		} else if ch == ' ' {
+			sb.WriteRune('-')
+		}
+	}
+	s := sb.String()
+	if s == "" {
+		return "user"
+	}
+	return s
+}
+
+// resolveUserFromToken dynamically resolves the user identity from token / API key
+func (h *APIHandler) resolveUserFromToken(subdomain, token string) *OpenWebUISessionUserInfoResponse {
+	token = strings.TrimSpace(token)
+	token = strings.TrimPrefix(token, "Bearer ")
+	token = strings.TrimSpace(token)
+
+	var userID string
+	var userName string
+	var email string
+
+	if token != "" && token != "zcdns-session-token" {
+		// 1. Check if token matches an active AIRouterUserKey
+		if k, err := h.db.GetAIRouterUserKeyByValue(subdomain, token); err == nil && k != nil {
+			userID = fmt.Sprintf("usr_%d", k.ID)
+			userName = k.Name
+			email = fmt.Sprintf("%s@%s.router.zcdns.id", sanitizeUserEmail(k.Name), subdomain)
+		} else {
+			// 2. Deterministic hashing based on the client token
+			sum := sha256.Sum256([]byte(token))
+			hash := hex.EncodeToString(sum[:])[:12]
+			userID = "usr_" + hash
+			userName = "User " + hash[:4]
+			email = fmt.Sprintf("user-%s@%s.router.zcdns.id", hash[:6], subdomain)
+		}
+	} else {
+		// 3. No token provided: generate a random guest token
+		randBytes := make([]byte, 8)
+		_, _ = rand.Read(randBytes)
+		randHex := hex.EncodeToString(randBytes)
+		token = "zck_" + randHex
+		userID = "usr_" + randHex[:8]
+		userName = "User " + randHex[:4]
+		email = fmt.Sprintf("user-%s@%s.router.zcdns.id", randHex[:6], subdomain)
+	}
+
+	return &OpenWebUISessionUserInfoResponse{
+		Token:           token,
+		TokenType:       "bearer",
+		ID:              userID,
+		Name:            userName,
+		Role:            "user",
+		Email:           email,
+		ProfileImageURL: "/user.png",
+		Permissions: map[string]any{
+			"workspace": map[string]bool{
+				"models":    true,
+				"knowledge": true,
+				"prompts":   true,
+				"tools":     true,
+			},
+			"chat": map[string]bool{
+				"controls":    true,
+				"file_upload": true,
+				"delete":      true,
+				"edit":        true,
+				"share":       true,
+				"export":      true,
+			},
+		},
+	}
+}
+
+// resolveUser resolves user session from request headers, query params, or cookies
+func (h *APIHandler) resolveUser(r *http.Request) *OpenWebUISessionUserInfoResponse {
+	subdomain := h.resolveSubdomain(r)
+	token := ""
+
+	// 1. Authorization header: Bearer <token>
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		token = strings.TrimPrefix(auth, "Bearer ")
+		token = strings.TrimSpace(token)
+	}
+
+	// 2. Query parameters ?token= or ?key= or ?api_key=
+	if token == "" {
+		if q := r.URL.Query().Get("token"); q != "" {
+			token = q
+		} else if q := r.URL.Query().Get("key"); q != "" {
+			token = q
+		} else if q := r.URL.Query().Get("api_key"); q != "" {
+			token = q
+		}
+	}
+
+	// 3. Cookies
+	if token == "" {
+		if c, err := r.Cookie("token"); err == nil && c.Value != "" {
+			token = c.Value
+		} else if c, err := r.Cookie("zcdns_user_token"); err == nil && c.Value != "" {
+			token = c.Value
+		}
+	}
+
+	// 4. Custom headers
+	if token == "" {
+		if k := r.Header.Get("X-API-Key"); k != "" {
+			token = k
+		} else if k := r.Header.Get("X-Token"); k != "" {
+			token = k
+		}
+	}
+
+	return h.resolveUserFromToken(subdomain, token)
+}
 
 // setOWUCors sets CORS headers for OpenWebUI requests
 func setOWUCors(w http.ResponseWriter, r *http.Request) bool {
@@ -103,34 +228,25 @@ func (h *APIHandler) handleOpenWebUIAuth(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	subdomain := h.resolveSubdomain(r)
-	user := map[string]interface{}{
-		"id":                "admin",
-		"email":             "user@" + subdomain + ".router.zcdns.id",
-		"name":              subdomain,
-		"role":              "admin",
-		"profile_image_url": "/user.png",
-		"token":             "zcdns-session-token",
-		"token_type":        "bearer",
-		"permissions": map[string]interface{}{
-			"workspace": map[string]bool{
-				"models":    true,
-				"knowledge": true,
-				"prompts":   true,
-				"tools":     true,
-			},
-			"chat": map[string]bool{
-				"controls":    true,
-				"file_upload": true,
-				"delete":      true,
-				"edit":        true,
-				"share":       true,
-				"export":      true,
-			},
-		},
-	}
+	u := h.resolveUser(r)
 
-	writeJSON(w, http.StatusOK, user)
+	// Persist cookie for future requests and WebSocket handshake
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    u.Token,
+		Path:     "/",
+		MaxAge:   86400 * 365,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "zcdns_user_token",
+		Value:    u.Token,
+		Path:     "/",
+		MaxAge:   86400 * 365,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	writeJSON(w, http.StatusOK, u)
 }
 
 // handleOpenWebUIUserSettings handles /api/v1/users/user/settings with DB persistence
@@ -139,16 +255,18 @@ func (h *APIHandler) handleOpenWebUIUserSettings(w http.ResponseWriter, r *http.
 		return
 	}
 	subdomain := h.resolveSubdomain(r)
+	u := h.resolveUser(r)
+
 	if r.Method == http.MethodPost {
 		body, _ := io.ReadAll(r.Body)
-		_ = h.db.SetOpenWebUIUserSettings(subdomain, string(body))
+		_ = h.db.SetOpenWebUIUserSettings(subdomain, u.ID, string(body))
 		var settings map[string]interface{}
 		_ = json.Unmarshal(body, &settings)
 		writeJSON(w, http.StatusOK, settings)
 		return
 	}
 
-	settingsJSON, err := h.db.GetOpenWebUIUserSettings(subdomain)
+	settingsJSON, err := h.db.GetOpenWebUIUserSettings(subdomain, u.ID)
 	if err == nil && settingsJSON != "" && settingsJSON != "{}" {
 		var settings map[string]interface{}
 		if err := json.Unmarshal([]byte(settingsJSON), &settings); err == nil {

@@ -66,9 +66,33 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 				ackID, eventName, eventData := parseSocketIOEvent(s)
 				switch eventName {
 				case "user-join":
+					// Resolve dynamic user from auth payload or cookie
+					var token string
+					if authMap, ok := eventData["auth"].(map[string]interface{}); ok {
+						if t, ok := authMap["token"].(string); ok {
+							token = t
+						}
+					}
+					if token == "" {
+						if c, err := r.Cookie("token"); err == nil && c.Value != "" {
+							token = c.Value
+						} else if c, err := r.Cookie("zcdns_user_token"); err == nil && c.Value != "" {
+							token = c.Value
+						}
+					}
+					subdomain := h.resolveSubdomain(r)
+					u := h.resolveUserFromToken(subdomain, token)
+
 					// Reply with ACK if requested
 					if ackID != "" {
-						ack := fmt.Sprintf(`43%s[{"id":"admin","name":"admin"}]`, ackID)
+						ackPayload, _ := json.Marshal([]any{map[string]interface{}{
+							"id":                u.ID,
+							"name":              u.Name,
+							"role":              u.Role,
+							"email":             u.Email,
+							"profile_image_url": u.ProfileImageURL,
+						}})
+						ack := fmt.Sprintf("43%s%s", ackID, string(ackPayload))
 						_ = conn.WriteMessage(websocket.TextMessage, []byte(ack))
 					}
 					// Send user-count event
