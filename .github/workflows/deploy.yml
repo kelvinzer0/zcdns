@@ -130,9 +130,9 @@ jobs:
             shared-ip add guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
             shared-ip add "*.guard.zcdns.id" --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update "*.guard.zcdns.id" --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
 
-            # Configure shared-ip HTTPS mapping for AI Router proxy
-            shared-ip add router.zcdns.id --localport=443 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update router.zcdns.id --localport=443 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
-            shared-ip add "*.router.zcdns.id" --localport=443 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update "*.router.zcdns.id" --localport=443 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
+            # Configure shared-ip HTTPS mapping for AI Router proxy (points to Nginx on 10.0.0.12 / fd00::12)
+            shared-ip update router.zcdns.id --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || shared-ip add router.zcdns.id --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || true &&
+            shared-ip update "*.router.zcdns.id" --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || shared-ip add "*.router.zcdns.id" --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || true &&
             systemctl restart zcdns &&
             systemctl is-active zcdns &&
             systemctl restart shared-ip &&

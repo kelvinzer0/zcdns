@@ -83,8 +83,8 @@ fi
 if [ -d "/etc/letsencrypt/live/router.zcdns.id" ] && [ -d "/etc/nginx/sites-available" ]; then
   cat > /etc/nginx/sites-available/router.zcdns.id << 'NGINX'
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 10.0.0.12:443 ssl http2;
+    listen [fd00::12]:443 ssl http2;
     server_name router.zcdns.id *.router.zcdns.id;
 
     ssl_certificate /etc/letsencrypt/live/router.zcdns.id/fullchain.pem;
@@ -107,10 +107,15 @@ NGINX
   ln -sf /etc/nginx/sites-available/router.zcdns.id /etc/nginx/sites-enabled/router.zcdns.id
   nginx -t && systemctl reload nginx || echo "[WARN] nginx reload failed"
 
+  # Route router.zcdns.id and wildcard to Nginx's IP (10.0.0.12 / fd00::12)
+  shared-ip update router.zcdns.id --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || shared-ip add router.zcdns.id --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || true
+  shared-ip update "*.router.zcdns.id" --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || shared-ip add "*.router.zcdns.id" --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || true
+  systemctl restart shared-ip 2>/dev/null || true
+
   # Clean up any leftover ACME challenge records
   sqlite3 /opt/zcdns/zcdns.db "DELETE FROM records WHERE subdomain='router' AND name='_acme-challenge';" 2>/dev/null || true
   systemctl restart zcdns 2>/dev/null || true
-  echo "[INFO] Nginx configured and challenge records cleaned up successfully"
+  echo "[INFO] Nginx configured on 10.0.0.12:443 and shared-ip updated successfully"
 else
   echo "[INFO] Skipping nginx setup: cert not yet issued or nginx not installed"
 fi
