@@ -174,6 +174,15 @@ func InitDB(dbPath string) (*DB, error) {
 		UNIQUE(subdomain, alias_name)
 	);
 
+	CREATE TABLE IF NOT EXISTS ai_router_user_keys (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		subdomain TEXT NOT NULL,
+		name TEXT NOT NULL,
+		key_value TEXT NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(subdomain, key_value)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_records_subdomain ON records(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_records_lookup ON records(subdomain, name, type);
 	CREATE INDEX IF NOT EXISTS idx_requests_subdomain ON requests(subdomain);
@@ -181,6 +190,7 @@ func InitDB(dbPath string) (*DB, error) {
 	CREATE INDEX IF NOT EXISTS idx_abuse_status ON abuse_reports(status);
 	CREATE INDEX IF NOT EXISTS idx_abuse_subdomain ON abuse_reports(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_airouter_conn ON ai_router_connections(subdomain, provider, status);
+	CREATE INDEX IF NOT EXISTS idx_airouter_user_keys ON ai_router_user_keys(subdomain, key_value);
 	`
 
 	if _, err := conn.Exec(schema); err != nil {

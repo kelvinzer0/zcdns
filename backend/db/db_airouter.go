@@ -49,6 +49,16 @@ type AIRouterAlias struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+// ── Proxy Client API Keys ─────────────────────────────────────────────────────
+
+type AIRouterUserKey struct {
+	ID        int64     `json:"id"`
+	Subdomain string    `json:"subdomain"`
+	Name      string    `json:"name"`      // e.g. "Cursor IDE", "Claude Code"
+	KeyValue  string    `json:"key_value"` // "zck_..."
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // ── DB Methods ────────────────────────────────────────────────────────────────
 
 // Config
@@ -231,4 +241,57 @@ func (d *DB) ResolveAIRouterAlias(subdomain, modelName string) string {
 		return modelName // no alias, return as-is
 	}
 	return target
+}
+
+// User Keys (Proxy authentication)
+func (d *DB) GetAIRouterUserKeys(subdomain string) ([]AIRouterUserKey, error) {
+	rows, err := d.conn.Query(`SELECT id, subdomain, name, key_value, created_at FROM ai_router_user_keys WHERE subdomain=? ORDER BY id DESC`, subdomain)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []AIRouterUserKey
+	for rows.Next() {
+		var k AIRouterUserKey
+		if err := rows.Scan(&k.ID, &k.Subdomain, &k.Name, &k.KeyValue, &k.CreatedAt); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
+func (d *DB) CreateAIRouterUserKey(subdomain, name, keyValue string) (*AIRouterUserKey, error) {
+	res, err := d.conn.Exec(`INSERT INTO ai_router_user_keys (subdomain, name, key_value) VALUES (?, ?, ?)`, subdomain, name, keyValue)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := res.LastInsertId()
+	return &AIRouterUserKey{
+		ID:        id,
+		Subdomain: subdomain,
+		Name:      name,
+		KeyValue:  keyValue,
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+func (d *DB) DeleteAIRouterUserKey(subdomain string, id int64) error {
+	_, err := d.conn.Exec(`DELETE FROM ai_router_user_keys WHERE id=? AND subdomain=?`, id, subdomain)
+	return err
+}
+
+func (d *DB) ValidateAIRouterUserKey(subdomain, keyValue string) bool {
+	if keyValue == "" {
+		return false
+	}
+	var count int
+	err := d.conn.QueryRow(`SELECT COUNT(*) FROM ai_router_user_keys WHERE subdomain=? AND key_value=?`, subdomain, keyValue).Scan(&count)
+	return err == nil && count > 0
+}
+
+func (d *DB) CountAIRouterUserKeys(subdomain string) int {
+	var count int
+	_ = d.conn.QueryRow(`SELECT COUNT(*) FROM ai_router_user_keys WHERE subdomain=?`, subdomain).Scan(&count)
+	return count
 }

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Network, Plus, Trash2, Save, Copy, Check, Eye, EyeOff,
-  Loader2, ChevronDown, ChevronRight, PlayCircle, AlertCircle, CheckCircle2
+  Loader2, ChevronDown, ChevronRight, PlayCircle, AlertCircle, CheckCircle2,
+  Key, ShieldCheck
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -28,9 +29,12 @@ interface Alias {
   context_size: number;
 }
 
-interface Config {
-  input_format: string;
-  output_format: string;
+interface UserKey {
+  id: number;
+  subdomain: string;
+  name: string;
+  key_value: string;
+  created_at: string;
 }
 
 const PROVIDERS = [
@@ -80,10 +84,13 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
 
-  const [config, setConfig] = useState<Config>({ input_format: 'auto', output_format: 'openai' });
   const [connections, setConnections] = useState<Connection[]>([]);
   const [combos, setCombos] = useState<Combo[]>([]);
   const [aliases, setAliases] = useState<Alias[]>([]);
+  const [userKeys, setUserKeys] = useState<UserKey[]>([]);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [creatingKey, setCreatingKey] = useState(false);
+  const [copiedKey, setCopiedKey] = useState('');
   const [vaultSecrets, setVaultSecrets] = useState<{ key: string; value: string }[]>([]);
 
   const [copiedUrl, setCopiedUrl] = useState('');
@@ -116,10 +123,10 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      setConfig(data.config || { input_format: 'auto', output_format: 'openai' });
       setConnections(data.connections || []);
       setCombos(data.combos || []);
       setAliases(data.aliases || []);
+      setUserKeys(data.user_keys || []);
 
       // Fetch vault secrets for selection
       try {
@@ -145,15 +152,6 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   };
 
   const toggle = (key: string) => setExpanded(e => ({ ...e, [key]: !e[key] }));
-
-  const saveConfig = async () => {
-    await fetch('/api/airouter/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Subdomain': subdomain },
-      body: JSON.stringify(config)
-    });
-    toast({ title: 'Config saved' });
-  };
 
   const addConnection = async () => {
     if (!newConn.name || !newConn.api_key) {
@@ -247,14 +245,54 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
     await fetchAll();
   };
 
+  const copyKey = (key: string) => {
+    navigator.clipboard.writeText(key);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(''), 2000);
+  };
+
+  const createKey = async () => {
+    setCreatingKey(true);
+    try {
+      const res = await fetch('/api/airouter/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Subdomain': subdomain },
+        body: JSON.stringify({ name: newKeyName.trim() || 'Default Client' })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setNewKeyName('');
+      await fetchAll();
+      toast({ title: 'API Key created' });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setCreatingKey(false);
+    }
+  };
+
+  const deleteKey = async (id: number) => {
+    try {
+      const res = await fetch(`/api/airouter/keys/${id}`, {
+        method: 'DELETE',
+        headers: { 'X-Subdomain': subdomain }
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await fetchAll();
+      toast({ title: 'API Key revoked' });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    }
+  };
+
   const runTest = async () => {
     setTesting(true);
     setTestResult('Routing request...');
     try {
       const endpoint = `https://${subdomain}.router.zcdns.id/v1/chat/completions`;
+      const token = userKeys.length > 0 ? userKeys[0].key_value : 'zcdns-test';
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer zcdns-test' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
           model: testModel,
           messages: [{ role: 'user', content: testMsg }],
@@ -309,40 +347,99 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
       </div>
 
       {/* Endpoint URLs */}
-      <div className="bg-card border border-border rounded-lg p-5">
-        <h3 className="font-semibold mb-3">Your Proxy Endpoints</h3>
-        <p className="text-xs text-muted-foreground mb-3">Use any string as API key in your tool — auth is by subdomain.</p>
-        {[
-          { label: 'OpenAI-compatible', url: openaiUrl },
-          { label: 'Anthropic-compatible', url: anthropicUrl },
-        ].map(({ label, url }) => (
-          <div key={url} className="mb-2">
-            <span className="text-xs text-muted-foreground">{label}</span>
-            <div className="flex mt-1">
-              <input readOnly value={url} className="flex-1 bg-muted px-3 py-2 text-sm font-mono rounded-l-md border border-border" />
-              <button onClick={() => copyUrl(url)} className="px-3 border border-l-0 border-border rounded-r-md hover:bg-muted flex items-center">
-                {copiedUrl === url ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-              </button>
+      <div className="bg-card border border-border rounded-lg p-5 space-y-4">
+        <div>
+          <h3 className="font-semibold text-base mb-1">Your Proxy Endpoints</h3>
+          <p className="text-xs text-muted-foreground">
+            Configure your AI tool (Cursor, Claude Code, Cline, etc.) to use these endpoints. Format is auto-detected.
+          </p>
+        </div>
+
+        <div className="space-y-2.5">
+          {[
+            { label: 'OpenAI-compatible (/v1/chat/completions)', url: openaiUrl },
+            { label: 'Anthropic-compatible (/v1/messages)', url: anthropicUrl },
+          ].map(({ label, url }) => (
+            <div key={url}>
+              <span className="text-xs font-medium text-muted-foreground">{label}</span>
+              <div className="flex mt-1">
+                <input readOnly value={url} className="flex-1 bg-muted px-3 py-2 text-sm font-mono rounded-l-md border border-border" />
+                <button onClick={() => copyUrl(url)} className="px-3 border border-l-0 border-border rounded-r-md hover:bg-muted flex items-center">
+                  {copiedUrl === url ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-primary/80 bg-primary/5 border border-primary/10 rounded-md px-3 py-2">
+          <span>✨</span>
+          <span><strong>Auto Format & Output:</strong> Input format is automatically detected from request path and headers. Response output always matches your input format without manual configuration.</span>
+        </div>
+
+        {/* Client API Keys Management */}
+        <div className="pt-3 border-t border-border space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-semibold flex items-center gap-1.5">
+                <Key className="w-4 h-4 text-primary" /> Proxy API Keys & Client Credentials
+              </h4>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {userKeys.length > 0
+                  ? 'Client requests must provide a valid API key in Authorization: Bearer <key> or x-api-key.'
+                  : 'No keys created yet. Proxy requests are currently open (auth by subdomain). Create a key to require authentication.'}
+              </p>
+            </div>
+            {userKeys.length > 0 && (
+              <span className="text-xs bg-primary/10 text-primary font-mono px-2 py-0.5 rounded-full">
+                {userKeys.length} {userKeys.length === 1 ? 'key' : 'keys'} active
+              </span>
+            )}
           </div>
-        ))}
-        <div className="mt-4 flex items-center gap-4 flex-wrap">
-          <label className="text-sm font-medium">Input Format</label>
-          <select value={config.input_format} onChange={e => setConfig(c => ({ ...c, input_format: e.target.value }))}
-            className="border border-border rounded px-2 py-1 text-sm bg-background">
-            <option value="auto">Auto-detect</option>
-            <option value="openai">Force OpenAI</option>
-            <option value="anthropic">Force Anthropic</option>
-          </select>
-          <label className="text-sm font-medium">Output Format</label>
-          <select value={config.output_format} onChange={e => setConfig(c => ({ ...c, output_format: e.target.value }))}
-            className="border border-border rounded px-2 py-1 text-sm bg-background">
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
-          </select>
-          <button onClick={saveConfig} className="px-3 py-1.5 bg-primary text-primary-foreground rounded text-sm flex items-center gap-1">
-            <Save className="w-3.5 h-3.5" /> Save
-          </button>
+
+          {/* Create key form */}
+          <div className="flex gap-2 items-center flex-wrap">
+            <input
+              value={newKeyName}
+              onChange={e => setNewKeyName(e.target.value)}
+              placeholder="Client label (e.g. Cursor, Claude Code, Cline)"
+              className="flex-1 min-w-[220px] max-w-sm border border-border rounded px-2.5 py-1.5 text-sm bg-background"
+            />
+            <button
+              onClick={createKey}
+              disabled={creatingKey}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+            >
+              {creatingKey ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              Create API Key
+            </button>
+          </div>
+
+          {/* List of keys */}
+          {userKeys.length > 0 && (
+            <div className="space-y-2 mt-2">
+              {userKeys.map(k => (
+                <div key={k.id} className="flex items-center justify-between gap-3 p-3 bg-muted/40 rounded border border-border text-sm flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-green-500 shrink-0" />
+                    <span className="font-medium text-foreground">{k.name}</span>
+                    <span className="text-[11px] text-muted-foreground">• {new Date(k.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="font-mono text-xs bg-background border border-border px-2 py-1 rounded select-all">
+                      {k.key_value}
+                    </code>
+                    <button onClick={() => copyKey(k.key_value)} className="p-1 hover:text-primary transition-colors" title="Copy key">
+                      {copiedKey === k.key_value ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                    <button onClick={() => deleteKey(k.id)} className="p-1 text-destructive hover:text-destructive/80 transition-colors" title="Revoke key">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

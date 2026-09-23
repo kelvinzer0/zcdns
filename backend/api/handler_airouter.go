@@ -2,6 +2,8 @@ package api
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -379,18 +381,18 @@ func (h *APIHandler) handleAIRouterProxy(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Ensure config exists
-	cfg, err := h.db.EnsureAIRouterConfig(subdomain)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "router not configured")
-		return
+	// Client authentication: if user has generated any API keys, validate incoming request
+	if h.db.CountAIRouterUserKeys(subdomain) > 0 {
+		clientKey := extractClientAPIKey(r)
+		if !h.db.ValidateAIRouterUserKey(subdomain, clientKey) {
+			writeJSONError(w, http.StatusUnauthorized, "invalid or missing API key (provide valid key in Authorization: Bearer <key> or x-api-key header)")
+			return
+		}
 	}
 
-	// Detect format
-	inputFormat := cfg.InputFormat
-	if inputFormat == "auto" {
-		inputFormat = detectFormat(r.URL.Path)
-	}
+	// Auto-detect format from request; output format always matches input format
+	inputFormat := detectFormat(r.URL.Path)
+	outputFormat := inputFormat
 
 	// Read body
 	bodyBytes, err := io.ReadAll(r.Body)
@@ -420,7 +422,7 @@ func (h *APIHandler) handleAIRouterProxy(w http.ResponseWriter, r *http.Request)
 		// Try each target in order (for fallback combo)
 		var forwarded bool
 		for _, target := range targets {
-			err := forwardRequest(w, bodyBytes, target, inputFormat, cfg.OutputFormat)
+			err := forwardRequest(w, bodyBytes, target, inputFormat, outputFormat)
 			if err != nil && strings.HasPrefix(err.Error(), "rate_limited:") {
 				// Mark rate limited and try next
 				idStr := strings.TrimPrefix(err.Error(), "rate_limited:")
@@ -462,12 +464,14 @@ func (h *APIHandler) handleGetAIRouterConfig(w http.ResponseWriter, r *http.Requ
 	conns, _ := h.db.GetAIRouterConnections(subdomain)
 	combos, _ := h.db.GetAIRouterCombos(subdomain)
 	aliases, _ := h.db.GetAIRouterAliases(subdomain)
+	userKeys, _ := h.db.GetAIRouterUserKeys(subdomain)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"config":      cfg,
 		"connections": conns,
 		"combos":      combos,
 		"aliases":     aliases,
+		"user_keys":   userKeys,
 	})
 }
 
@@ -554,4 +558,69 @@ func (h *APIHandler) handleDeleteAIRouterAlias(w http.ResponseWriter, r *http.Re
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	h.db.DeleteAIRouterAlias(subdomain, id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// ── Proxy Client API Key Authentication & Management ─────────────────────────
+
+func extractClientAPIKey(r *http.Request) string {
+	auth := r.Header.Get("Authorization")
+	if strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+		return strings.TrimSpace(auth[7:])
+	}
+	if key := r.Header.Get("x-api-key"); key != "" {
+		return strings.TrimSpace(key)
+	}
+	if key := r.Header.Get("api-key"); key != "" {
+		return strings.TrimSpace(key)
+	}
+	return ""
+}
+
+func generateProxyKey() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return "zck_" + hex.EncodeToString(b)
+}
+
+func (h *APIHandler) handleGetAIRouterUserKeys(w http.ResponseWriter, r *http.Request, subdomain string) {
+	keys, err := h.db.GetAIRouterUserKeys(subdomain)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if keys == nil {
+		keys = []db.AIRouterUserKey{}
+	}
+	writeJSON(w, http.StatusOK, keys)
+}
+
+func (h *APIHandler) handleCreateAIRouterUserKey(w http.ResponseWriter, r *http.Request, subdomain string) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if body.Name == "" {
+		body.Name = "Default Key"
+	}
+	keyVal := generateProxyKey()
+	k, err := h.db.CreateAIRouterUserKey(subdomain, body.Name, keyVal)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, k)
+}
+
+func (h *APIHandler) handleDeleteAIRouterUserKey(w http.ResponseWriter, r *http.Request, subdomain string) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := h.db.DeleteAIRouterUserKey(subdomain, id); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

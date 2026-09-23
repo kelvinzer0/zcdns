@@ -97,6 +97,11 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/airouter/aliases", h.requireSubdomain(h.handleUpsertAIRouterAlias))
 	mux.HandleFunc("DELETE /api/airouter/aliases/{id}", h.requireSubdomain(h.handleDeleteAIRouterAlias))
 
+	// AI Router - Client API Keys (Credentials)
+	mux.HandleFunc("GET /api/airouter/keys", h.requireSubdomain(h.handleGetAIRouterUserKeys))
+	mux.HandleFunc("POST /api/airouter/keys", h.requireSubdomain(h.handleCreateAIRouterUserKey))
+	mux.HandleFunc("DELETE /api/airouter/keys/{id}", h.requireSubdomain(h.handleDeleteAIRouterUserKey))
+
 	// AI Router Proxy (path-based: /api/airouter/{subdomain}/v1/...)
 	mux.HandleFunc("/api/airouter/", func(w http.ResponseWriter, r *http.Request) {
 		h.handleAIRouterProxy(w, r)
