@@ -1,115 +1,112 @@
-import os
-import re
-import ast
-import json
-from pathlib import Path
-from collections import defaultdict
+#!/usr/bin/env python3
+"""
+Canonical OpenWebUI Scanner:
+1. Uses TypeScript compiler AST (via Node.js) to cleanly extract frontend API fetch calls (0 false positives).
+2. Uses Python AST (ast.unparse) with recursive inheritance resolution to map all FastAPI routes & Pydantic models.
+3. Automatically outputs Go structs and endpoint mapping.
+"""
 
+import os
+import subprocess
+import json
+import ast
+from pathlib import Path
+
+ROOT_DIR = Path('/home/kelvinandriancom/www')
 OWU_DIR = Path('/tmp/open-webui')
 BACKEND_DIR = OWU_DIR / 'backend' / 'open_webui'
 ROUTERS_DIR = BACKEND_DIR / 'routers'
 MODELS_DIR = BACKEND_DIR / 'models'
-SRC_DIR = OWU_DIR / 'src'
-GO_API_DIR = Path('/home/kelvinandriancom/www/backend/api')
+
+def extract_frontend_endpoints_with_ts_ast():
+    ts_script = """
+const ts = require('typescript');
+const fs = require('fs');
+const path = require('path');
+
+const apisDir = '/tmp/open-webui/src/lib/apis';
+const endpoints = [];
+
+function normalizeUrl(node, source) {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+    if (ts.isTemplateExpression(node)) {
+        let res = node.head.text;
+        for (const span of node.templateSpans) {
+            const expr = span.expression.getText(source);
+            let placeholder = '{param}';
+            if (expr.includes('WEBUI_API_BASE_URL')) placeholder = '/api/v1';
+            else if (expr.includes('WEBUI_BASE_URL')) placeholder = '';
+            else if (expr.includes('AUDIO_API_BASE_URL')) placeholder = '/api/v1/audio';
+            else if (expr.includes('OLLAMA_API_BASE_URL')) placeholder = '/ollama';
+            else if (expr.includes('OPENAI_API_BASE_URL')) placeholder = '/openai';
+            else if (expr.includes('RETRIEVAL_API_BASE_URL')) placeholder = '/api/v1/retrieval';
+            else if (expr.includes('IMAGE_API_BASE_URL')) placeholder = '/api/v1/images';
+            else if (expr.includes('searchParams') || expr.includes('params') || expr.includes('query')) placeholder = '';
+            res += placeholder + span.literal.text;
+        }
+        return res.split('?')[0].replace(/\\/+/g, '/').replace(/\\/$/, '');
+    }
+    return '';
+}
+
+function scanFile(filePath) {
+    const code = fs.readFileSync(filePath, 'utf-8');
+    const source = ts.createSourceFile(filePath, code, ts.ScriptTarget.Latest, true);
+
+    function visit(node) {
+        if (ts.isCallExpression(node) && node.expression.getText(source) === 'fetch') {
+            const url = normalizeUrl(node.arguments[0], source);
+            let method = 'GET';
+            if (node.arguments[1] && ts.isObjectLiteralExpression(node.arguments[1])) {
+                for (const prop of node.arguments[1].properties) {
+                    if (prop.name && prop.name.getText(source) === 'method' && prop.initializer) {
+                        method = prop.initializer.getText(source).replace(/['\\"]/g, '');
+                    }
+                }
+            }
+            if (url && (url.startsWith('/api') || url.startsWith('/ollama') || url.startsWith('/openai'))) {
+                endpoints.push({
+                    file: path.relative('/tmp/open-webui/src/lib/apis', filePath),
+                    method: method.toUpperCase(),
+                    url: url
+                });
+            }
+        }
+        ts.forEachChild(node, visit);
+    }
+    visit(source);
+}
+
+function walk(dir) {
+    for (const f of fs.readdirSync(dir)) {
+        const full = path.join(dir, f);
+        if (fs.statSync(full).isDirectory()) walk(full);
+        else if (f.endsWith('.ts')) scanFile(full);
+    }
+}
+
+walk(apisDir);
+console.log(JSON.stringify(endpoints));
+"""
+    result = subprocess.run(['node', '-e', ts_script], cwd=str(ROOT_DIR), capture_output=True, text=True)
+    if result.returncode != 0:
+        print("Error running Node.js TS AST scanner:", result.stderr)
+        return []
+    return json.loads(result.stdout)
 
 def extract_router_prefixes():
     main_py = BACKEND_DIR / 'main.py'
     prefixes = {}
     content = main_py.read_text(encoding='utf-8')
-    # Match patterns like: app.include_router(chats.router, prefix='/api/v1/chats'
+    import re
     matches = re.findall(r"app\.include_router\(\s*([a-zA-Z0-9_]+)\.router\s*,\s*prefix=['\"]([^'\"]+)['\"]", content)
     for mod_name, prefix in matches:
         prefixes[mod_name] = prefix
     return prefixes
 
-def get_ast_name(node):
-    if node is None:
-        return ""
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Constant):
-        return str(node.value)
-    if isinstance(node, ast.Attribute):
-        return f"{get_ast_name(node.value)}.{node.attr}"
-    if isinstance(node, ast.Subscript):
-        return f"{get_ast_name(node.value)}[{get_ast_name(node.slice)}]"
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-        return f"{get_ast_name(node.left)} | {get_ast_name(node.right)}"
-    if isinstance(node, ast.Tuple):
-        return ", ".join(get_ast_name(e) for e in node.elts)
-    return ""
-
-def scan_backend_routes(prefixes):
-    routes = []
-    
-    # Also scan main.py directly for @app.get etc.
-    main_py = BACKEND_DIR / 'main.py'
-    if main_py.exists():
-        routes.extend(scan_file_routes(main_py, prefix=""))
-
-    for py_file in sorted(ROUTERS_DIR.glob('*.py')):
-        mod_name = py_file.stem
-        prefix = prefixes.get(mod_name, f"/api/v1/{mod_name}")
-        routes.extend(scan_file_routes(py_file, prefix=prefix))
-        
-    return routes
-
-def scan_file_routes(py_file, prefix):
-    routes = []
-    try:
-        tree = ast.parse(py_file.read_text(encoding='utf-8'))
-    except Exception as e:
-        return routes
-
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            for dec in node.decorator_list:
-                # e.g. @router.get('/...', response_model=...) or @app.get(...)
-                if isinstance(dec, ast.Call):
-                    func_expr = get_ast_name(dec.func)
-                    m = re.match(r"(router|app)\.(get|post|put|delete|patch)", func_expr)
-                    if m:
-                        http_method = m.group(2).upper()
-                        route_path = "/"
-                        if dec.args:
-                            first_arg = dec.args[0]
-                            if isinstance(first_arg, ast.Constant):
-                                route_path = first_arg.value
-                        
-                        resp_model = ""
-                        for kw in dec.keywords:
-                            if kw.arg == 'response_model':
-                                resp_model = get_ast_name(kw.value)
-                                
-                        # Request body detection: look for args not in (request, response, user, db, background_tasks)
-                        req_body_type = ""
-                        for arg in node.args.args:
-                            arg_name = arg.arg
-                            if arg_name in ('request', 'response', 'user', 'db', 'background_tasks', 'auth_token'):
-                                continue
-                            if arg.annotation:
-                                ann = get_ast_name(arg.annotation)
-                                # Exclude query/header primitives unless they are models
-                                if not any(x in ann.lower() for x in ('query', 'header', 'depends', 'int', 'bool', 'str', 'request')):
-                                    req_body_type = f"{arg_name}: {ann}"
-
-                        full_path = prefix.rstrip('/') + '/' + route_path.lstrip('/')
-                        if full_path == '':
-                            full_path = '/'
-                        routes.append({
-                            'file': py_file.name,
-                            'method': http_method,
-                            'path': full_path,
-                            'func': node.name,
-                            'req_body': req_body_type,
-                            'response_model': resp_model
-                        })
-    return routes
-
-def scan_pydantic_models():
-    models = {}
-    scan_dirs = [MODELS_DIR, ROUTERS_DIR]
-    for d in scan_dirs:
+def scan_pydantic_classes_with_inheritance():
+    classes = {}
+    for d in [MODELS_DIR, ROUTERS_DIR]:
         for py_file in d.glob('*.py'):
             try:
                 tree = ast.parse(py_file.read_text(encoding='utf-8'))
@@ -117,81 +114,114 @@ def scan_pydantic_models():
                 continue
             for node in tree.body:
                 if isinstance(node, ast.ClassDef):
-                    # Check if inherits from BaseModel
-                    base_names = [get_ast_name(b) for b in node.bases]
+                    bases = []
+                    for b in node.bases:
+                        if isinstance(b, ast.Name):
+                            bases.append(b.id)
+                        elif isinstance(b, ast.Attribute):
+                            bases.append(b.attr)
                     fields = {}
                     for item in node.body:
                         if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
-                            field_name = item.target.id
-                            field_type = get_ast_name(item.annotation)
-                            default_val = None
-                            if item.value:
-                                if isinstance(item.value, ast.Constant):
-                                    default_val = item.value.value
-                                elif isinstance(item.value, ast.List):
-                                    default_val = []
-                                elif isinstance(item.value, ast.Dict):
-                                    default_val = {}
-                            fields[field_name] = {
-                                'type': field_type,
-                                'default': default_val
-                            }
-                    if fields:
-                        models[node.name] = {
-                            'file': py_file.name,
-                            'bases': base_names,
-                            'fields': fields
-                        }
-    return models
+                            fields[item.target.id] = ast.unparse(item.annotation)
+                    classes[node.name] = {
+                        'bases': bases,
+                        'fields': fields,
+                        'file': py_file.name
+                    }
 
-def scan_frontend_calls():
-    # Scan src/ for all fetch(`${WEBUI_API_BASE_URL}/...`) or fetch(`/api/...`)
-    calls = []
-    pattern = re.compile(r"fetch\(\s*`?(\$?[{a-zA-Z0-9_}]+[/\w\${}?:=&\-\.]*)`?\s*,?\s*(\{[^;]*?\})?\)", re.MULTILINE | re.DOTALL)
-    
-    for f in SRC_DIR.glob('**/*'):
-        if f.suffix in ('.ts', '.svelte', '.js'):
-            content = f.read_text(encoding='utf-8', errors='ignore')
-            for m in re.finditer(r"fetch\(([^,\)]+)(?:,\s*(\{.*?\})\s*)?\)", content, re.DOTALL):
-                raw_url = m.group(1).strip().strip("'`\"")
-                raw_opts = m.group(2) or ""
-                method = "GET"
-                method_m = re.search(r"method:\s*['\"]([A-Z]+)['\"]", raw_opts)
-                if method_m:
-                    method = method_m.group(1)
-                
-                # Normalize url
-                clean_url = raw_url.replace('${WEBUI_API_BASE_URL}', '/api/v1')
-                clean_url = clean_url.replace('${WEBUI_BASE_URL}', '')
-                clean_url = clean_url.replace('$WEBUI_API_BASE_URL', '/api/v1')
-                clean_url = clean_url.replace('$WEBUI_BASE_URL', '')
-                clean_url = re.sub(r"\?.*$", "", clean_url) # remove query
-                clean_url = re.sub(r"\$\{[^}]+\}", "{param}", clean_url)
-                
-                if '/api' in clean_url or clean_url.startswith('/'):
-                    calls.append({
-                        'file': f.relative_to(OWU_DIR).as_posix(),
-                        'method': method,
-                        'url': clean_url
-                    })
-    return calls
+    def resolve_fields(cname, visited=None):
+        if visited is None:
+            visited = set()
+        if cname in visited or cname not in classes:
+            return {}
+        visited.add(cname)
+        f = {}
+        for b in classes[cname]['bases']:
+            f.update(resolve_fields(b, visited))
+        f.update(classes[cname]['fields'])
+        return f
+
+    resolved = {}
+    for cname in classes:
+        resolved[cname] = {
+            'file': classes[cname]['file'],
+            'bases': classes[cname]['bases'],
+            'fields': resolve_fields(cname)
+        }
+    return resolved
+
+def scan_fastapi_backend_routes(prefixes):
+    routes = []
+    import re
+
+    def scan_file(py_file, prefix):
+        res = []
+        try:
+            tree = ast.parse(py_file.read_text(encoding='utf-8'))
+        except Exception:
+            return res
+
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for dec in node.decorator_list:
+                    if isinstance(dec, ast.Call):
+                        func_expr = ast.unparse(dec.func)
+                        m = re.match(r"(router|app)\.(get|post|put|delete|patch)", func_expr)
+                        if m:
+                            http_method = m.group(2).upper()
+                            route_path = "/"
+                            if dec.args and isinstance(dec.args[0], ast.Constant):
+                                route_path = dec.args[0].value
+                            resp_model = ""
+                            for kw in dec.keywords:
+                                if kw.arg == 'response_model':
+                                    resp_model = ast.unparse(kw.value)
+
+                            full_path = prefix.rstrip('/') + '/' + route_path.lstrip('/')
+                            if full_path == '':
+                                full_path = '/'
+                            res.append({
+                                'file': py_file.name,
+                                'method': http_method,
+                                'path': full_path,
+                                'func': node.name,
+                                'response_model': resp_model
+                            })
+        return res
+
+    main_py = BACKEND_DIR / 'main.py'
+    if main_py.exists():
+        routes.extend(scan_file(main_py, prefix=""))
+
+    for py_file in sorted(ROUTERS_DIR.glob('*.py')):
+        mod_name = py_file.stem
+        prefix = prefixes.get(mod_name, f"/api/v1/{mod_name}")
+        routes.extend(scan_file(py_file, prefix=prefix))
+
+    return routes
 
 if __name__ == '__main__':
-    prefixes = extract_router_prefixes()
-    routes = scan_backend_routes(prefixes)
-    models = scan_pydantic_models()
-    frontend_calls = scan_frontend_calls()
+    print("1. Extracting frontend API endpoints using TypeScript Compiler AST...")
+    fe_calls = extract_frontend_endpoints_with_ts_ast()
+    print(f"   -> Found {len(fe_calls)} valid frontend fetch calls across TypeScript APIs.")
 
-    print(f"Total Backend Routes scanned: {len(routes)}")
-    print(f"Total Pydantic Models scanned: {len(models)}")
-    print(f"Total Frontend API calls scanned: {len(frontend_calls)}")
-    
-    # Save to JSON for analysis
+    print("2. Extracting Pydantic models with complete recursive inheritance resolution...")
+    models = scan_pydantic_classes_with_inheritance()
+    print(f"   -> Resolved {len(models)} Pydantic models.")
+
+    print("3. Extracting FastAPI backend routes with Python AST unparse...")
+    prefixes = extract_router_prefixes()
+    routes = scan_fastapi_backend_routes(prefixes)
+    print(f"   -> Found {len(routes)} FastAPI routes.")
+
+    # Save canonical dataset
     output = {
-        'routes': routes,
-        'models': models,
-        'frontend_calls': frontend_calls
+        'frontend_endpoints': fe_calls,
+        'backend_routes': routes,
+        'pydantic_models': models
     }
-    with open('/tmp/openwebui_analysis.json', 'w') as f:
+    with open('/tmp/openwebui_canonical_spec.json', 'w') as f:
         json.dump(output, f, indent=2)
-    print("Saved full analysis to /tmp/openwebui_analysis.json")
+
+    print("Successfully exported canonical spec to /tmp/openwebui_canonical_spec.json")

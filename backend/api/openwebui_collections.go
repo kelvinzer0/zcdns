@@ -10,26 +10,185 @@ import (
 	"time"
 )
 
-// handleOpenWebUIPrompts handles /api/v1/prompts/*
+// handleOpenWebUIPrompts handles /api/v1/prompts/* with DB backing
 func (h *APIHandler) handleOpenWebUIPrompts(w http.ResponseWriter, r *http.Request) {
 	if setOWUCors(w, r) {
 		return
 	}
+	subdomain := h.resolveSubdomain(r)
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/prompts")
 	path = strings.TrimPrefix(path, "/")
 
 	if path == "list" {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"items": []any{},
-			"total": 0,
+		prompts, _ := h.db.GetOpenWebUIPrompts(subdomain)
+		var items []any
+		for _, p := range prompts {
+			items = append(items, map[string]any{
+				"command":    p.Command,
+				"name":       p.Name,
+				"content":    p.Content,
+				"user_id":    "admin",
+				"created_at": p.CreatedAt,
+				"updated_at": p.UpdatedAt,
+			})
+		}
+		if items == nil {
+			items = []any{}
+		}
+		writeJSON(w, http.StatusOK, OpenWebUIPaginatedListResponse{
+			Items: items,
+			Total: int64(len(items)),
 		})
 		return
 	}
+
+	if path == "create" && r.Method == http.MethodPost {
+		body, _ := io.ReadAll(r.Body)
+		var form map[string]string
+		_ = json.Unmarshal(body, &form)
+		randBytes := make([]byte, 8)
+		_, _ = rand.Read(randBytes)
+		pID := hex.EncodeToString(randBytes)
+		_ = h.db.UpsertOpenWebUIPrompt(subdomain, pID, form["command"], form["name"], form["content"])
+		writeJSON(w, http.StatusOK, map[string]any{"command": form["command"], "name": form["name"]})
+		return
+	}
+
 	if path == "tags" {
 		writeJSON(w, http.StatusOK, []string{})
 		return
 	}
-	// Default GET /
+
+	prompts, _ := h.db.GetOpenWebUIPrompts(subdomain)
+	var list []any
+	for _, p := range prompts {
+		list = append(list, map[string]any{
+			"command": p.Command,
+			"name":    p.Name,
+			"content": p.Content,
+		})
+	}
+	if list == nil {
+		list = []any{}
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// handleOpenWebUIFolders handles /api/v1/folders/* with DB backing
+func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Request) {
+	if setOWUCors(w, r) {
+		return
+	}
+	subdomain := h.resolveSubdomain(r)
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/folders")
+	path = strings.TrimPrefix(path, "/")
+
+	if path == "" || path == "/" {
+		if r.Method == http.MethodGet {
+			rawFolders, err := h.db.GetOpenWebUIFolders(subdomain)
+			if err != nil {
+				writeJSON(w, http.StatusOK, []any{})
+				return
+			}
+			var list []OpenWebUIFolderNameIdResponse
+			for _, rf := range rawFolders {
+				var parent *string
+				if rf.ParentID != "" {
+					p := rf.ParentID
+					parent = &p
+				}
+				list = append(list, OpenWebUIFolderNameIdResponse{
+					ID:          rf.ID,
+					Name:        rf.Name,
+					ParentID:    parent,
+					IsExpanded:  rf.IsExpanded,
+					UnreadCount: 0,
+					CreatedAt:   rf.CreatedAt,
+					UpdatedAt:   rf.UpdatedAt,
+				})
+			}
+			if list == nil {
+				list = []OpenWebUIFolderNameIdResponse{}
+			}
+			writeJSON(w, http.StatusOK, list)
+			return
+		}
+
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			var form map[string]interface{}
+			_ = json.Unmarshal(body, &form)
+
+			name := "New Folder"
+			if n, ok := form["name"].(string); ok && n != "" {
+				name = n
+			}
+			parentID := ""
+			if p, ok := form["parent_id"].(string); ok {
+				parentID = p
+			}
+
+			randBytes := make([]byte, 8)
+			_, _ = rand.Read(randBytes)
+			folderID := hex.EncodeToString(randBytes)
+			_ = h.db.CreateOpenWebUIFolder(subdomain, folderID, name, parentID)
+
+			now := time.Now().Unix()
+			var parent *string
+			if parentID != "" {
+				parent = &parentID
+			}
+			writeJSON(w, http.StatusOK, OpenWebUIFolderNameIdResponse{
+				ID:          folderID,
+				Name:        name,
+				ParentID:    parent,
+				IsExpanded:  false,
+				UnreadCount: 0,
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			})
+			return
+		}
+	}
+
+	// Sub-actions on /folders/{id}/*
+	if path != "" {
+		parts := strings.Split(path, "/")
+		folderID := parts[0]
+		subAction := ""
+		if len(parts) > 1 {
+			subAction = parts[1]
+		}
+
+		if subAction == "read" {
+			writeJSON(w, http.StatusOK, map[string]int{"updated_count": 0})
+			return
+		}
+		if subAction == "update" {
+			body, _ := io.ReadAll(r.Body)
+			var form map[string]string
+			_ = json.Unmarshal(body, &form)
+			if name, ok := form["name"]; ok && name != "" {
+				_ = h.db.UpdateOpenWebUIFolderName(subdomain, folderID, name)
+			}
+			writeJSON(w, http.StatusOK, true)
+			return
+		}
+		if subAction == "expanded" {
+			body, _ := io.ReadAll(r.Body)
+			var form map[string]bool
+			_ = json.Unmarshal(body, &form)
+			_ = h.db.UpdateOpenWebUIFolderExpanded(subdomain, folderID, form["is_expanded"])
+			writeJSON(w, http.StatusOK, true)
+			return
+		}
+		if r.Method == http.MethodDelete {
+			_ = h.db.DeleteOpenWebUIFolder(subdomain, folderID)
+			writeJSON(w, http.StatusOK, true)
+			return
+		}
+	}
+
 	writeJSON(w, http.StatusOK, []any{})
 }
 
@@ -42,9 +201,9 @@ func (h *APIHandler) handleOpenWebUISkills(w http.ResponseWriter, r *http.Reques
 	path = strings.TrimPrefix(path, "/")
 
 	if path == "list" {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"items": []any{},
-			"total": 0,
+		writeJSON(w, http.StatusOK, OpenWebUIPaginatedListResponse{
+			Items: []any{},
+			Total: 0,
 		})
 		return
 	}
@@ -56,10 +215,9 @@ func (h *APIHandler) handleOpenWebUIKnowledge(w http.ResponseWriter, r *http.Req
 	if setOWUCors(w, r) {
 		return
 	}
-	// KnowledgeAccessListResponse requires {"items": [], "total": 0}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"items": []any{},
-		"total": 0,
+	writeJSON(w, http.StatusOK, OpenWebUIPaginatedListResponse{
+		Items: []any{},
+		Total: 0,
 	})
 }
 
@@ -79,10 +237,9 @@ func (h *APIHandler) handleOpenWebUIFiles(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
-	// FileListResponse requires {"items": [], "total": 0}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"items": []any{},
-		"total": 0,
+	writeJSON(w, http.StatusOK, OpenWebUIPaginatedListResponse{
+		Items: []any{},
+		Total: 0,
 	})
 }
 
@@ -95,9 +252,9 @@ func (h *APIHandler) handleOpenWebUINotes(w http.ResponseWriter, r *http.Request
 	path = strings.TrimPrefix(path, "/")
 
 	if path == "search" {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"items": []any{},
-			"total": 0,
+		writeJSON(w, http.StatusOK, OpenWebUIPaginatedListResponse{
+			Items: []any{},
+			Total: 0,
 		})
 		return
 	}
@@ -105,48 +262,6 @@ func (h *APIHandler) handleOpenWebUINotes(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
-	writeJSON(w, http.StatusOK, []any{})
-}
-
-// handleOpenWebUIFolders handles /api/v1/folders/*
-func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Request) {
-	if setOWUCors(w, r) {
-		return
-	}
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/folders")
-	path = strings.TrimPrefix(path, "/")
-
-	if r.Method == http.MethodPost {
-		if strings.HasSuffix(path, "/read") {
-			writeJSON(w, http.StatusOK, map[string]int{"updated_count": 0})
-			return
-		}
-		// Create new folder
-		body, _ := io.ReadAll(r.Body)
-		var form map[string]interface{}
-		_ = json.Unmarshal(body, &form)
-
-		name := "New Folder"
-		if n, ok := form["name"].(string); ok && n != "" {
-			name = n
-		}
-		randBytes := make([]byte, 8)
-		_, _ = rand.Read(randBytes)
-		folderID := hex.EncodeToString(randBytes)
-		now := time.Now().Unix()
-
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"id":           folderID,
-			"name":         name,
-			"parent_id":    nil,
-			"is_expanded":  false,
-			"unread_count": 0,
-			"created_at":   now,
-			"updated_at":   now,
-		})
-		return
-	}
-
 	writeJSON(w, http.StatusOK, []any{})
 }
 

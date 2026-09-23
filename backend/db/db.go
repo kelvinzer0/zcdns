@@ -188,11 +188,42 @@ func InitDB(dbPath string) (*DB, error) {
 		subdomain TEXT NOT NULL,
 		title TEXT NOT NULL DEFAULT '',
 		chat_json TEXT NOT NULL DEFAULT '{}',
+		pinned INTEGER NOT NULL DEFAULT 0,
+		archived INTEGER NOT NULL DEFAULT 0,
+		folder_id TEXT,
 		created_at INTEGER NOT NULL DEFAULT 0,
 		updated_at INTEGER NOT NULL DEFAULT 0
 	);
 
+	CREATE TABLE IF NOT EXISTS openwebui_folders (
+		id TEXT PRIMARY KEY,
+		subdomain TEXT NOT NULL,
+		name TEXT NOT NULL,
+		parent_id TEXT,
+		is_expanded INTEGER NOT NULL DEFAULT 0,
+		created_at INTEGER NOT NULL DEFAULT 0,
+		updated_at INTEGER NOT NULL DEFAULT 0
+	);
+
+	CREATE TABLE IF NOT EXISTS openwebui_prompts (
+		id TEXT PRIMARY KEY,
+		subdomain TEXT NOT NULL,
+		command TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL DEFAULT '',
+		content TEXT NOT NULL DEFAULT '',
+		created_at INTEGER NOT NULL DEFAULT 0,
+		updated_at INTEGER NOT NULL DEFAULT 0
+	);
+
+	CREATE TABLE IF NOT EXISTS openwebui_user_settings (
+		subdomain TEXT PRIMARY KEY,
+		settings_json TEXT NOT NULL DEFAULT '{}',
+		updated_at INTEGER NOT NULL DEFAULT 0
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_owu_chats_subdomain ON openwebui_chats(subdomain, updated_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_owu_folders_subdomain ON openwebui_folders(subdomain);
+	CREATE INDEX IF NOT EXISTS idx_owu_prompts_subdomain ON openwebui_prompts(subdomain);
 
 	CREATE INDEX IF NOT EXISTS idx_records_subdomain ON records(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_records_lookup ON records(subdomain, name, type);
@@ -210,6 +241,9 @@ func InitDB(dbPath string) (*DB, error) {
 
 	// Migrations for existing databases
 	_, _ = conn.Exec("ALTER TABLE ai_router_aliases ADD COLUMN context_size INTEGER NOT NULL DEFAULT 0;")
+	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;")
+	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;")
+	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN folder_id TEXT;")
 
 	return &DB{conn: conn}, nil
 }

@@ -133,17 +133,28 @@ func (h *APIHandler) handleOpenWebUIAuth(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, user)
 }
 
-// handleOpenWebUIUserSettings handles /api/v1/users/user/settings
+// handleOpenWebUIUserSettings handles /api/v1/users/user/settings with DB persistence
 func (h *APIHandler) handleOpenWebUIUserSettings(w http.ResponseWriter, r *http.Request) {
 	if setOWUCors(w, r) {
 		return
 	}
+	subdomain := h.resolveSubdomain(r)
 	if r.Method == http.MethodPost {
 		body, _ := io.ReadAll(r.Body)
+		_ = h.db.SetOpenWebUIUserSettings(subdomain, string(body))
 		var settings map[string]interface{}
 		_ = json.Unmarshal(body, &settings)
 		writeJSON(w, http.StatusOK, settings)
 		return
+	}
+
+	settingsJSON, err := h.db.GetOpenWebUIUserSettings(subdomain)
+	if err == nil && settingsJSON != "" && settingsJSON != "{}" {
+		var settings map[string]interface{}
+		if err := json.Unmarshal([]byte(settingsJSON), &settings); err == nil {
+			writeJSON(w, http.StatusOK, settings)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ui": map[string]interface{}{},
