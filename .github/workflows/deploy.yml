@@ -30,6 +30,14 @@ jobs:
           bun install
           bun run build
 
+      - name: Setup OpenWebUI Frontend
+        run: |
+          mkdir -p dist/openwebui
+          curl -sL -o /tmp/open_webui.whl https://files.pythonhosted.org/packages/ca/8d/051d8145b88cb3f97f9e165feaa4a266aa46f4f5f2df67affb0e72ba8066/open_webui-0.11.4-py3-none-any.whl
+          unzip -q /tmp/open_webui.whl "open_webui/frontend/*" -d /tmp/owu
+          cp -r /tmp/owu/open_webui/frontend/* dist/openwebui/
+          rm -rf /tmp/open_webui.whl /tmp/owu
+
       - name: Build Go Backend
         run: |
           cd backend

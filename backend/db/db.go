@@ -183,6 +183,17 @@ func InitDB(dbPath string) (*DB, error) {
 		UNIQUE(subdomain, key_value)
 	);
 
+	CREATE TABLE IF NOT EXISTS openwebui_chats (
+		id TEXT PRIMARY KEY,
+		subdomain TEXT NOT NULL,
+		title TEXT NOT NULL DEFAULT '',
+		chat_json TEXT NOT NULL DEFAULT '{}',
+		created_at INTEGER NOT NULL DEFAULT 0,
+		updated_at INTEGER NOT NULL DEFAULT 0
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_owu_chats_subdomain ON openwebui_chats(subdomain, updated_at DESC);
+
 	CREATE INDEX IF NOT EXISTS idx_records_subdomain ON records(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_records_lookup ON records(subdomain, name, type);
 	CREATE INDEX IF NOT EXISTS idx_requests_subdomain ON requests(subdomain);

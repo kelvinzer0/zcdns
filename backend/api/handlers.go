@@ -110,7 +110,48 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	// Host-based proxy (*.router.zcdns.id) - matches POST, OPTIONS, GET
 	mux.HandleFunc("/v1/chat/completions", h.handleAIRouterOpenAI)
 	mux.HandleFunc("/v1/messages", h.handleAIRouterAnthropic)
+	mux.HandleFunc("/v1/models", h.handleOpenWebUIModels)
 	mux.HandleFunc("/v1/", h.handleAIRouterProxy)
+
+	// OpenWebUI Go-ported Backend API routes
+	mux.HandleFunc("/api/config", h.handleOpenWebUIConfig)
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
+		if setOWUCors(w, r) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"version": "0.5.0"})
+	})
+	mux.HandleFunc("/api/changelog", func(w http.ResponseWriter, r *http.Request) {
+		if setOWUCors(w, r) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"changelog": ""})
+	})
+	mux.HandleFunc("/api/models", h.handleOpenWebUIModels)
+	mux.HandleFunc("/api/v1/models", h.handleOpenWebUIModels)
+	mux.HandleFunc("/api/v1/auths", h.handleOpenWebUIAuth)
+	mux.HandleFunc("/api/v1/auths/", h.handleOpenWebUIAuth)
+	mux.HandleFunc("/api/v1/users/user", h.handleOpenWebUIAuth)
+	mux.HandleFunc("/api/chat/completions", h.handleAIRouterOpenAI)
+	mux.HandleFunc("/api/v1/chat/completions", h.handleAIRouterOpenAI)
+	mux.HandleFunc("/api/v1/chats", h.handleOpenWebUIChats)
+	mux.HandleFunc("/api/v1/chats/", h.handleOpenWebUIChats)
+	// Common optional OpenWebUI collection routes
+	emptyList := func(w http.ResponseWriter, r *http.Request) {
+		if setOWUCors(w, r) {
+			return
+		}
+		writeJSON(w, http.StatusOK, []any{})
+	}
+	mux.HandleFunc("/api/v1/prompts", emptyList)
+	mux.HandleFunc("/api/v1/tools", emptyList)
+	mux.HandleFunc("/api/v1/documents", emptyList)
+	mux.HandleFunc("/api/v1/folders", emptyList)
+	mux.HandleFunc("/api/v1/banners", emptyList)
+	mux.HandleFunc("/api/v1/channels", emptyList)
+	mux.HandleFunc("/api/v1/notes", emptyList)
+	mux.HandleFunc("/api/v1/memories", emptyList)
+	mux.HandleFunc("/api/v1/knowledge", emptyList)
 
 	mux.HandleFunc("GET /dns-query", h.handleDoH)
 	mux.HandleFunc("POST /dns-query", h.handleDoH)
@@ -148,17 +189,23 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/admin/txt-records/{id}", h.requireAdmin(h.handleAdminDeleteTXTRecord))
 
 	// Static SPA file server
-	if h.cfg.StaticDir != "" {
-		fileServer := http.FileServer(http.Dir(h.cfg.StaticDir))
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// If request is targeted at *.router.zcdns.id, serve OpenWebUI!
+		if sub := extractSubdomainFromHost(r.Host); sub != "" {
+			h.handleOpenWebUIStatic(w, r)
+			return
+		}
+
+		if h.cfg.StaticDir != "" {
+			fileServer := http.FileServer(http.Dir(h.cfg.StaticDir))
 			path := filepath.Join(h.cfg.StaticDir, filepath.Clean(r.URL.Path))
 			if stat, err := os.Stat(path); err == nil && !stat.IsDir() {
 				fileServer.ServeHTTP(w, r)
 				return
 			}
 			http.ServeFile(w, r, filepath.Join(h.cfg.StaticDir, "index.html"))
-		})
-	}
+		}
+	})
 }
 
 func (h *APIHandler) handleGetRequests(w http.ResponseWriter, r *http.Request, subdomain string) {

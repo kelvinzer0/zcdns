@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Network, Plus, Trash2, Save, Copy, Check, Eye, EyeOff,
-  Loader2, ChevronDown, ChevronRight, PlayCircle, AlertCircle, CheckCircle2,
-  Key, ShieldCheck
+  Loader2, ChevronDown, ChevronRight, AlertCircle, CheckCircle2,
+  Key, ShieldCheck, ExternalLink, MessageSquare
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -141,11 +141,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   const [isCustomCtx, setIsCustomCtx] = useState(false);
   const [savingAlias, setSavingAlias] = useState(false);
 
-  // Quick test
-  const [testModel, setTestModel] = useState('gpt-4o');
-  const [testMsg, setTestMsg] = useState('Say hello in one sentence.');
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState('');
+
 
   const fetchAll = useCallback(async () => {
     try {
@@ -315,31 +311,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
     }
   };
 
-  const runTest = async () => {
-    setTesting(true);
-    setTestResult('Routing request...');
-    try {
-      const endpoint = `https://${subdomain}.router.zcdns.id/v1/chat/completions`;
-      const token = userKeys.length > 0 ? userKeys[0].key_value : 'zcdns-test';
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          model: testModel,
-          messages: [{ role: 'user', content: testMsg }],
-          stream: false
-        })
-      });
-      const data = await res.json();
-      const provider = res.headers.get('x-router-provider') || '?';
-      const model = res.headers.get('x-router-model') || '?';
-      setTestResult(`→ Routed to: ${provider}/${model}\n\n${JSON.stringify(data, null, 2)}`);
-    } catch (e: any) {
-      setTestResult('Error: ' + e.message + '\n\nMake sure wildcard SSL is active and at least one connection is configured.');
-    } finally {
-      setTesting(false);
-    }
-  };
+
 
   if (loading) return (
     <div className="flex justify-center items-center h-64">
@@ -733,22 +705,31 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
         </div>
       </RouterSection>
 
-      {/* Quick Test */}
-      <div className="bg-card border border-border rounded-none p-4">
-        <h3 className="font-semibold text-sm mb-2.5">Quick Test</h3>
-        <div className="flex gap-2 mb-2.5 flex-wrap">
-          <input value={testModel} onChange={e => setTestModel(e.target.value)}
-            placeholder="Model or alias" className="border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono w-48" />
-          <input value={testMsg} onChange={e => setTestMsg(e.target.value)}
-            placeholder="Message..." className="flex-1 border border-border rounded-none px-2 py-1.5 text-xs bg-background" />
-          <button onClick={runTest} disabled={testing}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground rounded-none text-xs font-medium">
-            {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <PlayCircle className="w-3 h-3" />} Test
-          </button>
+      {/* OpenWebUI */}
+      <div className="bg-card border border-border rounded-none p-4 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 className="font-semibold text-sm flex items-center gap-1.5">
+              <MessageSquare className="w-4 h-4 text-primary" /> OpenWebUI
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Visual chat interface.
+            </p>
+          </div>
+          <a
+            href={`https://${subdomain}.router.zcdns.id/`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-none hover:bg-primary/90 transition-colors"
+          >
+            <span>Open WebUI</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
         </div>
-        <pre className="bg-muted p-3 rounded-none border border-border text-xs font-mono whitespace-pre-wrap min-h-[70px] max-h-[250px] overflow-auto">
-          {testResult || 'Response will appear here...'}
-        </pre>
+        <p className="text-xs text-muted-foreground">
+          Chat directly with your configured models, combos, and aliases in an interactive OpenWebUI workspace at{' '}
+          <code className="font-mono text-primary bg-muted px-1 py-0.5 border border-border">https://{subdomain}.router.zcdns.id</code>.
+        </p>
       </div>
     </div>
   );
