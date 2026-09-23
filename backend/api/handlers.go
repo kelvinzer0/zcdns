@@ -115,12 +115,8 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 
 	// OpenWebUI Go-ported Backend API routes
 	mux.HandleFunc("/api/config", h.handleOpenWebUIConfig)
-	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
-		if setOWUCors(w, r) {
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"version": "0.5.0"})
-	})
+	mux.HandleFunc("/api/version", h.handleOpenWebUIVersion)
+	mux.HandleFunc("/api/version/updates", h.handleOpenWebUIVersion)
 	mux.HandleFunc("/api/changelog", func(w http.ResponseWriter, r *http.Request) {
 		if setOWUCors(w, r) {
 			return
@@ -129,9 +125,12 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("/api/models", h.handleOpenWebUIModels)
 	mux.HandleFunc("/api/v1/models", h.handleOpenWebUIModels)
+	mux.HandleFunc("/api/v1/models/", h.handleOpenWebUIModels)
 	mux.HandleFunc("/api/v1/auths", h.handleOpenWebUIAuth)
 	mux.HandleFunc("/api/v1/auths/", h.handleOpenWebUIAuth)
 	mux.HandleFunc("/api/v1/users/user", h.handleOpenWebUIAuth)
+	mux.HandleFunc("/api/v1/users/user/settings", h.handleOpenWebUIUserSettings)
+	mux.HandleFunc("/api/v1/tasks/config", h.handleOpenWebUITasks)
 	mux.HandleFunc("/api/chat/completions", h.handleAIRouterOpenAI)
 	mux.HandleFunc("/api/v1/chat/completions", h.handleAIRouterOpenAI)
 	mux.HandleFunc("/api/v1/chats", h.handleOpenWebUIChats)
@@ -139,22 +138,42 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	// WebSocket / Socket.IO handler
 	mux.HandleFunc("/ws/socket.io/", h.handleOpenWebUISocketIO)
 	mux.HandleFunc("/ws/", h.handleOpenWebUISocketIO)
-	// Common optional OpenWebUI collection routes
+
+	// Modular OpenWebUI collection routes
 	emptyList := func(w http.ResponseWriter, r *http.Request) {
 		if setOWUCors(w, r) {
 			return
 		}
 		writeJSON(w, http.StatusOK, []any{})
 	}
-	mux.HandleFunc("/api/v1/prompts", emptyList)
-	mux.HandleFunc("/api/v1/tools", emptyList)
+	mux.HandleFunc("/api/v1/prompts", h.handleOpenWebUIPrompts)
+	mux.HandleFunc("/api/v1/prompts/", h.handleOpenWebUIPrompts)
+	mux.HandleFunc("/api/v1/skills", h.handleOpenWebUISkills)
+	mux.HandleFunc("/api/v1/skills/", h.handleOpenWebUISkills)
+	mux.HandleFunc("/api/v1/knowledge", h.handleOpenWebUIKnowledge)
+	mux.HandleFunc("/api/v1/knowledge/", h.handleOpenWebUIKnowledge)
+	mux.HandleFunc("/api/v1/files", h.handleOpenWebUIFiles)
+	mux.HandleFunc("/api/v1/files/", h.handleOpenWebUIFiles)
+	mux.HandleFunc("/api/v1/notes", h.handleOpenWebUINotes)
+	mux.HandleFunc("/api/v1/notes/", h.handleOpenWebUINotes)
+	mux.HandleFunc("/api/v1/folders", h.handleOpenWebUIFolders)
+	mux.HandleFunc("/api/v1/folders/", h.handleOpenWebUIFolders)
+	mux.HandleFunc("/api/v1/tools", h.handleOpenWebUITools)
+	mux.HandleFunc("/api/v1/tools/", h.handleOpenWebUITools)
+	mux.HandleFunc("/api/v1/functions", h.handleOpenWebUIFunctions)
+	mux.HandleFunc("/api/v1/functions/", h.handleOpenWebUIFunctions)
+	mux.HandleFunc("/api/v1/configs", h.handleOpenWebUIConfigs)
+	mux.HandleFunc("/api/v1/configs/", h.handleOpenWebUIConfigs)
 	mux.HandleFunc("/api/v1/documents", emptyList)
-	mux.HandleFunc("/api/v1/folders", emptyList)
+	mux.HandleFunc("/api/v1/documents/", emptyList)
 	mux.HandleFunc("/api/v1/banners", emptyList)
+	mux.HandleFunc("/api/v1/banners/", emptyList)
 	mux.HandleFunc("/api/v1/channels", emptyList)
-	mux.HandleFunc("/api/v1/notes", emptyList)
+	mux.HandleFunc("/api/v1/channels/", emptyList)
 	mux.HandleFunc("/api/v1/memories", emptyList)
-	mux.HandleFunc("/api/v1/knowledge", emptyList)
+	mux.HandleFunc("/api/v1/memories/", emptyList)
+	mux.HandleFunc("/api/v1/terminals", emptyList)
+	mux.HandleFunc("/api/v1/terminals/", emptyList)
 
 	mux.HandleFunc("GET /dns-query", h.handleDoH)
 	mux.HandleFunc("POST /dns-query", h.handleDoH)
