@@ -164,8 +164,20 @@ jobs:
           sshpass -e ssh -6 -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
             echo '--- SHARED-IP LIST ---'
             shared-ip list || true
-            echo '--- SHARED-IP SHOW (zcdns.id:53) ---'
-            shared-ip show zcdns.id --localport=53 || true
+            echo '--- SHARED-IP SHOW 443 ---'
+            shared-ip show zcdns.id --localport=443 || true
+            shared-ip show router.zcdns.id --localport=443 || true
+            shared-ip show '*.router.zcdns.id' --localport=443 || true
+            echo '--- IP ADDRESSES ---'
+            ip -br a || true
+            echo '--- LISTENING PORTS (443 / 8085) ---'
+            ss -tulpn | grep -E '443|8085' || true
+            echo '--- NGINX SITES ENABLED ---'
+            ls -la /etc/nginx/sites-enabled/ || true
+            echo '--- TEST NGINX LOCALHOST (router.zcdns.id) ---'
+            curl -k -v --resolve router.zcdns.id:443:127.0.0.1 https://router.zcdns.id/v1/chat/completions 2>&1 | head -25 || true
+            echo '--- NGINX ERROR LOG ---'
+            tail -n 20 /var/log/nginx/error.log || true
           "
           echo "=== 2. TEST FROM RUNNER OVER EXTERNAL IPV6 ==="
           sudo apt-get install -y dnsutils
