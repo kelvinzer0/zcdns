@@ -185,7 +185,8 @@ func (h *APIHandler) handleOpenWebUIConfig(w http.ResponseWriter, r *http.Reques
 		"status":         true,
 		"name":           "ZCDNS AI Router",
 		"version":        "0.5.0",
-		"default_locale": "en",
+		"default_locale": "",
+		"i18n":           map[string]interface{}{},
 		"default_models": defaultModel,
 		"features": map[string]interface{}{
 			"auth":                      false,
