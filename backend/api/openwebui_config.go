@@ -257,6 +257,16 @@ func (h *APIHandler) handleOpenWebUIConfig(w http.ResponseWriter, r *http.Reques
 		"oauth": map[string]interface{}{
 			"providers": map[string]interface{}{},
 		},
+		"audio": map[string]interface{}{
+			"tts": map[string]interface{}{
+				"engine":   "",
+				"voice":    "",
+				"split_on": "punctuation",
+			},
+			"stt": map[string]interface{}{
+				"engine": "web",
+			},
+		},
 	}
 
 	writeJSON(w, http.StatusOK, resp)
