@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -39,6 +40,21 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 			if err != nil {
 				writeJSONError(w, http.StatusInternalServerError, err.Error())
 				return
+			}
+			if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+				if page, err := strconv.Atoi(pageStr); err == nil && page > 0 {
+					limit := 60
+					skip := (page - 1) * limit
+					if skip >= len(rawChats) {
+						rawChats = nil
+					} else {
+						end := skip + limit
+						if end > len(rawChats) {
+							end = len(rawChats)
+						}
+						rawChats = rawChats[skip:end]
+					}
+				}
 			}
 			var list []OpenWebUIChatTitleIdResponse
 			for _, rc := range rawChats {
@@ -148,6 +164,21 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			writeJSON(w, http.StatusOK, []OpenWebUIChatTitleIdResponse{})
 			return
+		}
+		if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+			if page, err := strconv.Atoi(pageStr); err == nil && page > 0 {
+				limit := 10
+				skip := (page - 1) * limit
+				if skip >= len(rawChats) {
+					rawChats = nil
+				} else {
+					end := skip + limit
+					if end > len(rawChats) {
+						end = len(rawChats)
+					}
+					rawChats = rawChats[skip:end]
+				}
+			}
 		}
 		var list []OpenWebUIChatTitleIdResponse
 		for _, rc := range rawChats {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -213,6 +214,24 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 						if err != nil {
 							rawChats = nil
 						}
+						total := len(rawChats)
+						hasMore := false
+						if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+							if page, err := strconv.Atoi(pageStr); err == nil && page > 0 {
+								limit := 10
+								skip := (page - 1) * limit
+								if skip >= len(rawChats) {
+									rawChats = nil
+								} else {
+									end := skip + limit
+									if end > len(rawChats) {
+										end = len(rawChats)
+									}
+									hasMore = end < total
+									rawChats = rawChats[skip:end]
+								}
+							}
+						}
 						var chatItems []map[string]any
 						for _, c := range rawChats {
 							var lastRead *int64
@@ -239,8 +258,8 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 						writeJSON(w, http.StatusOK, map[string]any{
 							"chats":             chatItems,
 							"folder_permission": "write",
-							"total":             len(chatItems),
-							"has_more":          false,
+							"total":             total,
+							"has_more":          hasMore,
 						})
 						return
 					}
