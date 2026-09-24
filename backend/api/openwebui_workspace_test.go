@@ -420,3 +420,114 @@ func TestOpenWebUIUserStatus(t *testing.T) {
 	}
 }
 
+func TestOpenWebUIModelProfileImage(t *testing.T) {
+	handler, _, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	// 1. Create a model with base64 profile_image_url
+	samplePNG := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAArrG4AAAAAElFTkSuQmCC"
+	createPayload := map[string]any{
+		"id":            "custom-avatar-model",
+		"name":          "Avatar AI",
+		"base_model_id": "gpt-4o",
+		"params":        map[string]any{},
+		"meta": map[string]any{
+			"profile_image_url": samplePNG,
+		},
+		"access_grants": []any{},
+		"is_active":     true,
+	}
+	body, _ := json.Marshal(createPayload)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/models/create", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer test-token-1")
+	rec := httptest.NewRecorder()
+	handler.handleOpenWebUIModels(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on create model, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 2. Fetch profile image: GET /api/v1/models/model/profile/image?id=custom-avatar-model
+	reqImg := httptest.NewRequest(http.MethodGet, "/api/v1/models/model/profile/image?id=custom-avatar-model", nil)
+	reqImg.Header.Set("Authorization", "Bearer test-token-1")
+	recImg := httptest.NewRecorder()
+	handler.handleOpenWebUIModels(recImg, reqImg)
+
+	if recImg.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get profile image, got %d", recImg.Code)
+	}
+	contentType := recImg.Header().Get("Content-Type")
+	if contentType != "image/png" {
+		t.Fatalf("expected Content-Type: image/png, got %s", contentType)
+	}
+	if recImg.Body.Len() == 0 {
+		t.Fatalf("expected non-empty image body")
+	}
+
+	// 3. Fallback for non-existent model: should redirect (302) to /static/favicon.png
+	reqFallback := httptest.NewRequest(http.MethodGet, "/api/v1/models/model/profile/image?id=nonexistent", nil)
+	reqFallback.Header.Set("Authorization", "Bearer test-token-1")
+	recFallback := httptest.NewRecorder()
+	handler.handleOpenWebUIModels(recFallback, reqFallback)
+
+	if recFallback.Code != http.StatusFound {
+		t.Fatalf("expected 302 redirect for fallback, got %d", recFallback.Code)
+	}
+	if loc := recFallback.Header().Get("Location"); loc != "/static/favicon.png" {
+		t.Fatalf("expected Location /static/favicon.png, got %s", loc)
+	}
+}
+
+func TestOpenWebUIPagination(t *testing.T) {
+	handler, _, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	// 1. Create a knowledge base
+	createPayload := map[string]any{
+		"name":        "Test Knowledge",
+		"description": "Pagination test",
+	}
+	body, _ := json.Marshal(createPayload)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/knowledge/create", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer test-token-1")
+	rec := httptest.NewRecorder()
+	handler.handleOpenWebUIKnowledge(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("failed to create knowledge base: %s", rec.Body.String())
+	}
+
+	// 2. Query page 1 of search: should return 1 item and total=1
+	reqPage1 := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge/search?page=1", nil)
+	reqPage1.Header.Set("Authorization", "Bearer test-token-1")
+	recPage1 := httptest.NewRecorder()
+	handler.handleOpenWebUIKnowledge(recPage1, reqPage1)
+
+	if recPage1.Code != http.StatusOK {
+		t.Fatalf("expected 200 on page 1, got %d", recPage1.Code)
+	}
+	var respPage1 OpenWebUIPaginatedListResponse
+	if err := json.Unmarshal(recPage1.Body.Bytes(), &respPage1); err != nil {
+		t.Fatalf("failed to unmarshal page 1: %v", err)
+	}
+	if len(respPage1.Items) != 1 || respPage1.Total != 1 {
+		t.Fatalf("expected 1 item on page 1, got len=%d total=%d", len(respPage1.Items), respPage1.Total)
+	}
+
+	// 3. Query page 2 of search: should return 0 items and total=1 (crucial for OpenWebUI infinite scroll!)
+	reqPage2 := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge/search?page=2", nil)
+	reqPage2.Header.Set("Authorization", "Bearer test-token-1")
+	recPage2 := httptest.NewRecorder()
+	handler.handleOpenWebUIKnowledge(recPage2, reqPage2)
+
+	if recPage2.Code != http.StatusOK {
+		t.Fatalf("expected 200 on page 2, got %d", recPage2.Code)
+	}
+	var respPage2 OpenWebUIPaginatedListResponse
+	if err := json.Unmarshal(recPage2.Body.Bytes(), &respPage2); err != nil {
+		t.Fatalf("failed to unmarshal page 2: %v", err)
+	}
+	if len(respPage2.Items) != 0 || respPage2.Total != 1 {
+		t.Fatalf("expected 0 items on page 2, got len=%d total=%d", len(respPage2.Items), respPage2.Total)
+	}
+}
+

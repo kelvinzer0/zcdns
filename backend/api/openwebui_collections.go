@@ -70,9 +70,27 @@ func (h *APIHandler) handleOpenWebUIPrompts(w http.ResponseWriter, r *http.Reque
 		if items == nil {
 			items = []any{}
 		}
+		total := len(items)
+		page := 1
+		if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+			if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+				page = p
+			}
+		}
+		limit := 30
+		skip := (page - 1) * limit
+		if skip >= total {
+			items = []any{}
+		} else {
+			end := skip + limit
+			if end > total {
+				end = total
+			}
+			items = items[skip:end]
+		}
 		writeJSON(w, http.StatusOK, OpenWebUIPaginatedListResponse{
 			Items: items,
-			Total: int64(len(items)),
+			Total: int64(total),
 		})
 		return
 	}
@@ -569,9 +587,27 @@ func (h *APIHandler) handleOpenWebUIKnowledge(w http.ResponseWriter, r *http.Req
 		if items == nil {
 			items = []any{}
 		}
+		total := len(items)
+		page := 1
+		if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+			if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+				page = p
+			}
+		}
+		limit := 30
+		skip := (page - 1) * limit
+		if skip >= total {
+			items = []any{}
+		} else {
+			end := skip + limit
+			if end > total {
+				end = total
+			}
+			items = items[skip:end]
+		}
 		writeJSON(w, http.StatusOK, OpenWebUIPaginatedListResponse{
 			Items: items,
-			Total: int64(len(items)),
+			Total: int64(total),
 		})
 		return
 	}

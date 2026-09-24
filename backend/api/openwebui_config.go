@@ -3,11 +3,13 @@ package api
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -469,6 +471,60 @@ func (h *APIHandler) handleOpenWebUIModels(w http.ResponseWriter, r *http.Reques
 	path = strings.TrimPrefix(path, "/v1/models")
 	path = strings.TrimPrefix(path, "/")
 
+	if path == "model/profile/image" {
+		id := r.URL.Query().Get("id")
+		if id != "" {
+			m, err := h.db.GetOpenWebUICustomModelByID(subdomain, id)
+			if err == nil && m != nil && m.MetaJSON != "" {
+				var meta map[string]any
+				if err := json.Unmarshal([]byte(m.MetaJSON), &meta); err == nil {
+					if imgVal, ok := meta["profile_image_url"].(string); ok && imgVal != "" {
+						imgVal = strings.TrimSpace(imgVal)
+						if strings.HasPrefix(imgVal, "http://") || strings.HasPrefix(imgVal, "https://") {
+							http.Redirect(w, r, imgVal, http.StatusFound)
+							return
+						}
+						if strings.HasPrefix(imgVal, "data:image/") {
+							parts := strings.SplitN(imgVal, ",", 2)
+							if len(parts) == 2 {
+								header := parts[0]
+								dataStr := parts[1]
+								mimeType := "image/png"
+								semiIdx := strings.Index(header, ";")
+								if semiIdx != -1 {
+									mimeType = strings.TrimPrefix(header[:semiIdx], "data:")
+								}
+								decoded, err := base64.StdEncoding.DecodeString(dataStr)
+								if err != nil {
+									decoded, err = base64.URLEncoding.DecodeString(dataStr)
+								}
+								if err == nil && len(decoded) > 0 {
+									w.Header().Set("Content-Type", mimeType)
+									w.Header().Set("Content-Length", strconv.Itoa(len(decoded)))
+									w.Header().Set("Content-Disposition", "inline")
+									w.Header().Set("X-Content-Type-Options", "nosniff")
+									w.Header().Set("Cache-Control", "public, max-age=86400")
+									if m.UpdatedAt > 0 {
+										w.Header().Set("ETag", fmt.Sprintf(`"%d"`, m.UpdatedAt))
+									}
+									w.WriteHeader(http.StatusOK)
+									_, _ = w.Write(decoded)
+									return
+								}
+							}
+						}
+						if strings.HasPrefix(imgVal, "/") && !strings.Contains(imgVal, "..") {
+							http.Redirect(w, r, imgVal, http.StatusFound)
+							return
+						}
+					}
+				}
+			}
+		}
+		http.Redirect(w, r, "/static/favicon.png", http.StatusFound)
+		return
+	}
+
 	if path == "list" {
 		cModels, _ := h.db.GetOpenWebUICustomModels(subdomain)
 		query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("query")))
@@ -486,9 +542,27 @@ func (h *APIHandler) handleOpenWebUIModels(w http.ResponseWriter, r *http.Reques
 		if items == nil {
 			items = []any{}
 		}
+		total := len(items)
+		page := 1
+		if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+			if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+				page = p
+			}
+		}
+		limit := 30
+		skip := (page - 1) * limit
+		if skip >= total {
+			items = []any{}
+		} else {
+			end := skip + limit
+			if end > total {
+				end = total
+			}
+			items = items[skip:end]
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"items": items,
-			"total": len(items),
+			"total": total,
 		})
 		return
 	}
