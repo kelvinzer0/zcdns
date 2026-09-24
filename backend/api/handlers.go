@@ -140,6 +140,8 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/auths/", h.handleOpenWebUIAuth)
 	mux.HandleFunc("/api/v1/users", h.handleOpenWebUIUsers)
 	mux.HandleFunc("/api/v1/users/", h.handleOpenWebUIUsers)
+	mux.HandleFunc("/api/v1/users/usage", h.handleOpenWebUIUsers)
+	mux.HandleFunc("/api/v1/users/user/usage", h.handleOpenWebUIUsers)
 	mux.HandleFunc("/api/v1/users/user", h.handleOpenWebUIAuth)
 	mux.HandleFunc("/api/v1/users/user/settings", h.handleOpenWebUIUserSettings)
 	mux.HandleFunc("/api/tasks/", h.handleOpenWebUITasks)

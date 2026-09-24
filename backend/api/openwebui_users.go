@@ -29,6 +29,41 @@ func (h *APIHandler) handleOpenWebUIUsers(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// 1.5 Usage statistics: /users/usage or /users/user/usage
+	if path == "usage" || path == "user/usage" {
+		h.handleOpenWebUIUserUsage(w, r, subdomain, u)
+		return
+	}
+
+	// 1.6 User Info: /users/user/info or /users/info
+	if path == "user/info" || path == "info" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{})
+		return
+	}
+
+	// 1.7 User Variables: /users/user/variables or /users/user/variables/update
+	if path == "user/variables" || path == "user/variables/update" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"variables": map[string]string{}})
+		return
+	}
+
+	// 1.8 User Groups: /users/groups or /users/{id}/groups
+	if path == "groups" || strings.HasSuffix(path, "/groups") {
+		writeJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	// 1.9 Default Permissions: /users/default/permissions or /users/default/permissions/defaults
+	if strings.HasPrefix(path, "default/permissions") {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"workspace": map[string]bool{"models": true, "knowledge": true, "prompts": true, "tools": true},
+			"sharing":   map[string]bool{"public_models": true, "public_knowledge": true, "public_prompts": true, "public_tools": true},
+			"chat":      map[string]bool{"file_upload": true, "delete": true, "edit": true, "share": true, "export": true},
+			"features":  map[string]bool{"web_search": true, "image_generation": true, "code_interpreter": true},
+		})
+		return
+	}
+
 	// 2. Profile Image: /users/{id}/profile/image or /users/user/profile/image
 	if strings.HasSuffix(path, "/profile/image") {
 		targetUserID := strings.TrimSuffix(path, "/profile/image")
