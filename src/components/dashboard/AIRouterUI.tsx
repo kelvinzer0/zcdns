@@ -565,6 +565,35 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
           ))}
         </div>
 
+        {/* Featured Browser Agent: Aria Page Agent */}
+        <div className="p-3 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border border-blue-500/20 rounded-none flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-foreground flex items-center gap-1.5">
+                <ExternalLink className="w-3.5 h-3.5 text-blue-500" />
+                Featured: Aria Page Agent (AI Browser MCP)
+              </span>
+              <span className="text-[10px] bg-blue-500/20 text-blue-600 dark:text-blue-400 font-medium px-1.5 py-0.2 rounded-none">
+                SSE & HTTP Streamable
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-normal">
+              Beri AI kemampuan menjelajah & mengontrol web browser Anda. Cukup pasang ekstensi Chrome, ambil URL MCP-nya, lalu gunakan di AI Router ZCDNS & OpenWebUI.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <a
+              href="https://github.com/kelvinzer0/aria-page-agent"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-none transition-colors"
+            >
+              <span>GitHub Repo</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        </div>
+
         {/* Security / Access Keys */}
         <div className="pt-2 border-t border-border space-y-2">
           <div className="flex items-center justify-between">
