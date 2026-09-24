@@ -197,6 +197,12 @@ func (d *DB) DeleteAllOpenWebUIChats(subdomain, userID string) error {
 	return err
 }
 
+func (d *DB) UpdateOpenWebUIChatTitle(subdomain, userID, id, title string) error {
+	now := time.Now().Unix()
+	_, err := d.conn.Exec(`UPDATE openwebui_chats SET title = ?, updated_at = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, title, now, subdomain, userID, id)
+	return err
+}
+
 // UpdateOpenWebUIMessageInChat modifies or appends to a message inside openwebui_chats chat_json
 func (d *DB) UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID string, updateFn func(msg map[string]interface{}) map[string]interface{}) error {
 	var chatJSON string

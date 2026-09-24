@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
@@ -12,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"zcdns-backend/db"
 )
@@ -613,6 +616,13 @@ func (h *APIHandler) handleAIRouterProxy(w http.ResponseWriter, r *http.Request)
 		requestedModel = "gpt-4o-mini"
 	}
 
+	sessionID, _ := reqBody["session_id"].(string)
+	hasOpenWebUI := sessionID != "" || reqBody["user_message"] != nil || reqBody["message_ids"] != nil
+	if hasOpenWebUI {
+		h.handleOpenWebUIChatCompletion(w, r, subdomain, requestedModel, reqBody, bodyBytes)
+		return
+	}
+
 	// Resolve targets with fallback loop
 	var excludeConnIDs []int64
 	var lastErr string
@@ -661,6 +671,531 @@ func (h *APIHandler) handleAIRouterOpenAI(w http.ResponseWriter, r *http.Request
 
 func (h *APIHandler) handleAIRouterAnthropic(w http.ResponseWriter, r *http.Request) {
 	h.handleAIRouterProxy(w, r)
+}
+
+// ── OpenWebUI Real-Time WebSocket Streaming & Chat Management ───────────────────
+
+func generateQuickTitle(content string) string {
+	s := strings.TrimSpace(content)
+	if s == "" {
+		return "New Chat"
+	}
+	lower := strings.ToLower(s)
+	for _, p := range []string{"please ", "can you ", "could you ", "help me ", "tolong ", "bantu saya ", "buatkan "} {
+		if strings.HasPrefix(lower, p) {
+			s = s[len(p):]
+			break
+		}
+	}
+	words := strings.Fields(s)
+	if len(words) > 6 {
+		words = words[:6]
+	}
+	res := strings.Join(words, " ")
+	if len(res) > 0 {
+		res = strings.ToUpper(res[:1]) + res[1:]
+	}
+	return res
+}
+
+func (h *APIHandler) buildOpenWebUIMessages(subdomain, userID, chatID, userMessageID string, userContentObj interface{}, reqBody map[string]interface{}) []map[string]interface{} {
+	var messages []map[string]interface{}
+
+	// 1. System prompt from params if any
+	systemPrompt := ""
+	if params, ok := reqBody["params"].(map[string]interface{}); ok {
+		if sys, ok := params["system"].(string); ok && sys != "" {
+			systemPrompt = sys
+		}
+	}
+	if systemPrompt != "" {
+		messages = append(messages, map[string]interface{}{"role": "system", "content": systemPrompt})
+	}
+
+	// 2. Load conversation history from SQLite DB if available
+	if chatID != "" && userMessageID != "" {
+		_, chatJSON, _, _, _, _, _, err := h.db.GetOpenWebUIChatRaw(subdomain, userID, chatID)
+		if err == nil && chatJSON != "" {
+			var chatData map[string]interface{}
+			if json.Unmarshal([]byte(chatJSON), &chatData) == nil {
+				chatObj, _ := chatData["chat"].(map[string]interface{})
+				if chatObj == nil {
+					chatObj = chatData
+				}
+				if history, ok := chatObj["history"].(map[string]interface{}); ok {
+					if msgMap, ok := history["messages"].(map[string]interface{}); ok {
+						var chain []map[string]interface{}
+						currID := ""
+						if userMsg, ok := msgMap[userMessageID].(map[string]interface{}); ok {
+							if pid, ok := userMsg["parentId"].(string); ok {
+								currID = pid
+							}
+						}
+						seen := make(map[string]bool)
+						for currID != "" && !seen[currID] {
+							seen[currID] = true
+							m, ok := msgMap[currID].(map[string]interface{})
+							if !ok {
+								break
+							}
+							role, _ := m["role"].(string)
+							content := m["content"]
+							if role != "" && content != nil && content != "" {
+								chain = append([]map[string]interface{}{{"role": role, "content": content}}, chain...)
+							}
+							pid, _ := m["parentId"].(string)
+							currID = pid
+						}
+						messages = append(messages, chain...)
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Append current user message
+	if userContentObj != nil && userContentObj != "" {
+		messages = append(messages, map[string]interface{}{"role": "user", "content": userContentObj})
+	}
+
+	return messages
+}
+
+func (h *APIHandler) streamTargetToSocket(
+	subdomain, userID, chatID, assistantMessageID, folderID string,
+	target proxyTarget,
+	messages []map[string]interface{},
+	reqBody map[string]interface{},
+	emitEvent func(string, interface{}),
+) error {
+	apiType := ""
+	baseURL := ""
+	apiKey := ""
+	if target.conn != nil {
+		apiType = target.conn.APIType
+		baseURL = target.conn.BaseURL
+		apiKey = target.conn.APIKey
+	}
+	upstreamURL := buildUpstreamURL(target.provider, apiType, baseURL, "openai")
+	isAnthropic := isAnthropicTarget(target)
+
+	var payloadBytes []byte
+	if isAnthropic {
+		var antMessages []map[string]interface{}
+		sysPrompt := ""
+		for _, m := range messages {
+			if m["role"] == "system" {
+				if s, ok := m["content"].(string); ok {
+					sysPrompt = s
+				}
+			} else {
+				antMessages = append(antMessages, m)
+			}
+		}
+		antBody := map[string]interface{}{
+			"model":      target.model,
+			"messages":   antMessages,
+			"max_tokens": 4096,
+			"stream":     true,
+		}
+		if sysPrompt != "" {
+			antBody["system"] = sysPrompt
+		}
+		payloadBytes, _ = json.Marshal(antBody)
+	} else {
+		openaiBody := map[string]interface{}{
+			"model":    target.model,
+			"messages": messages,
+			"stream":   true,
+		}
+		if params, ok := reqBody["params"].(map[string]interface{}); ok {
+			for _, k := range []string{"temperature", "top_p", "max_tokens", "frequency_penalty", "presence_penalty"} {
+				if v, ok := params[k]; ok && v != nil {
+					openaiBody[k] = v
+				}
+			}
+		}
+		payloadBytes, _ = json.Marshal(openaiBody)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, upstreamURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Accept-Encoding", "identity")
+
+	if isAnthropic {
+		req.Header.Set("x-api-key", apiKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+	} else {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	client := &http.Client{
+		Timeout: 300 * time.Second,
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		errBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("upstream error (%d): %s", resp.StatusCode, string(errBytes))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	var accumulatedContent strings.Builder
+	inReasoning := false
+
+	for {
+		line, err := reader.ReadString('\n')
+		line = strings.TrimSpace(line)
+
+		if line != "" {
+			if strings.HasPrefix(line, "data: ") {
+				dataStr := strings.TrimPrefix(line, "data: ")
+				if dataStr == "[DONE]" {
+					break
+				}
+
+				if isAnthropic {
+					var antChunk struct {
+						Type  string `json:"type"`
+						Delta struct {
+							Type string `json:"type"`
+							Text string `json:"text"`
+						} `json:"delta"`
+					}
+					if json.Unmarshal([]byte(dataStr), &antChunk) == nil {
+						if antChunk.Delta.Text != "" {
+							accumulatedContent.WriteString(antChunk.Delta.Text)
+							emitEvent("chat:completion", map[string]interface{}{
+								"choices": []interface{}{
+									map[string]interface{}{
+										"delta": map[string]interface{}{
+											"content": antChunk.Delta.Text,
+										},
+									},
+								},
+								"done": false,
+							})
+						}
+					}
+				} else {
+					var oaiChunk struct {
+						Choices []struct {
+							Delta struct {
+								Content          string `json:"content"`
+								ReasoningContent string `json:"reasoning_content"`
+							} `json:"delta"`
+						} `json:"choices"`
+					}
+					if json.Unmarshal([]byte(dataStr), &oaiChunk) == nil && len(oaiChunk.Choices) > 0 {
+						delta := oaiChunk.Choices[0].Delta
+						chunkText := ""
+
+						if delta.ReasoningContent != "" {
+							if !inReasoning {
+								inReasoning = true
+								chunkText = "<think>\n" + delta.ReasoningContent
+							} else {
+								chunkText = delta.ReasoningContent
+							}
+						} else if delta.Content != "" {
+							if inReasoning {
+								inReasoning = false
+								chunkText = "\n</think>\n\n" + delta.Content
+							} else {
+								chunkText = delta.Content
+							}
+						}
+
+						if chunkText != "" {
+							accumulatedContent.WriteString(chunkText)
+							emitEvent("chat:completion", map[string]interface{}{
+								"choices": []interface{}{
+									map[string]interface{}{
+										"delta": map[string]interface{}{
+											"content": chunkText,
+										},
+									},
+								},
+								"done": false,
+							})
+						}
+					}
+				}
+			}
+		}
+
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+	}
+
+	if inReasoning {
+		accumulatedContent.WriteString("\n</think>\n")
+		emitEvent("chat:completion", map[string]interface{}{
+			"choices": []interface{}{
+				map[string]interface{}{
+					"delta": map[string]interface{}{
+						"content": "\n</think>\n",
+					},
+				},
+			},
+			"done": false,
+		})
+	}
+
+	// 1. Emit completion
+	emitEvent("chat:completion", map[string]interface{}{
+		"done": true,
+	})
+
+	// 2. Persist assistant message in DB
+	finalContent := accumulatedContent.String()
+	_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, assistantMessageID, func(msg map[string]interface{}) map[string]interface{} {
+		msg["content"] = finalContent
+		msg["done"] = true
+		return msg
+	})
+
+	// 3. Emit chat:active = false
+	emitEvent("chat:active", map[string]interface{}{
+		"active":    false,
+		"folder_id": folderID,
+	})
+
+	return nil
+}
+
+func (h *APIHandler) handleOpenWebUIChatCompletion(w http.ResponseWriter, r *http.Request, subdomain, requestedModel string, reqBody map[string]interface{}, bodyBytes []byte) {
+	u := h.resolveUser(r)
+	if u == nil {
+		u = &OpenWebUISessionUserInfoResponse{ID: "usr_guest", Name: "Guest", Role: "guest"}
+	}
+
+	sessionID, _ := reqBody["session_id"].(string)
+	chatID, _ := reqBody["chat_id"].(string)
+	if chatID == "" {
+		chatID = uuid.New().String()
+	}
+
+	assistantMessageID := ""
+	if mList, ok := reqBody["message_ids"].([]interface{}); ok && len(mList) > 0 {
+		if m0, ok := mList[0].(map[string]interface{}); ok {
+			if mid, ok := m0["message_id"].(string); ok && mid != "" {
+				assistantMessageID = mid
+			}
+		}
+	}
+	if assistantMessageID == "" {
+		if idStr, ok := reqBody["id"].(string); ok && idStr != "" {
+			assistantMessageID = idStr
+		} else {
+			assistantMessageID = uuid.New().String()
+		}
+	}
+
+	var userMessage map[string]interface{}
+	if um, ok := reqBody["user_message"].(map[string]interface{}); ok {
+		userMessage = um
+	}
+	userMessageID := ""
+	userContent := ""
+	var userContentObj interface{}
+	if userMessage != nil {
+		userMessageID, _ = userMessage["id"].(string)
+		userContentObj = userMessage["content"]
+		if s, ok := userMessage["content"].(string); ok {
+			userContent = s
+		}
+	}
+	folderID, _ := reqBody["folder_id"].(string)
+
+	// Persist initial chat and message state in database
+	_, existingChatJSON, _, _, _, _, _, getErr := h.db.GetOpenWebUIChatRaw(subdomain, u.ID, chatID)
+	if getErr != nil || existingChatJSON == "" {
+		title := "New Chat"
+		cleanText := strings.TrimSpace(userContent)
+		if cleanText != "" {
+			words := strings.Fields(cleanText)
+			if len(words) > 6 {
+				title = strings.Join(words[:6], " ") + "..."
+			} else {
+				title = cleanText
+			}
+		}
+
+		historyMessages := make(map[string]interface{})
+		if userMessage != nil && userMessageID != "" {
+			userMessage["childrenIds"] = []interface{}{assistantMessageID}
+			historyMessages[userMessageID] = userMessage
+		}
+		historyMessages[assistantMessageID] = map[string]interface{}{
+			"id":          assistantMessageID,
+			"parentId":    userMessageID,
+			"childrenIds": []interface{}{},
+			"role":        "assistant",
+			"content":     "",
+			"done":        false,
+			"model":       requestedModel,
+			"timestamp":   time.Now().Unix(),
+		}
+
+		initialChatObj := map[string]interface{}{
+			"id":     chatID,
+			"title":  title,
+			"models": []interface{}{requestedModel},
+			"history": map[string]interface{}{
+				"currentId": assistantMessageID,
+				"messages":  historyMessages,
+			},
+			"messages": []interface{}{
+				map[string]interface{}{"role": "user", "content": userContent},
+			},
+			"timestamp": time.Now().Unix() * 1000,
+		}
+		chatBytes, _ := json.Marshal(map[string]interface{}{"chat": initialChatObj})
+		_ = h.db.UpsertOpenWebUIChat(subdomain, u.ID, chatID, title, string(chatBytes), folderID)
+	} else {
+		_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, u.ID, chatID, assistantMessageID, func(msg map[string]interface{}) map[string]interface{} {
+			msg["id"] = assistantMessageID
+			if userMessageID != "" {
+				msg["parentId"] = userMessageID
+			}
+			msg["role"] = "assistant"
+			msg["content"] = ""
+			msg["done"] = false
+			msg["model"] = requestedModel
+			msg["timestamp"] = time.Now().Unix()
+			return msg
+		})
+		if userMessage != nil && userMessageID != "" {
+			_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, u.ID, chatID, userMessageID, func(msg map[string]interface{}) map[string]interface{} {
+				for k, v := range userMessage {
+					msg[k] = v
+				}
+				cIds, _ := msg["childrenIds"].([]interface{})
+				found := false
+				for _, cid := range cIds {
+					if cid == assistantMessageID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					msg["childrenIds"] = append(cIds, assistantMessageID)
+				}
+				return msg
+			})
+		}
+	}
+
+	emitEvent := func(eventType string, eventData interface{}) {
+		payload := map[string]interface{}{
+			"chat_id":    chatID,
+			"message_id": assistantMessageID,
+			"data": map[string]interface{}{
+				"type": eventType,
+				"data": eventData,
+			},
+		}
+		msgBytes, err := json.Marshal(payload)
+		if err != nil {
+			return
+		}
+		socketMsg := []byte(fmt.Sprintf(`42["events",%s]`, string(msgBytes)))
+
+		sentDirectly := false
+		if sessionID != "" {
+			if client := globalSocketHub.getClient(sessionID); client != nil {
+				_ = client.write(socketMsg)
+				sentDirectly = true
+			}
+		}
+		if u != nil && u.ID != "" {
+			skipSid := ""
+			if sentDirectly {
+				skipSid = sessionID
+			}
+			globalSocketHub.broadcastToRoom("user:"+u.ID, socketMsg, skipSid)
+		}
+	}
+
+	taskID := uuid.New().String()
+
+	// Return immediate JSON response expected by OpenWebUI frontend
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":   true,
+		"task_ids": []string{taskID},
+		"chat_id":  chatID,
+	})
+
+	// Run streaming in the background
+	go func() {
+		emitEvent("chat:active", map[string]interface{}{
+			"active":    true,
+			"folder_id": folderID,
+		})
+
+		messages := h.buildOpenWebUIMessages(subdomain, u.ID, chatID, userMessageID, userContentObj, reqBody)
+
+		targets, err := h.resolveTargets(subdomain, requestedModel, "/api/chat/completions", bodyBytes, nil)
+		if err != nil || len(targets) == 0 {
+			errMsg := "No active connection for model: " + requestedModel
+			if err != nil {
+				errMsg = err.Error()
+			}
+			emitEvent("chat:message:error", map[string]interface{}{
+				"error": map[string]interface{}{"content": errMsg},
+				"done":  true,
+			})
+			emitEvent("chat:active", map[string]interface{}{"active": false, "folder_id": folderID})
+			return
+		}
+
+		var lastErr error
+		for _, target := range targets {
+			lastErr = h.streamTargetToSocket(subdomain, u.ID, chatID, assistantMessageID, folderID, target, messages, reqBody, emitEvent)
+			if lastErr == nil {
+				break
+			}
+		}
+
+		if lastErr != nil {
+			emitEvent("chat:message:error", map[string]interface{}{
+				"error": map[string]interface{}{"content": lastErr.Error()},
+				"done":  true,
+			})
+			emitEvent("chat:active", map[string]interface{}{"active": false, "folder_id": folderID})
+			return
+		}
+
+		// Title generation if requested by background_tasks
+		bgTasks, _ := reqBody["background_tasks"].(map[string]interface{})
+		if bgTasks != nil {
+			if tg, ok := bgTasks["title_generation"].(bool); ok && tg {
+				if userContent != "" {
+					generatedTitle := generateQuickTitle(userContent)
+					if generatedTitle != "" {
+						_ = h.db.UpdateOpenWebUIChatTitle(subdomain, u.ID, chatID, generatedTitle)
+						emitEvent("chat:title", generatedTitle)
+					}
+				}
+			}
+		}
+	}()
 }
 
 // ── Config endpoints ──────────────────────────────────────────────────────────
