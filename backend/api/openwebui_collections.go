@@ -830,6 +830,11 @@ func (h *APIHandler) handleOpenWebUITools(w http.ResponseWriter, r *http.Request
 			return
 		}
 
+		if len(parts) >= 2 && parts[1] == "valves" {
+			writeJSON(w, http.StatusOK, map[string]any{})
+			return
+		}
+
 		if len(parts) == 1 && r.Method == http.MethodGet {
 			servers, _ := h.db.GetOpenWebUIToolServers(subdomain)
 			for _, s := range servers {
@@ -837,18 +842,27 @@ func (h *APIHandler) handleOpenWebUITools(w http.ResponseWriter, r *http.Request
 					var info map[string]any
 					_ = json.Unmarshal([]byte(s.InfoJSON), &info)
 					desc := ""
+					var specs []any
 					if info != nil {
 						if d, ok := info["description"].(string); ok {
 							desc = d
 						}
+						if sp, ok := info["specs"].([]any); ok {
+							specs = sp
+						}
+					}
+					if specs == nil {
+						specs = []any{}
 					}
 					writeJSON(w, http.StatusOK, map[string]any{
-						"id":         "server:mcp:" + s.ID,
-						"user_id":    u.ID,
-						"name":       s.Name,
-						"meta":       map[string]any{"description": desc},
-						"updated_at": s.UpdatedAt,
-						"created_at": s.CreatedAt,
+						"id":           "server:mcp:" + s.ID,
+						"user_id":      u.ID,
+						"name":         s.Name,
+						"meta":         map[string]any{"description": desc},
+						"specs":        specs,
+						"write_access": true,
+						"updated_at":   s.UpdatedAt,
+						"created_at":   s.CreatedAt,
 					})
 					return
 				}
@@ -865,6 +879,15 @@ func (h *APIHandler) handleOpenWebUITools(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// Also handle DELETE /api/v1/tools/:id
+	if r.Method == http.MethodDelete && path != "" && !strings.Contains(path, "/") {
+		cleanID := strings.TrimPrefix(path, "server:mcp:")
+		_ = h.db.DeleteOpenWebUIToolServer(subdomain, cleanID)
+		_ = h.db.DeleteOpenWebUIToolServer(subdomain, path)
+		writeJSON(w, http.StatusOK, map[string]any{"status": true})
+		return
+	}
+
 	servers, _ := h.db.GetOpenWebUIToolServers(subdomain)
 	var tools []map[string]any
 	for _, s := range servers {
@@ -876,18 +899,27 @@ func (h *APIHandler) handleOpenWebUITools(w http.ResponseWriter, r *http.Request
 		var info map[string]any
 		_ = json.Unmarshal([]byte(s.InfoJSON), &info)
 		desc := ""
+		var specs []any
 		if info != nil {
 			if d, ok := info["description"].(string); ok {
 				desc = d
 			}
+			if sp, ok := info["specs"].([]any); ok {
+				specs = sp
+			}
+		}
+		if specs == nil {
+			specs = []any{}
 		}
 		tools = append(tools, map[string]any{
-			"id":         "server:mcp:" + s.ID,
-			"user_id":    u.ID,
-			"name":       s.Name,
-			"meta":       map[string]any{"description": desc},
-			"updated_at": s.UpdatedAt,
-			"created_at": s.CreatedAt,
+			"id":           "server:mcp:" + s.ID,
+			"user_id":      u.ID,
+			"name":         s.Name,
+			"meta":         map[string]any{"description": desc},
+			"specs":        specs,
+			"write_access": true,
+			"updated_at":   s.UpdatedAt,
+			"created_at":   s.CreatedAt,
 		})
 	}
 	if tools == nil {
@@ -1001,6 +1033,7 @@ func (h *APIHandler) handleOpenWebUIConfigs(w http.ResponseWriter, r *http.Reque
 			}
 			_ = json.Unmarshal(body, &form)
 			now := time.Now().Unix()
+			keptIDs := make(map[string]bool)
 			for _, c := range form.Connections {
 				sID := c.ID
 				if sID == "" {
@@ -1013,6 +1046,7 @@ func (h *APIHandler) handleOpenWebUIConfigs(w http.ResponseWriter, r *http.Reque
 				if sID == "" {
 					sID = uuid.New().String()
 				}
+				keptIDs[sID] = true
 				sName := c.Name
 				if sName == "" && c.Info != nil {
 					if nameVal, ok := c.Info["name"].(string); ok && nameVal != "" {
@@ -1042,6 +1076,14 @@ func (h *APIHandler) handleOpenWebUIConfigs(w http.ResponseWriter, r *http.Reque
 					CreatedAt:  now,
 					UpdatedAt:  now,
 				})
+			}
+
+			// Prune any existing server in DB that is not in the kept list
+			existingServers, _ := h.db.GetOpenWebUIToolServers(subdomain)
+			for _, es := range existingServers {
+				if !keptIDs[es.ID] {
+					_ = h.db.DeleteOpenWebUIToolServer(subdomain, es.ID)
+				}
 			}
 			servers, _ := h.db.GetOpenWebUIToolServers(subdomain)
 			var connList []map[string]any

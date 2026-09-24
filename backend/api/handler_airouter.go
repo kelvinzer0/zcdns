@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -761,6 +762,266 @@ func (h *APIHandler) buildOpenWebUIMessages(subdomain, userID, chatID, userMessa
 	return messages
 }
 
+type mcpToolTarget struct {
+	serverURL string
+	apiKey    string
+	toolName  string
+}
+
+type accumulatedToolCall struct {
+	id        string
+	name      string
+	arguments strings.Builder
+}
+
+func (h *APIHandler) resolveMCPToolsForChat(subdomain string, rawToolIDs []interface{}) (openaiTools []map[string]interface{}, antTools []map[string]interface{}, toolMap map[string]mcpToolTarget) {
+	toolMap = make(map[string]mcpToolTarget)
+	if len(rawToolIDs) == 0 {
+		return
+	}
+
+	servers, err := h.db.GetOpenWebUIToolServers(subdomain)
+	if err != nil || len(servers) == 0 {
+		return
+	}
+
+	serverMap := make(map[string]*db.OpenWebUIToolServerDB)
+	for i := range servers {
+		s := &servers[i]
+		serverMap[s.ID] = s
+		serverMap["server:mcp:"+s.ID] = s
+	}
+
+	for _, tidVal := range rawToolIDs {
+		tid, _ := tidVal.(string)
+		if tid == "" {
+			continue
+		}
+		cleanID := strings.TrimPrefix(tid, "server:mcp:")
+		s := serverMap[cleanID]
+		if s == nil {
+			s = serverMap[tid]
+		}
+		if s == nil || s.URL == "" {
+			continue
+		}
+
+		var cfg map[string]any
+		_ = json.Unmarshal([]byte(s.ConfigJSON), &cfg)
+		if enabled, ok := cfg["enable"].(bool); ok && !enabled {
+			continue
+		}
+
+		disabledMap := make(map[string]bool)
+		if dList, ok := cfg["disabled_tools"].([]any); ok {
+			for _, dt := range dList {
+				if dStr, ok := dt.(string); ok {
+					disabledMap[dStr] = true
+				}
+			}
+		}
+
+		// Also check function_name_filter_list if present
+		if filterStr, ok := cfg["function_name_filter_list"].(string); ok && strings.TrimSpace(filterStr) != "" {
+			allowed := strings.Split(filterStr, ",")
+			allowedMap := make(map[string]bool)
+			for _, a := range allowed {
+				allowedMap[strings.TrimSpace(a)] = true
+			}
+			for k := range allowedMap {
+				if !allowedMap[k] {
+					disabledMap[k] = true
+				}
+			}
+		}
+
+		// Fetch tool list from MCP
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		client := NewMCPClient()
+		tools, err := client.ListTools(ctx, s.URL, s.APIKey)
+		cancel()
+
+		// Fallback to cached specs in InfoJSON if network list fails
+		if err != nil || len(tools) == 0 {
+			var info map[string]any
+			_ = json.Unmarshal([]byte(s.InfoJSON), &info)
+			if specs, ok := info["specs"].([]any); ok {
+				for _, sp := range specs {
+					if spMap, ok := sp.(map[string]any); ok {
+						tools = append(tools, spMap)
+					}
+				}
+			}
+		}
+
+		for _, t := range tools {
+			name, _ := t["name"].(string)
+			if name == "" || disabledMap[name] {
+				continue
+			}
+			desc, _ := t["description"].(string)
+			schema, _ := t["inputSchema"].(map[string]any)
+			if schema == nil {
+				schema = map[string]any{"type": "object", "properties": map[string]any{}}
+			}
+
+			toolMap[name] = mcpToolTarget{
+				serverURL: s.URL,
+				apiKey:    s.APIKey,
+				toolName:  name,
+			}
+
+			openaiTools = append(openaiTools, map[string]interface{}{
+				"type": "function",
+				"function": map[string]interface{}{
+					"name":        name,
+					"description": desc,
+					"parameters":  schema,
+				},
+			})
+
+			antTools = append(antTools, map[string]interface{}{
+				"name":         name,
+				"description":  desc,
+				"input_schema": schema,
+			})
+		}
+	}
+	return
+}
+
+func (h *APIHandler) streamFollowUpTurn(
+	upstreamURL, apiKey, model string,
+	isAnthropic bool,
+	messages []map[string]interface{},
+	accumulatedContent *strings.Builder,
+	emitEvent func(string, interface{}),
+) error {
+	var payloadBytes []byte
+	if isAnthropic {
+		var antMessages []map[string]interface{}
+		sysPrompt := ""
+		for _, m := range messages {
+			if m["role"] == "system" {
+				if s, ok := m["content"].(string); ok {
+					sysPrompt = s
+				}
+			} else {
+				antMessages = append(antMessages, m)
+			}
+		}
+		antBody := map[string]interface{}{
+			"model":      model,
+			"messages":   antMessages,
+			"max_tokens": 4096,
+			"stream":     true,
+		}
+		if sysPrompt != "" {
+			antBody["system"] = sysPrompt
+		}
+		payloadBytes, _ = json.Marshal(antBody)
+	} else {
+		openaiBody := map[string]interface{}{
+			"model":    model,
+			"messages": messages,
+			"stream":   true,
+		}
+		payloadBytes, _ = json.Marshal(openaiBody)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, upstreamURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Accept-Encoding", "identity")
+
+	if isAnthropic {
+		req.Header.Set("x-api-key", apiKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+	} else {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	client := &http.Client{
+		Timeout:   300 * time.Second,
+		Transport: &http.Transport{DisableCompression: true},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		errBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("follow-up upstream error (%d): %s", resp.StatusCode, string(errBytes))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, rErr := reader.ReadString('\n')
+		line = strings.TrimSpace(line)
+		if line != "" && strings.HasPrefix(line, "data: ") {
+			dataStr := strings.TrimPrefix(line, "data: ")
+			if dataStr == "[DONE]" {
+				break
+			}
+			if isAnthropic {
+				var antChunk struct {
+					Type  string `json:"type"`
+					Delta struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					} `json:"delta"`
+				}
+				if json.Unmarshal([]byte(dataStr), &antChunk) == nil && antChunk.Delta.Text != "" {
+					accumulatedContent.WriteString(antChunk.Delta.Text)
+					emitEvent("chat:completion", map[string]interface{}{
+						"choices": []interface{}{
+							map[string]interface{}{
+								"delta": map[string]interface{}{
+									"content": antChunk.Delta.Text,
+								},
+							},
+						},
+						"done": false,
+					})
+				}
+			} else {
+				var oaiChunk struct {
+					Choices []struct {
+						Delta struct {
+							Content string `json:"content"`
+						} `json:"delta"`
+					} `json:"choices"`
+				}
+				if json.Unmarshal([]byte(dataStr), &oaiChunk) == nil && len(oaiChunk.Choices) > 0 {
+					text := oaiChunk.Choices[0].Delta.Content
+					if text != "" {
+						accumulatedContent.WriteString(text)
+						emitEvent("chat:completion", map[string]interface{}{
+							"choices": []interface{}{
+								map[string]interface{}{
+									"delta": map[string]interface{}{
+										"content": text,
+									},
+								},
+							},
+							"done": false,
+						})
+					}
+				}
+			}
+		}
+		if rErr != nil {
+			break
+		}
+	}
+	return nil
+}
+
 func (h *APIHandler) streamTargetToSocket(
 	subdomain, userID, chatID, assistantMessageID, folderID string,
 	target proxyTarget,
@@ -778,6 +1039,13 @@ func (h *APIHandler) streamTargetToSocket(
 	}
 	upstreamURL := buildUpstreamURL(target.provider, apiType, baseURL, "openai")
 	isAnthropic := isAnthropicTarget(target)
+
+	// Resolve MCP tools from reqBody tool_ids
+	var toolIDs []interface{}
+	if tList, ok := reqBody["tool_ids"].([]interface{}); ok {
+		toolIDs = tList
+	}
+	oaiTools, antTools, mcpToolMap := h.resolveMCPToolsForChat(subdomain, toolIDs)
 
 	var payloadBytes []byte
 	if isAnthropic {
@@ -801,12 +1069,18 @@ func (h *APIHandler) streamTargetToSocket(
 		if sysPrompt != "" {
 			antBody["system"] = sysPrompt
 		}
+		if len(antTools) > 0 {
+			antBody["tools"] = antTools
+		}
 		payloadBytes, _ = json.Marshal(antBody)
 	} else {
 		openaiBody := map[string]interface{}{
 			"model":    target.model,
 			"messages": messages,
 			"stream":   true,
+		}
+		if len(oaiTools) > 0 {
+			openaiBody["tools"] = oaiTools
 		}
 		if params, ok := reqBody["params"].(map[string]interface{}); ok {
 			for _, k := range []string{"temperature", "top_p", "max_tokens", "frequency_penalty", "presence_penalty"} {
@@ -853,6 +1127,7 @@ func (h *APIHandler) streamTargetToSocket(
 	reader := bufio.NewReader(resp.Body)
 	var accumulatedContent strings.Builder
 	inReasoning := false
+	pendingToolCalls := make(map[int]*accumulatedToolCall)
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -894,6 +1169,15 @@ func (h *APIHandler) streamTargetToSocket(
 							Delta struct {
 								Content          string `json:"content"`
 								ReasoningContent string `json:"reasoning_content"`
+								ToolCalls        []struct {
+									Index    int    `json:"index"`
+									ID       string `json:"id"`
+									Type     string `json:"type"`
+									Function struct {
+										Name      string `json:"name"`
+										Arguments string `json:"arguments"`
+									} `json:"function"`
+								} `json:"tool_calls"`
 							} `json:"delta"`
 						} `json:"choices"`
 					}
@@ -930,6 +1214,27 @@ func (h *APIHandler) streamTargetToSocket(
 								"done": false,
 							})
 						}
+
+						// Accumulate any streamed tool calls
+						if len(delta.ToolCalls) > 0 {
+							for _, tc := range delta.ToolCalls {
+								call, exists := pendingToolCalls[tc.Index]
+								if !exists {
+									call = &accumulatedToolCall{
+										id:   tc.ID,
+										name: tc.Function.Name,
+									}
+									pendingToolCalls[tc.Index] = call
+								}
+								if tc.ID != "" {
+									call.id = tc.ID
+								}
+								if tc.Function.Name != "" {
+									call.name = tc.Function.Name
+								}
+								call.arguments.WriteString(tc.Function.Arguments)
+							}
+						}
 					}
 				}
 			}
@@ -955,6 +1260,76 @@ func (h *APIHandler) streamTargetToSocket(
 			},
 			"done": false,
 		})
+	}
+
+	// If the model invoked tool calls, execute them and run follow-up synthesis
+	if len(pendingToolCalls) > 0 && len(mcpToolMap) > 0 {
+		var executedToolMessages []map[string]interface{}
+		var assistantToolCalls []map[string]interface{}
+
+		for idx := 0; idx < len(pendingToolCalls); idx++ {
+			tc, ok := pendingToolCalls[idx]
+			if !ok {
+				continue
+			}
+			target, exists := mcpToolMap[tc.name]
+			if !exists {
+				continue
+			}
+
+			// Announce tool execution to chat UI
+			notice := fmt.Sprintf("\n> ⚡ *Menjalankan tool `%s`...*\n\n", tc.name)
+			accumulatedContent.WriteString(notice)
+			emitEvent("chat:completion", map[string]interface{}{
+				"choices": []interface{}{
+					map[string]interface{}{
+						"delta": map[string]interface{}{
+							"content": notice,
+						},
+					},
+				},
+				"done": false,
+			})
+
+			var argsObj any
+			_ = json.Unmarshal([]byte(tc.arguments.String()), &argsObj)
+
+			execCtx, execCancel := context.WithTimeout(context.Background(), 60*time.Second)
+			mcpClient := NewMCPClient()
+			rawRes, tErr := mcpClient.ExecuteTool(execCtx, target.serverURL, target.apiKey, target.toolName, argsObj)
+			execCancel()
+
+			resBytes, _ := json.Marshal(rawRes)
+			resStr := string(resBytes)
+			if tErr != nil {
+				resStr = "Error: " + tErr.Error()
+			}
+
+			assistantToolCalls = append(assistantToolCalls, map[string]interface{}{
+				"id":   tc.id,
+				"type": "function",
+				"function": map[string]interface{}{
+					"name":      tc.name,
+					"arguments": tc.arguments.String(),
+				},
+			})
+
+			executedToolMessages = append(executedToolMessages, map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": tc.id,
+				"content":      resStr,
+			})
+		}
+
+		if len(executedToolMessages) > 0 {
+			followUpMessages := append(messages, map[string]interface{}{
+				"role":       "assistant",
+				"tool_calls": assistantToolCalls,
+			})
+			followUpMessages = append(followUpMessages, executedToolMessages...)
+
+			_ = h.streamFollowUpTurn(upstreamURL, apiKey, target.model, isAnthropic, followUpMessages, &accumulatedContent, emitEvent)
+		}
 	}
 
 	// 1. Emit completion

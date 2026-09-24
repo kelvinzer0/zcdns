@@ -696,5 +696,70 @@ func TestOpenWebUIMCPToolServers(t *testing.T) {
 	if callResp["content"] == nil {
 		t.Fatalf("expected tool content result, got %v", callResp)
 	}
+
+	// 6. Test valves endpoint: GET /api/v1/tools/id/server:mcp:bridge-1/valves
+	reqValves := httptest.NewRequest(http.MethodGet, "/api/v1/tools/id/server:mcp:bridge-1/valves", nil)
+	reqValves.Header.Set("Authorization", "Bearer test-token-1")
+	recValves := httptest.NewRecorder()
+	handler.handleOpenWebUITools(recValves, reqValves)
+	if recValves.Code != http.StatusOK {
+		t.Fatalf("expected 200 on valves, got %d: %s", recValves.Code, recValves.Body.String())
+	}
+
+	// 7. Test resolveMCPToolsForChat with disabled_tools
+	// Update server to disable 'fetch_page'
+	disabledSave := map[string]any{
+		"TOOL_SERVER_CONNECTIONS": []map[string]any{
+			{
+				"id":        "bridge-1",
+				"name":      "Browser Bridge Go",
+				"type":      "mcp",
+				"url":       mockMCPServer.URL + "/mcp?room=testroom",
+				"auth_type": "none",
+				"config": map[string]any{
+					"enable":         true,
+					"disabled_tools": []string{"fetch_page"},
+				},
+				"info": map[string]any{"id": "bridge-1", "name": "Browser Bridge Go"},
+			},
+		},
+	}
+	dBody, _ := json.Marshal(disabledSave)
+	reqDSave := httptest.NewRequest(http.MethodPost, "/api/v1/configs/tool_servers", bytes.NewReader(dBody))
+	reqDSave.Header.Set("Authorization", "Bearer test-token-1")
+	recDSave := httptest.NewRecorder()
+	handler.handleOpenWebUIConfigs(recDSave, reqDSave)
+
+	oaiTools, _, _ := handler.resolveMCPToolsForChat("test-subdomain", []interface{}{"server:mcp:bridge-1"})
+	if len(oaiTools) != 0 {
+		t.Fatalf("expected fetch_page to be disabled, got %v", oaiTools)
+	}
+
+	// 8. Delete tool server via saving empty TOOL_SERVER_CONNECTIONS
+	emptyPayload := map[string]any{
+		"TOOL_SERVER_CONNECTIONS": []map[string]any{},
+	}
+	emptyBody, _ := json.Marshal(emptyPayload)
+	reqEmptySave := httptest.NewRequest(http.MethodPost, "/api/v1/configs/tool_servers", bytes.NewReader(emptyBody))
+	reqEmptySave.Header.Set("Authorization", "Bearer test-token-1")
+	recEmptySave := httptest.NewRecorder()
+	handler.handleOpenWebUIConfigs(recEmptySave, reqEmptySave)
+
+	if recEmptySave.Code != http.StatusOK {
+		t.Fatalf("expected 200 on empty save, got %d: %s", recEmptySave.Code, recEmptySave.Body.String())
+	}
+
+	// Verify server was pruned
+	reqGetAfter := httptest.NewRequest(http.MethodGet, "/api/v1/configs/tool_servers", nil)
+	reqGetAfter.Header.Set("Authorization", "Bearer test-token-1")
+	recGetAfter := httptest.NewRecorder()
+	handler.handleOpenWebUIConfigs(recGetAfter, reqGetAfter)
+	var getAfterResp struct {
+		Connections []map[string]any `json:"TOOL_SERVER_CONNECTIONS"`
+	}
+	_ = json.Unmarshal(recGetAfter.Body.Bytes(), &getAfterResp)
+	if len(getAfterResp.Connections) != 0 {
+		t.Fatalf("expected 0 connections after pruning, got %v", getAfterResp.Connections)
+	}
 }
 

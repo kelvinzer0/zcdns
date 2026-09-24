@@ -86,8 +86,16 @@
 	};
 
 	const deleteToolServer = async (serverId: string) => {
-		let updated = toolServers.filter((s) => (s.id || s.info?.id) !== serverId);
+		const cleanId = (serverId || '').replace('server:mcp:', '');
+		let updated = toolServers.filter((s) => {
+			const sId = s.id || s.info?.id || '';
+			return sId !== cleanId && sId !== serverId;
+		});
 		await saveToolServers(updated);
+		await deleteToolById(localStorage.token, 'server:mcp:' + cleanId).catch(() => null);
+		await deleteToolById(localStorage.token, cleanId).catch(() => null);
+		await fetchToolServers();
+		await init();
 	};
 
 	const toggleToolServer = async (server: any, enabled: boolean) => {
@@ -240,6 +248,7 @@
 
 		if (res) {
 			toast.success($i18n.t('Tool deleted successfully'));
+			await fetchToolServers();
 			await init();
 		}
 	};
@@ -399,6 +408,13 @@
 									<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 uppercase tracking-wider">
 										{server.type === 'mcp' ? 'MCP (SSE)' : (server.type || 'MCP')}
 									</span>
+									{#if Array.isArray(server.info?.specs) && server.info.specs.length > 0}
+										{@const disabledCount = Array.isArray(server.config?.disabled_tools) ? server.config.disabled_tools.length : 0}
+										{@const activeCount = Math.max(0, server.info.specs.length - disabledCount)}
+										<span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+											{activeCount}/{server.info.specs.length} tools aktif
+										</span>
+									{/if}
 								</div>
 								<div class="text-xs font-mono text-gray-400 dark:text-gray-500 truncate max-w-md">
 									{server.url}
