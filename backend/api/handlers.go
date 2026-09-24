@@ -86,6 +86,9 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/airouter/config", h.requireSubdomain(h.handleSaveAIRouterConfig))
 
 	// AI Router - Connections (multiple API keys per provider)
+	mux.HandleFunc("POST /api/airouter/connections/test", h.requireSubdomain(h.handleTestAIRouterConnection))
+	mux.HandleFunc("POST /api/airouter/connections/models", h.requireSubdomain(h.handleFetchAIRouterModels))
+	mux.HandleFunc("POST /api/airouter/connections/{id}/models", h.requireSubdomain(h.handleUpdateConnectionModels))
 	mux.HandleFunc("POST /api/airouter/connections", h.requireSubdomain(h.handleAddAIRouterConnection))
 	mux.HandleFunc("DELETE /api/airouter/connections/{id}", h.requireSubdomain(h.handleDeleteAIRouterConnection))
 

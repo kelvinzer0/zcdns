@@ -440,22 +440,35 @@ func (h *APIHandler) handleOpenWebUIModels(w http.ResponseWriter, r *http.Reques
 			if c.Status != "active" {
 				continue
 			}
-			switch c.Provider {
-			case "anthropic":
-				addModel("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet", "anthropic")
-				addModel("claude-3-5-haiku-20241022", "Claude 3.5 Haiku", "anthropic")
-			case "groq":
-				addModel("groq/llama-3.3-70b-versatile", "Llama 3.3 70B (Groq)", "groq")
-				addModel("groq/llama-3.1-8b-instant", "Llama 3.1 8B (Groq)", "groq")
-			case "together":
-				addModel("meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", "Llama 3.1 70B Turbo", "together")
-			case "openrouter":
-				addModel("openrouter/auto", "OpenRouter Auto", "openrouter")
-			default: // openai or custom
-				addModel("gpt-4o", "GPT-4o", "openai")
-				addModel("gpt-4o-mini", "GPT-4o Mini", "openai")
-				addModel("o1", "o1", "openai")
-				addModel("o3-mini", "o3-mini", "openai")
+			var customModels []string
+			if c.ModelsJSON != "" && c.ModelsJSON != "[]" {
+				_ = json.Unmarshal([]byte(c.ModelsJSON), &customModels)
+			}
+			if len(customModels) > 0 {
+				for _, m := range customModels {
+					addModel(m, m+" ("+c.Name+")", c.Provider)
+				}
+			} else {
+				switch c.Provider {
+				case "anthropic":
+					addModel("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet", "anthropic")
+					addModel("claude-3-5-haiku-20241022", "Claude 3.5 Haiku", "anthropic")
+				case "groq":
+					addModel("groq/llama-3.3-70b-versatile", "Llama 3.3 70B (Groq)", "groq")
+					addModel("groq/llama-3.1-8b-instant", "Llama 3.1 8B (Groq)", "groq")
+				case "together":
+					addModel("meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", "Llama 3.1 70B Turbo", "together")
+				case "openrouter":
+					addModel("openrouter/auto", "OpenRouter Auto", "openrouter")
+				case "deepseek":
+					addModel("deepseek-chat", "DeepSeek V3", "deepseek")
+					addModel("deepseek-reasoner", "DeepSeek R1", "deepseek")
+				default: // openai or custom
+					addModel("gpt-4o", "GPT-4o", "openai")
+					addModel("gpt-4o-mini", "GPT-4o Mini", "openai")
+					addModel("o1", "o1", "openai")
+					addModel("o3-mini", "o3-mini", "openai")
+				}
 			}
 		}
 	}

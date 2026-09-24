@@ -16,15 +16,17 @@ type AIRouterConfig struct {
 // ── Provider Connections (multiple keys per provider) ─────────────────────────
 
 type AIRouterConnection struct {
-	ID        int64     `json:"id"`
-	Subdomain string    `json:"subdomain"`
-	Provider  string    `json:"provider"`   // "openai" | "anthropic" | "groq" | "together" | "custom"
-	Name      string    `json:"name"`       // friendly label e.g. "Personal OpenAI"
-	APIKey    string    `json:"api_key"`
-	BaseURL   string    `json:"base_url"`   // only for custom providers
-	Status    string    `json:"status"`     // "active" | "rate_limited" | "error"
+	ID               int64      `json:"id"`
+	Subdomain        string     `json:"subdomain"`
+	Provider         string     `json:"provider"`         // "openai" | "anthropic" | "groq" | "together" | "openrouter" | "deepseek" | "custom"
+	APIType          string     `json:"api_type"`          // "openai" | "anthropic"
+	Name             string     `json:"name"`             // friendly label e.g. "Personal OpenAI"
+	APIKey           string     `json:"api_key"`
+	BaseURL          string     `json:"base_url"`         // custom provider upstream URL
+	ModelsJSON       string     `json:"models_json"`       // JSON array of available models e.g. ["gpt-4o"]
+	Status           string     `json:"status"`           // "active" | "rate_limited" | "error"
 	RateLimitedUntil *time.Time `json:"rate_limited_until,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	CreatedAt        time.Time  `json:"created_at"`
 }
 
 // ── Combos (named group of models with strategy) ──────────────────────────────
@@ -92,7 +94,7 @@ func (d *DB) UpdateAIRouterConfig(subdomain, inputFormat, outputFormat string) e
 
 // Connections
 func (d *DB) GetAIRouterConnections(subdomain string) ([]AIRouterConnection, error) {
-	rows, err := d.conn.Query(`SELECT id, subdomain, provider, name, api_key, base_url, status, rate_limited_until, created_at FROM ai_router_connections WHERE subdomain = ? ORDER BY provider, name`, subdomain)
+	rows, err := d.conn.Query(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(models_json, '[]'), status, rate_limited_until, created_at FROM ai_router_connections WHERE subdomain = ? ORDER BY provider, name`, subdomain)
 	if err != nil {
 		return nil, err
 	}
@@ -100,8 +102,8 @@ func (d *DB) GetAIRouterConnections(subdomain string) ([]AIRouterConnection, err
 	var conns []AIRouterConnection
 	for rows.Next() {
 		var c AIRouterConnection
-		if err := rows.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.Name, &c.APIKey, &c.BaseURL, &c.Status, &c.RateLimitedUntil, &c.CreatedAt); err != nil {
-			return nil, err
+		if err := rows.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.CreatedAt); err != nil {
+			continue
 		}
 		// Mask API key
 		if len(c.APIKey) > 8 {
@@ -109,16 +111,45 @@ func (d *DB) GetAIRouterConnections(subdomain string) ([]AIRouterConnection, err
 		}
 		conns = append(conns, c)
 	}
+	if conns == nil {
+		conns = []AIRouterConnection{}
+	}
 	return conns, nil
 }
 
+func (d *DB) GetAIRouterConnectionByID(subdomain string, id int64) (*AIRouterConnection, error) {
+	row := d.conn.QueryRow(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(models_json, '[]'), status, rate_limited_until, created_at FROM ai_router_connections WHERE subdomain = ? AND id = ?`, subdomain, id)
+	var c AIRouterConnection
+	if err := row.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
 func (d *DB) AddAIRouterConnection(conn *AIRouterConnection) (int64, error) {
-	res, err := d.conn.Exec(`INSERT INTO ai_router_connections (subdomain, provider, name, api_key, base_url, status) VALUES (?, ?, ?, ?, ?, 'active')`,
-		conn.Subdomain, conn.Provider, conn.Name, conn.APIKey, conn.BaseURL)
+	apiType := conn.APIType
+	if apiType == "" {
+		if conn.Provider == "anthropic" {
+			apiType = "anthropic"
+		} else {
+			apiType = "openai"
+		}
+	}
+	modelsJSON := conn.ModelsJSON
+	if modelsJSON == "" {
+		modelsJSON = "[]"
+	}
+	res, err := d.conn.Exec(`INSERT INTO ai_router_connections (subdomain, provider, api_type, name, api_key, base_url, models_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
+		conn.Subdomain, conn.Provider, apiType, conn.Name, conn.APIKey, conn.BaseURL, modelsJSON)
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+func (d *DB) UpdateAIRouterConnectionModels(subdomain string, id int64, modelsJSON string) error {
+	_, err := d.conn.Exec(`UPDATE ai_router_connections SET models_json=? WHERE id=? AND subdomain=?`, modelsJSON, id, subdomain)
+	return err
 }
 
 func (d *DB) DeleteAIRouterConnection(subdomain string, id int64) error {
@@ -134,12 +165,12 @@ func (d *DB) GetActiveAIRouterConnection(subdomain, provider string, excludeIDs 
 		excludeClause += " AND id != ?"
 		args = append(args, id)
 	}
-	row := d.conn.QueryRow(`SELECT id, subdomain, provider, name, api_key, base_url, status, rate_limited_until, created_at
+	row := d.conn.QueryRow(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(models_json, '[]'), status, rate_limited_until, created_at
 		FROM ai_router_connections
 		WHERE subdomain=? AND provider=? AND status='active'`+excludeClause+`
 		ORDER BY RANDOM() LIMIT 1`, args...)
 	var c AIRouterConnection
-	if err := row.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.Name, &c.APIKey, &c.BaseURL, &c.Status, &c.RateLimitedUntil, &c.CreatedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &c, nil

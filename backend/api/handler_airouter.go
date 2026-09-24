@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"zcdns-backend/db"
 )
@@ -115,6 +116,9 @@ func detectFormat(path string) string {
 
 // providerBaseURL returns the upstream base URL for a given provider
 func providerBaseURL(provider, customBaseURL string) string {
+	if customBaseURL != "" {
+		return strings.TrimRight(customBaseURL, "/")
+	}
 	switch provider {
 	case "anthropic":
 		return "https://api.anthropic.com"
@@ -124,8 +128,8 @@ func providerBaseURL(provider, customBaseURL string) string {
 		return "https://api.together.xyz"
 	case "openrouter":
 		return "https://openrouter.ai/api"
-	case "custom":
-		return strings.TrimRight(customBaseURL, "/")
+	case "deepseek":
+		return "https://api.deepseek.com"
 	default: // openai
 		return "https://api.openai.com"
 	}
@@ -136,11 +140,32 @@ func isAnthropicProvider(provider string) bool {
 	return provider == "anthropic"
 }
 
+// isAnthropicTarget returns true if target connection uses Anthropic protocol
+func isAnthropicTarget(target proxyTarget) bool {
+	if target.conn != nil && target.conn.APIType != "" {
+		return target.conn.APIType == "anthropic"
+	}
+	return isAnthropicProvider(target.provider)
+}
+
 // buildUpstreamURL builds the full upstream URL
-func buildUpstreamURL(provider, baseURL, inputFormat string) string {
+func buildUpstreamURL(provider, apiType, baseURL, inputFormat string) string {
 	base := providerBaseURL(provider, baseURL)
-	if isAnthropicProvider(provider) {
+	isAnthropic := (apiType == "anthropic" || (apiType == "" && isAnthropicProvider(provider)))
+	if isAnthropic {
+		if strings.HasSuffix(base, "/v1/messages") || strings.HasSuffix(base, "/messages") {
+			return base
+		}
+		if strings.HasSuffix(base, "/v1") {
+			return base + "/messages"
+		}
 		return base + "/v1/messages"
+	}
+	if strings.HasSuffix(base, "/v1/chat/completions") || strings.HasSuffix(base, "/chat/completions") {
+		return base
+	}
+	if strings.HasSuffix(base, "/v1") {
+		return base + "/chat/completions"
 	}
 	return base + "/v1/chat/completions"
 }
@@ -280,14 +305,23 @@ func (h *APIHandler) resolveTargets(subdomain, modelStr, endpoint string, bodyBy
 
 // forwardRequest sends one HTTP request to an upstream provider and streams/copies back
 func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget, inputFormat, outputFormat string) error {
-	upstreamURL := buildUpstreamURL(target.provider, target.conn.BaseURL, inputFormat)
+	apiType := ""
+	baseURL := ""
+	apiKey := ""
+	if target.conn != nil {
+		apiType = target.conn.APIType
+		baseURL = target.conn.BaseURL
+		apiKey = target.conn.APIKey
+	}
+	upstreamURL := buildUpstreamURL(target.provider, apiType, baseURL, inputFormat)
+	isAnthropic := isAnthropicTarget(target)
 
 	// Adjust model in body
 	var reqBody map[string]interface{}
 	json.Unmarshal(bodyBytes, &reqBody)
 	reqBody["model"] = target.model
 	// Remove anthropic-only fields if going to openai
-	if !isAnthropicProvider(target.provider) {
+	if !isAnthropic {
 		delete(reqBody, "max_tokens")
 		if _, ok := reqBody["messages"]; !ok {
 			reqBody["messages"] = []interface{}{}
@@ -300,11 +334,11 @@ func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget,
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if isAnthropicProvider(target.provider) {
-		req.Header.Set("x-api-key", target.conn.APIKey)
+	if isAnthropic {
+		req.Header.Set("x-api-key", apiKey)
 		req.Header.Set("anthropic-version", "2023-06-01")
 	} else {
-		req.Header.Set("Authorization", "Bearer "+target.conn.APIKey)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
 	client := &http.Client{}
@@ -512,6 +546,200 @@ func (h *APIHandler) handleDeleteAIRouterConnection(w http.ResponseWriter, r *ht
 	}
 	h.db.DeleteAIRouterConnection(subdomain, id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+type ConnectionTestRequest struct {
+	ID       int64  `json:"id,omitempty"`
+	Provider string `json:"provider"`
+	APIType  string `json:"api_type"`
+	APIKey   string `json:"api_key"`
+	BaseURL  string `json:"base_url"`
+}
+
+func testProviderConnection(provider, apiType, apiKey, customBaseURL string) (bool, int64, []string, string) {
+	start := time.Now()
+	baseURL := providerBaseURL(provider, customBaseURL)
+	isAnthropic := (apiType == "anthropic" || (apiType == "" && provider == "anthropic"))
+
+	client := &http.Client{Timeout: 12 * time.Second}
+	var testURL string
+	var httpReq *http.Request
+	var err error
+
+	if isAnthropic {
+		testURL = strings.TrimRight(baseURL, "/") + "/v1/models"
+		if strings.HasSuffix(baseURL, "/v1") {
+			testURL = strings.TrimRight(baseURL, "/") + "/models"
+		}
+		httpReq, err = http.NewRequest(http.MethodGet, testURL, nil)
+		if err != nil {
+			return false, time.Since(start).Milliseconds(), nil, err.Error()
+		}
+		httpReq.Header.Set("x-api-key", apiKey)
+		httpReq.Header.Set("anthropic-version", "2023-06-01")
+	} else {
+		// OpenAI compatible
+		testURL = strings.TrimRight(baseURL, "/") + "/v1/models"
+		if strings.HasSuffix(baseURL, "/v1") {
+			testURL = strings.TrimRight(baseURL, "/") + "/models"
+		}
+		httpReq, err = http.NewRequest(http.MethodGet, testURL, nil)
+		if err != nil {
+			return false, time.Since(start).Milliseconds(), nil, err.Error()
+		}
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := client.Do(httpReq)
+	latency := time.Since(start).Milliseconds()
+	if err != nil {
+		return false, latency, nil, fmt.Sprintf("Network connection error to %s: %v", baseURL, err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return false, latency, nil, fmt.Sprintf("Authentication failed (%d): Invalid API key", resp.StatusCode)
+	}
+
+	if resp.StatusCode >= 400 {
+		return false, latency, nil, fmt.Sprintf("Upstream returned HTTP %d: %s", resp.StatusCode, string(respBytes))
+	}
+
+	// Parse models if available
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(respBytes, &result)
+
+	var models []string
+	for _, m := range result.Data {
+		if m.ID != "" {
+			models = append(models, m.ID)
+		}
+	}
+	sort.Strings(models)
+
+	msg := "Connected successfully!"
+	if len(models) > 0 {
+		msg = fmt.Sprintf("Connected successfully! Found %d available models.", len(models))
+	}
+
+	return true, latency, models, msg
+}
+
+func (h *APIHandler) handleTestAIRouterConnection(w http.ResponseWriter, r *http.Request, subdomain string) {
+	var body ConnectionTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if body.ID > 0 && (body.APIKey == "" || strings.Contains(body.APIKey, "...")) {
+		conn, err := h.db.GetAIRouterConnectionByID(subdomain, body.ID)
+		if err == nil && conn != nil {
+			body.APIKey = conn.APIKey
+			if body.Provider == "" {
+				body.Provider = conn.Provider
+			}
+			if body.APIType == "" {
+				body.APIType = conn.APIType
+			}
+			if body.BaseURL == "" {
+				body.BaseURL = conn.BaseURL
+			}
+		}
+	}
+
+	if body.APIKey == "" {
+		writeJSONError(w, http.StatusBadRequest, "API Key is required to test connection")
+		return
+	}
+
+	success, latency, models, msg := testProviderConnection(body.Provider, body.APIType, body.APIKey, body.BaseURL)
+	if !success {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success":    false,
+			"latency_ms": latency,
+			"error":      msg,
+		})
+		return
+	}
+
+	if body.ID > 0 && len(models) > 0 {
+		mJSON, _ := json.Marshal(models)
+		_ = h.db.UpdateAIRouterConnectionModels(subdomain, body.ID, string(mJSON))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":    true,
+		"latency_ms": latency,
+		"models":     models,
+		"message":    msg,
+	})
+}
+
+func (h *APIHandler) handleFetchAIRouterModels(w http.ResponseWriter, r *http.Request, subdomain string) {
+	var body ConnectionTestRequest
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	if body.ID > 0 && (body.APIKey == "" || strings.Contains(body.APIKey, "...")) {
+		conn, err := h.db.GetAIRouterConnectionByID(subdomain, body.ID)
+		if err == nil && conn != nil {
+			body.APIKey = conn.APIKey
+			if body.Provider == "" {
+				body.Provider = conn.Provider
+			}
+			if body.APIType == "" {
+				body.APIType = conn.APIType
+			}
+			if body.BaseURL == "" {
+				body.BaseURL = conn.BaseURL
+			}
+		}
+	}
+
+	success, _, models, msg := testProviderConnection(body.Provider, body.APIType, body.APIKey, body.BaseURL)
+	if !success {
+		writeJSONError(w, http.StatusBadRequest, msg)
+		return
+	}
+
+	if body.ID > 0 && len(models) > 0 {
+		mJSON, _ := json.Marshal(models)
+		_ = h.db.UpdateAIRouterConnectionModels(subdomain, body.ID, string(mJSON))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"models": models,
+	})
+}
+
+func (h *APIHandler) handleUpdateConnectionModels(w http.ResponseWriter, r *http.Request, subdomain string) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	var body struct {
+		Models []string `json:"models"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	modelsJSON, _ := json.Marshal(body.Models)
+	if err := h.db.UpdateAIRouterConnectionModels(subdomain, id, string(modelsJSON)); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "models": body.Models})
 }
 
 // ── Combo CRUD ────────────────────────────────────────────────────────────────
