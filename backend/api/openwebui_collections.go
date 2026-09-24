@@ -856,6 +856,13 @@ func (h *APIHandler) handleOpenWebUITools(w http.ResponseWriter, r *http.Request
 			writeJSONError(w, http.StatusNotFound, "Tool not found")
 			return
 		}
+
+		if len(parts) == 1 && r.Method == http.MethodDelete {
+			_ = h.db.DeleteOpenWebUIToolServer(subdomain, cleanID)
+			_ = h.db.DeleteOpenWebUIToolServer(subdomain, toolID)
+			writeJSON(w, http.StatusOK, map[string]any{"status": true})
+			return
+		}
 	}
 
 	servers, _ := h.db.GetOpenWebUIToolServers(subdomain)

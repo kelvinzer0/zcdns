@@ -37,10 +37,11 @@
 
 	export let direct = false;
 	export let connection: any = null;
+	export let defaultType = 'mcp';
 
 	let inputElement = null;
 
-	let type = 'openapi'; // 'openapi', 'mcp'
+	let type = 'mcp'; // 'mcp', 'openapi'
 
 	let url = '';
 
@@ -444,12 +445,13 @@
 		enable = true;
 		functionNameFilterList = '';
 		accessGrants = [];
+		type = defaultType;
 	};
 
 	const init = () => {
 		forwardCookies = connection?.forward_cookies ?? false;
 		if (connection) {
-			type = connection?.type ?? 'openapi';
+			type = connection?.type ?? defaultType;
 			url = connection.url;
 
 			spec_type = connection?.spec_type ?? 'url';
@@ -545,24 +547,33 @@
 					}}
 				>
 					<div class="px-1">
-						<div class="flex gap-2 mb-1.5">
+						<div class="flex gap-2 mb-2">
 							<div class="flex w-full justify-between items-center">
-								<div class=" text-xs text-gray-500">{$i18n.t('Type')}</div>
+								<div class=" text-xs text-gray-500 font-medium">{$i18n.t('Protocol / Type')}</div>
 
-								<div class="">
+								<div class="flex gap-1 p-0.5 rounded-lg bg-gray-100 dark:bg-gray-800">
 									<button
 										on:click={() => {
-											type = ['', 'openapi'].includes(type) ? 'mcp' : 'openapi';
+											type = 'mcp';
 										}}
 										type="button"
-										class=" text-xs text-gray-700 dark:text-gray-300 hover:text-blue-500 transition"
+										class="px-2.5 py-1 text-xs font-semibold rounded-md transition {type === 'mcp'
+											? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-xs'
+											: 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'}"
 									>
-										{#if ['', 'openapi'].includes(type)}
-											{$i18n.t('settings.admin.integrations.openApi.label') || 'OpenAPI'}
-										{:else if type === 'mcp'}
-											{$i18n.t('settings.admin.integrations.mcp.label') || 'MCP'}
-											<span class="text-gray-500">({$i18n.t('SSE / Streamable HTTP')})</span>
-										{/if}
+										{$i18n.t('settings.admin.integrations.mcp.label') || 'MCP'} (SSE / HTTP Streamable)
+									</button>
+
+									<button
+										on:click={() => {
+											type = 'openapi';
+										}}
+										type="button"
+										class="px-2.5 py-1 text-xs font-medium rounded-md transition {['', 'openapi'].includes(type)
+											? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-xs'
+											: 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'}"
+									>
+										{$i18n.t('settings.admin.integrations.openApi.label') || 'OpenAPI'}
 									</button>
 								</div>
 							</div>

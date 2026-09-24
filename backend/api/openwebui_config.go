@@ -252,6 +252,7 @@ func (h *APIHandler) handleOpenWebUIConfig(w http.ResponseWriter, r *http.Reques
 			"enable_image_generation":   false,
 			"enable_community_sharing":  false,
 			"enable_websocket":          true,
+			"enable_plugins":            true,
 		},
 		"oauth": map[string]interface{}{
 			"providers": map[string]interface{}{},
