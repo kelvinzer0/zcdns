@@ -152,48 +152,11 @@
 		workspaceActions.set([
 			{
 				id: 'tools-add-mcp',
-				label: $i18n.t('Add MCP Server'),
+				label: 'Add MCP Server',
 				onClick: () => {
 					editingToolServer = null;
 					showAddToolServerModal = true;
 				}
-			},
-			{
-				id: 'tools-new',
-				label: $i18n.t('Create'),
-				href: '/workspace/tools/create'
-			},
-			{
-				id: 'tools-import-link',
-				label: $i18n.t('Import From Link'),
-				onClick: () => {
-					showImportModal = true;
-				},
-				visible: $user?.role === 'admin'
-			},
-			{
-				id: 'tools-import',
-				label: $i18n.t('Import JSON'),
-				onClick: () => toolsImportInputElement?.click(),
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.tools_import
-			},
-			{
-				id: 'tools-export',
-				label: $i18n.t('Export JSON'),
-				onClick: async () => {
-					const _tools = await exportTools(localStorage.token).catch((error) => {
-						toast.error(`${error}`);
-						return null;
-					});
-
-					if (_tools) {
-						let blob = new Blob([JSON.stringify(_tools)], {
-							type: 'application/json'
-						});
-						saveAs(blob, `tools-export-${Date.now()}.json`);
-					}
-				},
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.tools_export
 			}
 		]);
 	}
@@ -253,7 +216,17 @@
 	};
 
 	const openTool = (tool) => {
-		goto(`/workspace/tools/edit?id=${encodeURIComponent(tool.id)}`);
+		const cleanId = tool.id.replace('server:mcp:', '');
+		const server = toolServers.find(
+			(s) => s.id === cleanId || s.id === tool.id || s.info?.id === cleanId || s.info?.id === tool.id
+		);
+		if (server) {
+			editingToolServer = server;
+			showAddToolServerModal = true;
+			return;
+		}
+		editingToolServer = null;
+		showAddToolServerModal = true;
 	};
 
 	const shouldIgnoreRowClick = (target: EventTarget | null) => {
@@ -261,45 +234,25 @@
 	};
 
 	const shareHandler = async (tool) => {
-		const item = await getToolById(localStorage.token, tool.id).catch((error) => {
-			toast.error(`${error}`);
-			return null;
-		});
-
-		// LICENSE covers this Open WebUI Community wordmark.
-		// Do not alter, remove, obscure, or replace it except as LICENSE permits:
-		// https://docs.openwebui.com/license.
-		toast.success($i18n.t('Redirecting you to Open WebUI Community'));
-
-		const url = 'https://openwebui.com';
-
-		const tab = await window.open(`${url}/tools/create`, '_blank');
-
-		const messageHandler = (event) => {
-			if (event.origin !== url) return;
-			if (event.data === 'loaded') {
-				tab.postMessage(JSON.stringify(item), '*');
-				window.removeEventListener('message', messageHandler);
-			}
-		};
-
-		window.addEventListener('message', messageHandler, false);
-		console.log(item);
+		toast.info('MCP Tool: ' + (tool.name || tool.id));
 	};
 
 	const cloneHandler = async (tool) => {
-		const _tool = await getToolById(localStorage.token, tool.id).catch((error) => {
-			toast.error(`${error}`);
-			return null;
-		});
-
-		if (_tool) {
-			sessionStorage.tool = JSON.stringify({
-				..._tool,
-				id: `${_tool.id}_clone`,
-				name: `${_tool.name} (Clone)`
-			});
-			goto('/workspace/tools/create');
+		const cleanId = tool.id.replace('server:mcp:', '');
+		const server = toolServers.find(
+			(s) => s.id === cleanId || s.id === tool.id || s.info?.id === cleanId || s.info?.id === tool.id
+		);
+		if (server) {
+			editingToolServer = {
+				...server,
+				id: '',
+				info: {
+					...(server.info || {}),
+					id: '',
+					name: `${server.name || server.info?.name || 'MCP'} (Copy)`
+				}
+			};
+			showAddToolServerModal = true;
 		}
 	};
 
@@ -339,6 +292,13 @@
 		await fetchToolServers();
 		await init();
 		loaded = true;
+
+		if (typeof window !== 'undefined' && window.location.search.includes('action=add-mcp')) {
+			editingToolServer = null;
+			showAddToolServerModal = true;
+			const cleanUrl = window.location.pathname;
+			window.history.replaceState({}, document.title, cleanUrl);
+		}
 
 		const onKeyDown = (event) => {
 			if (event.key === 'Shift') {
