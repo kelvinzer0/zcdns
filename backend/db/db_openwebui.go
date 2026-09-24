@@ -515,3 +515,229 @@ func (d *DB) GetOpenWebUISubtreeFolderIDs(subdomain, userID, rootFolderID string
 	return result, nil
 }
 
+// ── Files & Uploads ────────────────────────────────────────────────────────────
+
+type OpenWebUIFileDB struct {
+	ID          string `json:"id"`
+	Subdomain   string `json:"subdomain"`
+	UserID      string `json:"user_id"`
+	Hash        string `json:"hash"`
+	Filename    string `json:"filename"`
+	Path        string `json:"path"`
+	ContentType string `json:"content_type"`
+	Size        int64  `json:"size"`
+	DataJSON    string `json:"data_json"`
+	MetaJSON    string `json:"meta_json"`
+	CreatedAt   int64  `json:"created_at"`
+	UpdatedAt   int64  `json:"updated_at"`
+}
+
+func (d *DB) InsertOpenWebUIFile(f OpenWebUIFileDB) error {
+	now := time.Now().Unix()
+	if f.CreatedAt == 0 {
+		f.CreatedAt = now
+	}
+	if f.UpdatedAt == 0 {
+		f.UpdatedAt = now
+	}
+	_, err := d.conn.Exec(`
+		INSERT INTO openwebui_files (
+			id, subdomain, user_id, hash, filename, path, content_type, size, data_json, meta_json, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			filename = excluded.filename,
+			path = excluded.path,
+			content_type = excluded.content_type,
+			size = excluded.size,
+			data_json = excluded.data_json,
+			meta_json = excluded.meta_json,
+			updated_at = excluded.updated_at
+	`, f.ID, f.Subdomain, f.UserID, f.Hash, f.Filename, f.Path, f.ContentType, f.Size, f.DataJSON, f.MetaJSON, f.CreatedAt, f.UpdatedAt)
+	return err
+}
+
+func (d *DB) GetOpenWebUIFileByID(subdomain, id string) (*OpenWebUIFileDB, error) {
+	row := d.conn.QueryRow(`
+		SELECT id, subdomain, user_id, hash, filename, path, content_type, size, data_json, meta_json, created_at, updated_at
+		FROM openwebui_files
+		WHERE subdomain = ? AND id = ?
+	`, subdomain, id)
+
+	var f OpenWebUIFileDB
+	err := row.Scan(&f.ID, &f.Subdomain, &f.UserID, &f.Hash, &f.Filename, &f.Path, &f.ContentType, &f.Size, &f.DataJSON, &f.MetaJSON, &f.CreatedAt, &f.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+func (d *DB) GetOpenWebUIFiles(subdomain, userID string, skip, limit int) ([]OpenWebUIFileDB, int64, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if skip < 0 {
+		skip = 0
+	}
+
+	var total int64
+	countErr := d.conn.QueryRow(`
+		SELECT COUNT(*) FROM openwebui_files WHERE subdomain = ? AND (user_id = ? OR user_id = 'default')
+	`, subdomain, userID).Scan(&total)
+	if countErr != nil {
+		total = 0
+	}
+
+	rows, err := d.conn.Query(`
+		SELECT id, subdomain, user_id, hash, filename, path, content_type, size, data_json, meta_json, created_at, updated_at
+		FROM openwebui_files
+		WHERE subdomain = ? AND (user_id = ? OR user_id = 'default')
+		ORDER BY updated_at DESC
+		LIMIT ? OFFSET ?
+	`, subdomain, userID, limit, skip)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var files []OpenWebUIFileDB
+	for rows.Next() {
+		var f OpenWebUIFileDB
+		if err := rows.Scan(&f.ID, &f.Subdomain, &f.UserID, &f.Hash, &f.Filename, &f.Path, &f.ContentType, &f.Size, &f.DataJSON, &f.MetaJSON, &f.CreatedAt, &f.UpdatedAt); err == nil {
+			files = append(files, f)
+		}
+	}
+	if files == nil {
+		files = []OpenWebUIFileDB{}
+	}
+	return files, total, nil
+}
+
+func (d *DB) SearchOpenWebUIFiles(subdomain, userID, pattern string, skip, limit int) ([]OpenWebUIFileDB, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if skip < 0 {
+		skip = 0
+	}
+	// Convert glob pattern (e.g. *test*) to SQL LIKE pattern (%test%)
+	likePattern := "%"
+	if pattern != "" && pattern != "*" {
+		likePattern = strings.ReplaceAll(pattern, "*", "%")
+		if !strings.HasPrefix(likePattern, "%") && !strings.HasSuffix(likePattern, "%") {
+			likePattern = "%" + likePattern + "%"
+		}
+	}
+
+	rows, err := d.conn.Query(`
+		SELECT id, subdomain, user_id, hash, filename, path, content_type, size, data_json, meta_json, created_at, updated_at
+		FROM openwebui_files
+		WHERE subdomain = ? AND (user_id = ? OR user_id = 'default') AND (filename LIKE ? OR meta_json LIKE ?)
+		ORDER BY updated_at DESC
+		LIMIT ? OFFSET ?
+	`, subdomain, userID, likePattern, likePattern, limit, skip)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var files []OpenWebUIFileDB
+	for rows.Next() {
+		var f OpenWebUIFileDB
+		if err := rows.Scan(&f.ID, &f.Subdomain, &f.UserID, &f.Hash, &f.Filename, &f.Path, &f.ContentType, &f.Size, &f.DataJSON, &f.MetaJSON, &f.CreatedAt, &f.UpdatedAt); err == nil {
+			files = append(files, f)
+		}
+	}
+	if files == nil {
+		files = []OpenWebUIFileDB{}
+	}
+	return files, nil
+}
+
+func (d *DB) CountOpenWebUIFiles(subdomain, userID string) (int64, error) {
+	var count int64
+	err := d.conn.QueryRow(`
+		SELECT COUNT(*) FROM openwebui_files WHERE subdomain = ? AND (user_id = ? OR user_id = 'default')
+	`, subdomain, userID).Scan(&count)
+	return count, err
+}
+
+func (d *DB) UpdateOpenWebUIFileData(subdomain, id, dataJSON string) error {
+	now := time.Now().Unix()
+	_, err := d.conn.Exec(`
+		UPDATE openwebui_files
+		SET data_json = ?, updated_at = ?
+		WHERE subdomain = ? AND id = ?
+	`, dataJSON, now, subdomain, id)
+	return err
+}
+
+func (d *DB) UpdateOpenWebUIFileName(subdomain, id, filename string) error {
+	now := time.Now().Unix()
+	_, err := d.conn.Exec(`
+		UPDATE openwebui_files
+		SET filename = ?, updated_at = ?
+		WHERE subdomain = ? AND id = ?
+	`, filename, now, subdomain, id)
+	return err
+}
+
+func (d *DB) DeleteOpenWebUIFile(subdomain, id string) error {
+	_, err := d.conn.Exec(`
+		DELETE FROM openwebui_files
+		WHERE subdomain = ? AND id = ?
+	`, subdomain, id)
+	return err
+}
+
+func (d *DB) DeleteAllOpenWebUIFiles(subdomain, userID string) error {
+	_, err := d.conn.Exec(`
+		DELETE FROM openwebui_files
+		WHERE subdomain = ? AND (user_id = ? OR user_id = 'default')
+	`, subdomain, userID)
+	return err
+}
+
+// ── User Profiles & Avatars ────────────────────────────────────────────────────
+
+type OpenWebUIUserProfileDB struct {
+	Subdomain       string `json:"subdomain"`
+	UserID          string `json:"user_id"`
+	Name            string `json:"name"`
+	ProfileImageURL string `json:"profile_image_url"`
+	Bio             string `json:"bio"`
+	Gender          string `json:"gender"`
+	DateOfBirth     string `json:"date_of_birth"`
+	UpdatedAt       int64  `json:"updated_at"`
+}
+
+func (d *DB) GetOpenWebUIUserProfile(subdomain, userID string) (*OpenWebUIUserProfileDB, error) {
+	row := d.conn.QueryRow(`
+		SELECT subdomain, user_id, name, profile_image_url, bio, gender, date_of_birth, updated_at
+		FROM openwebui_user_profiles
+		WHERE subdomain = ? AND user_id = ?
+	`, subdomain, userID)
+
+	var p OpenWebUIUserProfileDB
+	if err := row.Scan(&p.Subdomain, &p.UserID, &p.Name, &p.ProfileImageURL, &p.Bio, &p.Gender, &p.DateOfBirth, &p.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (d *DB) UpsertOpenWebUIUserProfile(subdomain, userID, name, profileImageURL, bio, gender, dateOfBirth string) error {
+	now := time.Now().Unix()
+	_, err := d.conn.Exec(`
+		INSERT INTO openwebui_user_profiles (
+			subdomain, user_id, name, profile_image_url, bio, gender, date_of_birth, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(subdomain, user_id) DO UPDATE SET
+			name = CASE WHEN excluded.name != '' THEN excluded.name ELSE openwebui_user_profiles.name END,
+			profile_image_url = CASE WHEN excluded.profile_image_url != '' THEN excluded.profile_image_url ELSE openwebui_user_profiles.profile_image_url END,
+			bio = excluded.bio,
+			gender = excluded.gender,
+			date_of_birth = excluded.date_of_birth,
+			updated_at = excluded.updated_at
+	`, subdomain, userID, name, profileImageURL, bio, gender, dateOfBirth, now)
+	return err
+}
+

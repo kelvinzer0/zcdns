@@ -296,28 +296,6 @@ func (h *APIHandler) handleOpenWebUIKnowledge(w http.ResponseWriter, r *http.Req
 	})
 }
 
-// handleOpenWebUIFiles handles /api/v1/files/*
-func (h *APIHandler) handleOpenWebUIFiles(w http.ResponseWriter, r *http.Request) {
-	if setOWUCors(w, r) {
-		return
-	}
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/files")
-	path = strings.TrimPrefix(path, "/")
-
-	if path == "count" {
-		writeJSON(w, http.StatusOK, 0)
-		return
-	}
-	if path == "search" {
-		writeJSON(w, http.StatusOK, []any{})
-		return
-	}
-	writeJSON(w, http.StatusOK, OpenWebUIPaginatedListResponse{
-		Items: []any{},
-		Total: 0,
-	})
-}
-
 // handleOpenWebUINotes handles /api/v1/notes/*
 func (h *APIHandler) handleOpenWebUINotes(w http.ResponseWriter, r *http.Request) {
 	if setOWUCors(w, r) {

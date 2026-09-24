@@ -222,9 +222,38 @@ func InitDB(dbPath string) (*DB, error) {
 		updated_at INTEGER NOT NULL DEFAULT 0
 	);
 
+	CREATE TABLE IF NOT EXISTS openwebui_files (
+		id TEXT PRIMARY KEY,
+		subdomain TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		hash TEXT NOT NULL DEFAULT '',
+		filename TEXT NOT NULL,
+		path TEXT NOT NULL DEFAULT '',
+		content_type TEXT NOT NULL DEFAULT '',
+		size INTEGER NOT NULL DEFAULT 0,
+		data_json TEXT NOT NULL DEFAULT '{}',
+		meta_json TEXT NOT NULL DEFAULT '{}',
+		created_at INTEGER NOT NULL DEFAULT 0,
+		updated_at INTEGER NOT NULL DEFAULT 0
+	);
+
+	CREATE TABLE IF NOT EXISTS openwebui_user_profiles (
+		subdomain TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		name TEXT NOT NULL DEFAULT '',
+		profile_image_url TEXT NOT NULL DEFAULT '',
+		bio TEXT NOT NULL DEFAULT '',
+		gender TEXT NOT NULL DEFAULT '',
+		date_of_birth TEXT NOT NULL DEFAULT '',
+		updated_at INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (subdomain, user_id)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_owu_chats_subdomain ON openwebui_chats(subdomain, updated_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_owu_folders_subdomain ON openwebui_folders(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_owu_prompts_subdomain ON openwebui_prompts(subdomain);
+	CREATE INDEX IF NOT EXISTS idx_owu_files_sub_user ON openwebui_files(subdomain, user_id, updated_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_owu_user_profiles ON openwebui_user_profiles(subdomain, user_id);
 
 	CREATE INDEX IF NOT EXISTS idx_records_subdomain ON records(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_records_lookup ON records(subdomain, name, type);

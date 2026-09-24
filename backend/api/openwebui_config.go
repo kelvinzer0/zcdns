@@ -63,6 +63,30 @@ func (h *APIHandler) resolveUserFromToken(subdomain, token string) *OpenWebUISes
 		email = fmt.Sprintf("user-%s@%s.router.zcdns.id", randHex[:6], subdomain)
 	}
 
+	profileImageURL := fmt.Sprintf("/api/v1/users/%s/profile/image", userID)
+	var bioPtr, genderPtr, dobPtr *string
+
+	if p, err := h.db.GetOpenWebUIUserProfile(subdomain, userID); err == nil && p != nil {
+		if p.Name != "" {
+			userName = p.Name
+		}
+		if p.ProfileImageURL != "" {
+			profileImageURL = p.ProfileImageURL
+		}
+		if p.Bio != "" {
+			b := p.Bio
+			bioPtr = &b
+		}
+		if p.Gender != "" {
+			g := p.Gender
+			genderPtr = &g
+		}
+		if p.DateOfBirth != "" {
+			dob := p.DateOfBirth
+			dobPtr = &dob
+		}
+	}
+
 	return &OpenWebUISessionUserInfoResponse{
 		Token:           token,
 		TokenType:       "bearer",
@@ -70,7 +94,10 @@ func (h *APIHandler) resolveUserFromToken(subdomain, token string) *OpenWebUISes
 		Name:            userName,
 		Role:            "user",
 		Email:           email,
-		ProfileImageURL: "/user.png",
+		ProfileImageURL: profileImageURL,
+		Bio:             bioPtr,
+		Gender:          genderPtr,
+		DateOfBirth:     dobPtr,
 		Permissions: map[string]any{
 			"workspace": map[string]bool{
 				"models":    true,
@@ -223,13 +250,73 @@ func (h *APIHandler) handleOpenWebUIVersion(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// handleOpenWebUIAuth handles GET /api/v1/auths and /api/v1/users/user
+// handleOpenWebUIAuth handles /api/v1/auths/* and /api/v1/users/user
 func (h *APIHandler) handleOpenWebUIAuth(w http.ResponseWriter, r *http.Request) {
 	if setOWUCors(w, r) {
 		return
 	}
 
+	subdomain := h.resolveSubdomain(r)
 	u := h.resolveUser(r)
+
+	// POST /api/v1/auths/update/profile
+	if r.Method == http.MethodPost && (strings.HasSuffix(r.URL.Path, "/update/profile") || strings.HasSuffix(r.URL.Path, "/profile")) {
+		body, _ := io.ReadAll(r.Body)
+		var form struct {
+			Name            string `json:"name"`
+			ProfileImageURL string `json:"profile_image_url"`
+			Bio             string `json:"bio"`
+			Gender          string `json:"gender"`
+			DateOfBirth     string `json:"date_of_birth"`
+		}
+		_ = json.Unmarshal(body, &form)
+
+		name := form.Name
+		if name == "" {
+			name = u.Name
+		}
+		profileImage := form.ProfileImageURL
+		if profileImage == "" {
+			profileImage = u.ProfileImageURL
+		}
+
+		_ = h.db.UpsertOpenWebUIUserProfile(subdomain, u.ID, name, profileImage, form.Bio, form.Gender, form.DateOfBirth)
+
+		// Broadcast profile update over socket.io
+		payload, _ := json.Marshal(map[string]interface{}{
+			"id":                u.ID,
+			"name":              name,
+			"profile_image_url": profileImage,
+		})
+		globalSocketHub.broadcastToRoom("user:"+u.ID, []byte(fmt.Sprintf(`42["events",{"type":"user:update","data":%s}]`, string(payload))), "")
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"id":                u.ID,
+			"name":              name,
+			"email":             u.Email,
+			"role":              u.Role,
+			"profile_image_url": profileImage,
+		})
+		return
+	}
+
+	// POST /api/v1/auths/update/timezone
+	if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/update/timezone") {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"status": true})
+		return
+	}
+
+	// POST /api/v1/auths/signout
+	if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/signout") {
+		http.SetCookie(w, &http.Cookie{
+			Name:   "token",
+			Value:  "",
+			Path:   "/",
+			MaxAge: -1,
+		})
+		writeJSON(w, http.StatusOK, map[string]interface{}{"status": true})
+		return
+	}
 
 	// Persist cookie for future requests and WebSocket handshake
 	http.SetCookie(w, &http.Cookie{
