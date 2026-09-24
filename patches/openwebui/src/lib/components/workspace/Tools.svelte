@@ -54,15 +54,12 @@
 	import WrenchAlt from '../icons/WrenchAlt.svelte';
 	import Cog6 from '../icons/Cog6.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
-	import AddToolServerModal from '$lib/components/AddToolServerModal.svelte';
 	import { getToolServerConnections, setToolServerConnections } from '$lib/apis/configs';
 
 	let shiftKey = false;
 	let loaded = false;
 
 	let toolServers: any[] = [];
-	let showAddToolServerModal = false;
-	let editingToolServer: any = null;
 
 	const fetchToolServers = async () => {
 		const res = await getToolServerConnections(localStorage.token).catch(() => null);
@@ -86,20 +83,6 @@
 			await fetchToolServers();
 			await init();
 		}
-	};
-
-	const addOrUpdateToolServer = async (server: any) => {
-		let updated = [...toolServers];
-		const sId = server.id || server.info?.id;
-		const idx = updated.findIndex((s) => (s.id || s.info?.id) === sId);
-		if (idx >= 0) {
-			updated[idx] = server;
-		} else {
-			updated.push(server);
-		}
-		await saveToolServers(updated);
-		showAddToolServerModal = false;
-		editingToolServer = null;
 	};
 
 	const deleteToolServer = async (serverId: string) => {
@@ -153,10 +136,7 @@
 			{
 				id: 'tools-add-mcp',
 				label: 'Add MCP Server',
-				onClick: () => {
-					editingToolServer = null;
-					showAddToolServerModal = true;
-				}
+				href: '/workspace/tools/create'
 			}
 		]);
 	}
@@ -217,16 +197,7 @@
 
 	const openTool = (tool) => {
 		const cleanId = tool.id.replace('server:mcp:', '');
-		const server = toolServers.find(
-			(s) => s.id === cleanId || s.id === tool.id || s.info?.id === cleanId || s.info?.id === tool.id
-		);
-		if (server) {
-			editingToolServer = server;
-			showAddToolServerModal = true;
-			return;
-		}
-		editingToolServer = null;
-		showAddToolServerModal = true;
+		goto(`/workspace/tools/create?id=${encodeURIComponent(cleanId)}`);
 	};
 
 	const shouldIgnoreRowClick = (target: EventTarget | null) => {
@@ -243,16 +214,7 @@
 			(s) => s.id === cleanId || s.id === tool.id || s.info?.id === cleanId || s.info?.id === tool.id
 		);
 		if (server) {
-			editingToolServer = {
-				...server,
-				id: '',
-				info: {
-					...(server.info || {}),
-					id: '',
-					name: `${server.name || server.info?.name || 'MCP'} (Copy)`
-				}
-			};
-			showAddToolServerModal = true;
+			goto(`/workspace/tools/create?id=${encodeURIComponent(server.id || server.info?.id)}&clone=true`);
 		}
 	};
 
@@ -294,10 +256,7 @@
 		loaded = true;
 
 		if (typeof window !== 'undefined' && window.location.search.includes('action=add-mcp')) {
-			editingToolServer = null;
-			showAddToolServerModal = true;
-			const cleanUrl = window.location.pathname;
-			window.history.replaceState({}, document.title, cleanUrl);
+			goto('/workspace/tools/create');
 		}
 
 		const onKeyDown = (event) => {
@@ -398,17 +357,13 @@
 				</div>
 			</div>
 
-			<button
-				type="button"
+			<a
+				href="/workspace/tools/create"
 				class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition shadow-xs cursor-pointer shrink-0"
-				on:click={() => {
-					editingToolServer = null;
-					showAddToolServerModal = true;
-				}}
 			>
 				<Plus className="size-3.5" />
 				<span>Add MCP Server</span>
-			</button>
+			</a>
 		</div>
 
 		{#if toolServers.length === 0}
@@ -421,16 +376,12 @@
 						Gunakan <a href="https://github.com/kelvinzer0/aria-page-agent" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 font-semibold underline">Aria Page Agent</a> untuk memberikan kemampuan browser ke AI Anda, atau hubungkan endpoint MCP apa pun dengan tipe SSE / HTTP streamable.
 					</div>
 				</div>
-				<button
-					type="button"
+				<a
+					href="/workspace/tools/create"
 					class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/50 dark:border-blue-900/50 transition shrink-0"
-					on:click={() => {
-						editingToolServer = null;
-						showAddToolServerModal = true;
-					}}
 				>
 					+ Hubungkan MCP Server
-				</button>
+				</a>
 			</div>
 		{:else}
 			<div class="grid gap-2">
@@ -461,17 +412,13 @@
 								on:change={(e) => toggleToolServer(server, e.detail)}
 							/>
 
-							<button
-								type="button"
+							<a
+								href="/workspace/tools/create?id={encodeURIComponent(server.id || server.info?.id)}"
 								class="p-1.5 rounded-lg text-gray-500 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
 								aria-label="Edit server"
-								on:click={() => {
-									editingToolServer = server;
-									showAddToolServerModal = true;
-								}}
 							>
 								<Cog6 className="size-4" />
-							</button>
+							</a>
 
 							<button
 								type="button"
@@ -866,20 +813,6 @@
 		</div>
 	</ConfirmDialog>
 
-	<AddToolServerModal
-		bind:show={showAddToolServerModal}
-		direct
-		connection={editingToolServer}
-		edit={!!editingToolServer}
-		defaultType="mcp"
-		onSubmit={(c) => addOrUpdateToolServer(c)}
-		onDelete={() => {
-			if (editingToolServer) {
-				deleteToolServer(editingToolServer.id || editingToolServer.info?.id);
-			}
-			showAddToolServerModal = false;
-		}}
-	/>
 {:else}
 	<div class="w-full h-full flex justify-center items-center">
 		<Spinner className="size-5" />

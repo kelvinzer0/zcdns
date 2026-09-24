@@ -124,9 +124,25 @@ func (c *MCPClient) CallRPC(ctx context.Context, postURL, apiKey, method string,
 	}
 	defer resp.Body.Close()
 
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	var respBytes []byte
+	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.HasPrefix(line, "data:") {
+				dataStr := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+				if strings.HasPrefix(dataStr, "{") || strings.HasPrefix(dataStr, "[") {
+					respBytes = []byte(dataStr)
+					break
+				}
+			}
+		}
+	} else {
+		var err error
+		respBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	trimmed := bytes.TrimSpace(respBytes)
