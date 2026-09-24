@@ -3,12 +3,15 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	_ "modernc.org/sqlite"
 )
 
 type DB struct {
-	conn *sql.DB
+	conn     *sql.DB
+	chatPool *ChatDBPool
 }
 
 func InitDB(dbPath string) (*DB, error) {
@@ -344,9 +347,69 @@ func InitDB(dbPath string) (*DB, error) {
 	_, _ = conn.Exec("ALTER TABLE openwebui_user_profiles ADD COLUMN status_message TEXT NOT NULL DEFAULT '';")
 	_, _ = conn.Exec("ALTER TABLE openwebui_user_profiles ADD COLUMN status_expires_at INTEGER NOT NULL DEFAULT 0;")
 
-	return &DB{conn: conn}, nil
+	chatStorageDir := os.Getenv("CHAT_STORAGE_DIR")
+	if chatStorageDir == "" {
+		chatStorageDir = filepath.Join(filepath.Dir(dbPath), "data", "chats")
+	}
+	chatPool := NewChatDBPool(chatStorageDir)
+
+	dbInstance := &DB{
+		conn:     conn,
+		chatPool: chatPool,
+	}
+
+	// Seamless background migration: replicate any legacy single-db chats to their own SQLite files
+	go dbInstance.migrateExistingChatsToPool()
+
+	return dbInstance, nil
+}
+
+func (d *DB) migrateExistingChatsToPool() {
+	rows, err := d.conn.Query(`
+		SELECT id, subdomain, user_id, title, folder_id, pinned, archived, chat_json, created_at, updated_at, last_read_at
+		FROM openwebui_chats
+		WHERE chat_json != '' AND chat_json != '{}'
+	`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, subdomain, userID, title, chatJSON string
+		var folderID sql.NullString
+		var pinned, archived int
+		var createdAt, updatedAt, lastReadAt int64
+
+		if err := rows.Scan(&id, &subdomain, &userID, &title, &folderID, &pinned, &archived, &chatJSON, &createdAt, &updatedAt, &lastReadAt); err != nil {
+			continue
+		}
+
+		chatDB, _, err := d.chatPool.GetChatDB(subdomain, userID, id)
+		if err != nil || chatDB == nil {
+			continue
+		}
+
+		fID := ""
+		if folderID.Valid {
+			fID = folderID.String
+		}
+
+		_, _ = chatDB.Exec(`
+			INSERT INTO chat_session (id, subdomain, user_id, title, folder_id, pinned, archived, chat_json, created_at, updated_at, last_read_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				chat_json = excluded.chat_json,
+				updated_at = excluded.updated_at
+		`, id, subdomain, userID, title, fID, pinned, archived, chatJSON, createdAt, updatedAt, lastReadAt)
+
+		d.chatPool.SyncMessagesTree(chatDB, chatJSON)
+	}
 }
 
 func (d *DB) Close() error {
+	if d.chatPool != nil {
+		d.chatPool.CloseAll()
+	}
 	return d.conn.Close()
 }

@@ -172,6 +172,29 @@ func (d *DB) GetOpenWebUIArchivedChats(subdomain, userID string) ([]OpenWebUICha
 }
 
 func (d *DB) GetOpenWebUIChatRaw(subdomain, userID, id string) (string, string, bool, bool, string, int64, int64, error) {
+	// 1. Try reading from individual conversation SQLite database
+	if d.chatPool != nil {
+		chatDB, _, poolErr := d.chatPool.GetChatDB(subdomain, userID, id)
+		if poolErr == nil && chatDB != nil {
+			var title, chatJSON string
+			var folderID sql.NullString
+			var pinned, archived int
+			var createdAt, updatedAt int64
+			qErr := chatDB.QueryRow(`
+				SELECT title, chat_json, pinned, archived, folder_id, created_at, updated_at
+				FROM chat_session WHERE id = ?
+			`, id).Scan(&title, &chatJSON, &pinned, &archived, &folderID, &createdAt, &updatedAt)
+			if qErr == nil && chatJSON != "" && chatJSON != "{}" {
+				fID := ""
+				if folderID.Valid {
+					fID = folderID.String
+				}
+				return title, chatJSON, pinned == 1, archived == 1, fID, createdAt, updatedAt, nil
+			}
+		}
+	}
+
+	// 2. Fallback to main zcdns.db
 	var title, chatJSON, folderID string
 	var pinned, archived int
 	var createdAt, updatedAt int64
@@ -180,11 +203,48 @@ func (d *DB) GetOpenWebUIChatRaw(subdomain, userID, id string) (string, string, 
 		FROM openwebui_chats
 		WHERE subdomain = ? AND user_id = ? AND id = ?
 	`, subdomain, userID, id).Scan(&title, &chatJSON, &pinned, &archived, &folderID, &createdAt, &updatedAt)
-	return title, chatJSON, pinned == 1, archived == 1, folderID, createdAt, updatedAt, err
+	if err != nil {
+		return "", "", false, false, "", 0, 0, err
+	}
+
+	// 3. Migrate to conversation database so subsequent operations use the isolated DB
+	if d.chatPool != nil && chatJSON != "" && chatJSON != "{}" {
+		if chatDB, _, poolErr := d.chatPool.GetChatDB(subdomain, userID, id); poolErr == nil && chatDB != nil {
+			_, _ = chatDB.Exec(`
+				INSERT INTO chat_session (id, subdomain, user_id, title, folder_id, pinned, archived, chat_json, created_at, updated_at, last_read_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+				ON CONFLICT(id) DO UPDATE SET
+					chat_json = excluded.chat_json,
+					updated_at = excluded.updated_at
+			`, id, subdomain, userID, title, folderID, pinned, archived, chatJSON, createdAt, updatedAt)
+			d.chatPool.SyncMessagesTree(chatDB, chatJSON)
+		}
+	}
+
+	return title, chatJSON, pinned == 1, archived == 1, folderID, createdAt, updatedAt, nil
 }
 
 func (d *DB) UpsertOpenWebUIChat(subdomain, userID, id, title, chatJSON string, folderID string) error {
 	now := time.Now().Unix()
+
+	// 1. Write to isolated conversation SQLite database
+	if d.chatPool != nil {
+		if chatDB, _, err := d.chatPool.GetChatDB(subdomain, userID, id); err == nil && chatDB != nil {
+			_, _ = chatDB.Exec(`
+				INSERT INTO chat_session (id, subdomain, user_id, title, folder_id, pinned, archived, chat_json, created_at, updated_at, last_read_at)
+				VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0)
+				ON CONFLICT(id) DO UPDATE SET
+					title = excluded.title,
+					folder_id = excluded.folder_id,
+					chat_json = excluded.chat_json,
+					updated_at = excluded.updated_at
+			`, id, subdomain, userID, title, folderID, chatJSON, now, now)
+
+			d.chatPool.SyncMessagesTree(chatDB, chatJSON)
+		}
+	}
+
+	// 2. Also keep summary index and redundant backup in main database
 	_, err := d.conn.Exec(`
 		INSERT INTO openwebui_chats (id, subdomain, user_id, title, chat_json, folder_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -202,6 +262,11 @@ func (d *DB) SetOpenWebUIChatPinned(subdomain, userID, id string, pinned bool) e
 	if pinned {
 		p = 1
 	}
+	if d.chatPool != nil {
+		if chatDB, _, err := d.chatPool.GetChatDB(subdomain, userID, id); err == nil && chatDB != nil {
+			_, _ = chatDB.Exec(`UPDATE chat_session SET pinned = ? WHERE id = ?`, p, id)
+		}
+	}
 	_, err := d.conn.Exec(`UPDATE openwebui_chats SET pinned = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, p, subdomain, userID, id)
 	return err
 }
@@ -211,33 +276,162 @@ func (d *DB) SetOpenWebUIChatArchived(subdomain, userID, id string, archived boo
 	if archived {
 		a = 1
 	}
+	if d.chatPool != nil {
+		if chatDB, _, err := d.chatPool.GetChatDB(subdomain, userID, id); err == nil && chatDB != nil {
+			_, _ = chatDB.Exec(`UPDATE chat_session SET archived = ? WHERE id = ?`, a, id)
+		}
+	}
 	_, err := d.conn.Exec(`UPDATE openwebui_chats SET archived = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, a, subdomain, userID, id)
 	return err
 }
 
 func (d *DB) SetOpenWebUIChatFolder(subdomain, userID, id, folderID string) error {
+	if d.chatPool != nil {
+		if chatDB, _, err := d.chatPool.GetChatDB(subdomain, userID, id); err == nil && chatDB != nil {
+			_, _ = chatDB.Exec(`UPDATE chat_session SET folder_id = ? WHERE id = ?`, folderID, id)
+		}
+	}
 	_, err := d.conn.Exec(`UPDATE openwebui_chats SET folder_id = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, folderID, subdomain, userID, id)
 	return err
 }
 
 func (d *DB) DeleteOpenWebUIChat(subdomain, userID, id string) error {
+	if d.chatPool != nil {
+		_ = d.chatPool.DeleteChatDB(subdomain, userID, id)
+	}
 	_, err := d.conn.Exec(`DELETE FROM openwebui_chats WHERE subdomain = ? AND user_id = ? AND id = ?`, subdomain, userID, id)
 	return err
 }
 
 func (d *DB) DeleteAllOpenWebUIChats(subdomain, userID string) error {
+	if d.chatPool != nil {
+		_ = d.chatPool.DeleteUserChats(subdomain, userID)
+	}
 	_, err := d.conn.Exec(`DELETE FROM openwebui_chats WHERE subdomain = ? AND user_id = ?`, subdomain, userID)
 	return err
 }
 
 func (d *DB) UpdateOpenWebUIChatTitle(subdomain, userID, id, title string) error {
 	now := time.Now().Unix()
+	if d.chatPool != nil {
+		if chatDB, _, err := d.chatPool.GetChatDB(subdomain, userID, id); err == nil && chatDB != nil {
+			_, _ = chatDB.Exec(`UPDATE chat_session SET title = ?, updated_at = ? WHERE id = ?`, title, now, id)
+		}
+	}
 	_, err := d.conn.Exec(`UPDATE openwebui_chats SET title = ?, updated_at = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, title, now, subdomain, userID, id)
 	return err
 }
 
-// UpdateOpenWebUIMessageInChat modifies or appends to a message inside openwebui_chats chat_json
+// UpdateOpenWebUIMessageInChat modifies or appends to a message inside isolated per-conversation SQLite database
 func (d *DB) UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID string, updateFn func(msg map[string]interface{}) map[string]interface{}) error {
+	now := time.Now().Unix()
+
+	// 1. If chatPool is active, operate on the isolated conversation database
+	if d.chatPool != nil {
+		chatDB, _, poolErr := d.chatPool.GetChatDB(subdomain, userID, chatID)
+		if poolErr == nil && chatDB != nil {
+			var chatJSON, title string
+			var folderID sql.NullString
+			var pinned, archived int
+			var createdAt, updatedAt, lastReadAt int64
+
+			qErr := chatDB.QueryRow(`
+				SELECT title, folder_id, pinned, archived, chat_json, created_at, updated_at, last_read_at
+				FROM chat_session WHERE id = ?
+			`, chatID).Scan(&title, &folderID, &pinned, &archived, &chatJSON, &createdAt, &updatedAt, &lastReadAt)
+
+			if qErr == sql.ErrNoRows || chatJSON == "" || chatJSON == "{}" {
+				// Fallback to legacy single-db record if this chat hasn't been migrated yet
+				var mainChatJSON string
+				mErr := d.conn.QueryRow(`
+					SELECT title, folder_id, pinned, archived, chat_json, created_at, updated_at, last_read_at
+					FROM openwebui_chats WHERE subdomain = ? AND user_id = ? AND id = ?
+				`, subdomain, userID, chatID).Scan(&title, &folderID, &pinned, &archived, &mainChatJSON, &createdAt, &updatedAt, &lastReadAt)
+				if mErr == nil {
+					chatJSON = mainChatJSON
+				} else {
+					chatJSON = "{}"
+				}
+			} else if qErr != nil {
+				return qErr
+			}
+
+			var chatObj map[string]interface{}
+			if err := json.Unmarshal([]byte(chatJSON), &chatObj); err != nil {
+				chatObj = make(map[string]interface{})
+			}
+			targetMap := chatObj
+			if inner, ok := chatObj["chat"].(map[string]interface{}); ok && inner != nil {
+				targetMap = inner
+			}
+			history, _ := targetMap["history"].(map[string]interface{})
+			if history == nil {
+				history = make(map[string]interface{})
+				targetMap["history"] = history
+			}
+			messages, _ := history["messages"].(map[string]interface{})
+			if messages == nil {
+				messages = make(map[string]interface{})
+				history["messages"] = messages
+			}
+			targetMsg, _ := messages[messageID].(map[string]interface{})
+			if targetMsg == nil {
+				targetMsg = make(map[string]interface{})
+			}
+			updatedMsg := updateFn(targetMsg)
+			messages[messageID] = updatedMsg
+			newChatJSON, err := json.Marshal(chatObj)
+			if err != nil {
+				return err
+			}
+
+			if createdAt == 0 {
+				createdAt = now
+			}
+			fID := ""
+			if folderID.Valid {
+				fID = folderID.String
+			}
+
+			// Write to isolated chat database
+			_, err = chatDB.Exec(`
+				INSERT INTO chat_session (id, subdomain, user_id, title, folder_id, pinned, archived, chat_json, created_at, updated_at, last_read_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(id) DO UPDATE SET
+					chat_json = excluded.chat_json,
+					updated_at = excluded.updated_at
+			`, chatID, subdomain, userID, title, fID, pinned, archived, string(newChatJSON), createdAt, now, lastReadAt)
+			if err != nil {
+				return err
+			}
+
+			// Also append/update in messages DAG tree in isolated database
+			role, _ := updatedMsg["role"].(string)
+			contentStr := ""
+			if c, ok := updatedMsg["content"].(string); ok {
+				contentStr = c
+			}
+			parentID, _ := updatedMsg["parentId"].(string)
+			metaBytes, _ := json.Marshal(updatedMsg)
+			_, _ = chatDB.Exec(`
+				INSERT INTO messages (id, parent_id, role, content, meta_json, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(id) DO UPDATE SET
+					content = excluded.content,
+					meta_json = excluded.meta_json,
+					updated_at = excluded.updated_at
+			`, messageID, parentID, role, contentStr, string(metaBytes), now, now)
+
+			// Update lightweight index in central DB
+			_, _ = d.conn.Exec(`
+				UPDATE openwebui_chats SET updated_at = ? WHERE subdomain = ? AND user_id = ? AND id = ?
+			`, now, subdomain, userID, chatID)
+
+			return nil
+		}
+	}
+
+	// Fallback legacy write if chatPool is somehow disabled
 	var chatJSON string
 	err := d.conn.QueryRow(`SELECT chat_json FROM openwebui_chats WHERE subdomain = ? AND user_id = ? AND id = ?`, subdomain, userID, chatID).Scan(&chatJSON)
 	if err != nil {
@@ -270,7 +464,6 @@ func (d *DB) UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID s
 	if err != nil {
 		return err
 	}
-	now := time.Now().Unix()
 	_, err = d.conn.Exec(`UPDATE openwebui_chats SET chat_json = ?, updated_at = ? WHERE subdomain = ? AND user_id = ? AND id = ?`, string(newChatJSON), now, subdomain, userID, chatID)
 	return err
 }
