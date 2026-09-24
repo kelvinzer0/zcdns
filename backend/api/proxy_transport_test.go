@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -50,10 +51,69 @@ func TestProxyTransport_Config(t *testing.T) {
 		t.Errorf("expected Proxy function to be set for HTTP proxy")
 	}
 
-	// 5. Unsupported scheme
+	// 5. SOCKS5-TLS schemes
+	tlsSchemes := []string{
+		"socks5tls://proxy.example.com:443",
+		"socks5+tls://user:pass@proxy.example.com:8443?insecure=true",
+		"socks5s://proxy.example.com:443",
+		"tls+socks5://proxy.example.com:443?skip_verify=1",
+	}
+	for _, raw := range tlsSchemes {
+		tr, err := createHTTPTransport(raw)
+		if err != nil {
+			t.Fatalf("unexpected error for %s: %v", raw, err)
+		}
+		if tr.DialContext == nil {
+			t.Errorf("expected DialContext to be set for %s", raw)
+		}
+	}
+
+	// 6. Unsupported scheme
 	_, err = createHTTPTransport("ftp://127.0.0.1:21")
 	if err == nil {
 		t.Fatalf("expected error for ftp scheme, got nil")
+	}
+}
+
+func TestProxyTransport_Socks5TLS_Handshake(t *testing.T) {
+	// Setup a TLS listener with self-signed certificate
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	addr := ts.Listener.Addr().String()
+
+	// 1. Dial without insecure skip verify should fail because cert is self-signed
+	dialerStrict := &tlsForwardDialer{
+		tlsConfig: &tls.Config{
+			ServerName: "example.com",
+		},
+	}
+	_, err := dialerStrict.DialContext(context.Background(), "tcp", addr)
+	if err == nil {
+		t.Fatalf("expected TLS verification failure for self-signed cert without InsecureSkipVerify")
+	}
+
+	// 2. Dial with InsecureSkipVerify: true should succeed
+	dialerInsecure := &tlsForwardDialer{
+		tlsConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+	conn, err := dialerInsecure.DialContext(context.Background(), "tcp", addr)
+	if err != nil {
+		t.Fatalf("expected successful TLS handshake with InsecureSkipVerify, got: %v", err)
+	}
+	defer conn.Close()
+
+	// 3. Test through createHTTPTransport with ?insecure=true
+	tr, err := createHTTPTransport("socks5tls://" + addr + "?insecure=true")
+	if err != nil {
+		t.Fatalf("createHTTPTransport failed: %v", err)
+	}
+	if tr.DialContext == nil {
+		t.Fatalf("expected DialContext to be non-nil")
 	}
 }
 
@@ -114,6 +174,15 @@ func TestProxyTransport_ProviderConnectionSocks5(t *testing.T) {
 	}
 	if msgInv == "" {
 		t.Errorf("expected error message for invalid proxy URL")
+	}
+
+	// 5b. Test testProviderConnection with unreachable socks5tls proxy
+	successTls, _, _, msgTls := testProviderConnection("openai", "openai", "sk-test", "https://api.openai.com", "socks5tls://127.0.0.1:59998?insecure=true")
+	if successTls {
+		t.Errorf("expected failure when connecting via nonexistent SOCKS5-TLS proxy")
+	}
+	if msgTls == "" {
+		t.Errorf("expected error message describing SOCKS5-TLS failure")
 	}
 
 	// 6. Test with a mock upstream server via direct (no proxy)

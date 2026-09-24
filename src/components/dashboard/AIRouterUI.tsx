@@ -751,14 +751,21 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                       Base URL: <span className="text-foreground">{c.base_url}</span>
                     </div>
                   )}
-                  {c.socks5_proxy && (
-                    <div className="text-[11px] text-muted-foreground font-mono flex items-center gap-1.5 pt-0.5">
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-semibold border border-cyan-500/20 text-[10px]">
-                        <Shield className="w-3 h-3" /> SOCKS5
-                      </span>
-                      <span className="text-foreground font-mono truncate">{c.socks5_proxy}</span>
-                    </div>
-                  )}
+                  {c.socks5_proxy && (() => {
+                    const isTls = /^(socks5tls|socks5\+tls|socks5s|tls\+socks5):\/\//i.test(c.socks5_proxy);
+                    return (
+                      <div className="text-[11px] text-muted-foreground font-mono flex items-center gap-1.5 pt-0.5">
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 font-semibold border text-[10px] ${
+                          isTls
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                            : 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20'
+                        }`}>
+                          <ShieldCheck className="w-3 h-3" /> {isTls ? 'SOCKS5-TLS' : 'SOCKS5'}
+                        </span>
+                        <span className="text-foreground font-mono truncate">{c.socks5_proxy}</span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Model Management Sub-Drawer for Existing Connection */}
                   {isEditingThis ? (
@@ -984,14 +991,14 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
               />
             </div>
 
-            {/* SOCKS5 Proxy with Vault Picker */}
+            {/* SOCKS5 / SOCKS5-TLS Proxy with Vault Picker */}
             <div className="sm:col-span-2">
               <div className="flex justify-between items-center mb-1">
                 <label className="text-xs font-medium flex items-center gap-1.5">
                   <Shield className="w-3.5 h-3.5 text-cyan-500" />
-                  <span>SOCKS5 Proxy (Optional)</span>
+                  <span>SOCKS5 / SOCKS5-TLS Proxy (Optional)</span>
                   <span className="text-[10px] text-muted-foreground font-normal">
-                    (Route requests to this provider through a SOCKS5 proxy)
+                    (Route requests through standard SOCKS5 or encrypted SOCKS5-over-TLS)
                   </span>
                 </label>
                 {vaultSecrets.length > 0 && (
@@ -1017,7 +1024,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
               <input
                 value={newConn.socks5_proxy}
                 onChange={e => setNewConn(c => ({ ...c, socks5_proxy: e.target.value }))}
-                placeholder="socks5://127.0.0.1:1080 or socks5://user:pass@host:port (optional)"
+                placeholder="socks5://127.0.0.1:1080 or socks5tls://proxy.example.com:443 (supports ?insecure=true)"
                 className="w-full border border-border rounded-none px-2.5 py-1.5 text-xs bg-background font-mono"
               />
             </div>
