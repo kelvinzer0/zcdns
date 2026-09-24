@@ -402,7 +402,38 @@ func (d *DB) UpsertOpenWebUIPrompt(subdomain, userID, id, command, name, content
 }
 
 func (d *DB) DeleteOpenWebUIPrompt(subdomain, userID, id string) error {
-	_, err := d.conn.Exec(`DELETE FROM openwebui_prompts WHERE subdomain = ? AND user_id = ? AND id = ?`, subdomain, userID, id)
+	_, err := d.conn.Exec(`DELETE FROM openwebui_prompts WHERE subdomain = ? AND id = ?`, subdomain, id)
+	return err
+}
+
+func (d *DB) GetOpenWebUIPromptByID(subdomain, id string) (*OpenWebUIPromptDB, error) {
+	var p OpenWebUIPromptDB
+	err := d.conn.QueryRow(`
+		SELECT id, subdomain, user_id, command, name, content, created_at, updated_at
+		FROM openwebui_prompts
+		WHERE subdomain = ? AND id = ?
+	`, subdomain, id).Scan(&p.ID, &p.Subdomain, &p.UserID, &p.Command, &p.Name, &p.Content, &p.CreatedAt, &p.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (d *DB) GetOpenWebUIPromptByCommand(subdomain, command string) (*OpenWebUIPromptDB, error) {
+	var p OpenWebUIPromptDB
+	err := d.conn.QueryRow(`
+		SELECT id, subdomain, user_id, command, name, content, created_at, updated_at
+		FROM openwebui_prompts
+		WHERE subdomain = ? AND command = ?
+	`, subdomain, command).Scan(&p.ID, &p.Subdomain, &p.UserID, &p.Command, &p.Name, &p.Content, &p.CreatedAt, &p.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (d *DB) DeleteOpenWebUIPromptByCommand(subdomain, userID, command string) error {
+	_, err := d.conn.Exec(`DELETE FROM openwebui_prompts WHERE subdomain = ? AND command = ?`, subdomain, command)
 	return err
 }
 
@@ -781,6 +812,202 @@ func (d *DB) UpsertOpenWebUIUserProfile(subdomain, userID, name, profileImageURL
 			date_of_birth = excluded.date_of_birth,
 			updated_at = excluded.updated_at
 	`, subdomain, userID, name, profileImageURL, bio, gender, dateOfBirth, now)
+	return err
+}
+
+// ── Custom Models ─────────────────────────────────────────────────────────────
+
+type OpenWebUICustomModelDB struct {
+	ID               string `json:"id"`
+	Subdomain        string `json:"subdomain"`
+	UserID           string `json:"user_id"`
+	Name             string `json:"name"`
+	BaseModelID      string `json:"base_model_id"`
+	MetaJSON         string `json:"meta_json"`
+	ParamsJSON       string `json:"params_json"`
+	AccessGrantsJSON string `json:"access_grants_json"`
+	IsActive         bool   `json:"is_active"`
+	CreatedAt        int64  `json:"created_at"`
+	UpdatedAt        int64  `json:"updated_at"`
+}
+
+func (d *DB) GetOpenWebUICustomModels(subdomain string) ([]OpenWebUICustomModelDB, error) {
+	rows, err := d.conn.Query(`
+		SELECT id, subdomain, user_id, name, COALESCE(base_model_id, ''), meta_json, params_json, access_grants_json, is_active, created_at, updated_at
+		FROM openwebui_custom_models
+		WHERE subdomain = ?
+		ORDER BY updated_at DESC
+	`, subdomain)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var models []OpenWebUICustomModelDB
+	for rows.Next() {
+		var m OpenWebUICustomModelDB
+		var act int
+		if err := rows.Scan(&m.ID, &m.Subdomain, &m.UserID, &m.Name, &m.BaseModelID, &m.MetaJSON, &m.ParamsJSON, &m.AccessGrantsJSON, &act, &m.CreatedAt, &m.UpdatedAt); err != nil {
+			continue
+		}
+		m.IsActive = act == 1
+		models = append(models, m)
+	}
+	if models == nil {
+		models = []OpenWebUICustomModelDB{}
+	}
+	return models, nil
+}
+
+func (d *DB) GetOpenWebUICustomModelByID(subdomain, id string) (*OpenWebUICustomModelDB, error) {
+	var m OpenWebUICustomModelDB
+	var act int
+	err := d.conn.QueryRow(`
+		SELECT id, subdomain, user_id, name, COALESCE(base_model_id, ''), meta_json, params_json, access_grants_json, is_active, created_at, updated_at
+		FROM openwebui_custom_models
+		WHERE subdomain = ? AND id = ?
+	`, subdomain, id).Scan(&m.ID, &m.Subdomain, &m.UserID, &m.Name, &m.BaseModelID, &m.MetaJSON, &m.ParamsJSON, &m.AccessGrantsJSON, &act, &m.CreatedAt, &m.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	m.IsActive = act == 1
+	return &m, nil
+}
+
+func (d *DB) UpsertOpenWebUICustomModel(m OpenWebUICustomModelDB) error {
+	now := time.Now().Unix()
+	if m.CreatedAt == 0 {
+		m.CreatedAt = now
+	}
+	m.UpdatedAt = now
+	act := 0
+	if m.IsActive {
+		act = 1
+	}
+	if m.MetaJSON == "" {
+		m.MetaJSON = "{}"
+	}
+	if m.ParamsJSON == "" {
+		m.ParamsJSON = "{}"
+	}
+	if m.AccessGrantsJSON == "" {
+		m.AccessGrantsJSON = "[]"
+	}
+	_, err := d.conn.Exec(`
+		INSERT INTO openwebui_custom_models (
+			id, subdomain, user_id, name, base_model_id, meta_json, params_json, access_grants_json, is_active, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(subdomain, id) DO UPDATE SET
+			name = excluded.name,
+			base_model_id = excluded.base_model_id,
+			meta_json = excluded.meta_json,
+			params_json = excluded.params_json,
+			access_grants_json = excluded.access_grants_json,
+			is_active = excluded.is_active,
+			updated_at = excluded.updated_at
+	`, m.ID, m.Subdomain, m.UserID, m.Name, m.BaseModelID, m.MetaJSON, m.ParamsJSON, m.AccessGrantsJSON, act, m.CreatedAt, m.UpdatedAt)
+	return err
+}
+
+func (d *DB) DeleteOpenWebUICustomModel(subdomain, userID, id string) error {
+	_, err := d.conn.Exec(`DELETE FROM openwebui_custom_models WHERE subdomain = ? AND id = ?`, subdomain, id)
+	return err
+}
+
+func (d *DB) ToggleOpenWebUICustomModel(subdomain, id string) (*OpenWebUICustomModelDB, error) {
+	now := time.Now().Unix()
+	_, err := d.conn.Exec(`
+		UPDATE openwebui_custom_models
+		SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END, updated_at = ?
+		WHERE subdomain = ? AND id = ?
+	`, now, subdomain, id)
+	if err != nil {
+		return nil, err
+	}
+	return d.GetOpenWebUICustomModelByID(subdomain, id)
+}
+
+// ── Knowledge Bases ───────────────────────────────────────────────────────────
+
+type OpenWebUIKnowledgeDB struct {
+	ID               string `json:"id"`
+	Subdomain        string `json:"subdomain"`
+	UserID           string `json:"user_id"`
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	MetaJSON         string `json:"meta_json"`
+	AccessGrantsJSON string `json:"access_grants_json"`
+	CreatedAt        int64  `json:"created_at"`
+	UpdatedAt        int64  `json:"updated_at"`
+}
+
+func (d *DB) GetOpenWebUIKnowledgeBases(subdomain, userID string) ([]OpenWebUIKnowledgeDB, error) {
+	rows, err := d.conn.Query(`
+		SELECT id, subdomain, user_id, name, description, meta_json, access_grants_json, created_at, updated_at
+		FROM openwebui_knowledge
+		WHERE subdomain = ?
+		ORDER BY updated_at DESC
+	`, subdomain)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var kbs []OpenWebUIKnowledgeDB
+	for rows.Next() {
+		var k OpenWebUIKnowledgeDB
+		if err := rows.Scan(&k.ID, &k.Subdomain, &k.UserID, &k.Name, &k.Description, &k.MetaJSON, &k.AccessGrantsJSON, &k.CreatedAt, &k.UpdatedAt); err != nil {
+			continue
+		}
+		kbs = append(kbs, k)
+	}
+	if kbs == nil {
+		kbs = []OpenWebUIKnowledgeDB{}
+	}
+	return kbs, nil
+}
+
+func (d *DB) GetOpenWebUIKnowledgeByID(subdomain, id string) (*OpenWebUIKnowledgeDB, error) {
+	var k OpenWebUIKnowledgeDB
+	err := d.conn.QueryRow(`
+		SELECT id, subdomain, user_id, name, description, meta_json, access_grants_json, created_at, updated_at
+		FROM openwebui_knowledge
+		WHERE subdomain = ? AND id = ?
+	`, subdomain, id).Scan(&k.ID, &k.Subdomain, &k.UserID, &k.Name, &k.Description, &k.MetaJSON, &k.AccessGrantsJSON, &k.CreatedAt, &k.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &k, nil
+}
+
+func (d *DB) UpsertOpenWebUIKnowledge(k OpenWebUIKnowledgeDB) error {
+	now := time.Now().Unix()
+	if k.CreatedAt == 0 {
+		k.CreatedAt = now
+	}
+	k.UpdatedAt = now
+	if k.MetaJSON == "" {
+		k.MetaJSON = "{}"
+	}
+	if k.AccessGrantsJSON == "" {
+		k.AccessGrantsJSON = "[]"
+	}
+	_, err := d.conn.Exec(`
+		INSERT INTO openwebui_knowledge (
+			id, subdomain, user_id, name, description, meta_json, access_grants_json, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			name = excluded.name,
+			description = excluded.description,
+			meta_json = excluded.meta_json,
+			access_grants_json = excluded.access_grants_json,
+			updated_at = excluded.updated_at
+	`, k.ID, k.Subdomain, k.UserID, k.Name, k.Description, k.MetaJSON, k.AccessGrantsJSON, k.CreatedAt, k.UpdatedAt)
+	return err
+}
+
+func (d *DB) DeleteOpenWebUIKnowledge(subdomain, userID, id string) error {
+	_, err := d.conn.Exec(`DELETE FROM openwebui_knowledge WHERE subdomain = ? AND id = ?`, subdomain, id)
 	return err
 }
 

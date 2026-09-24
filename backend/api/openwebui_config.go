@@ -9,6 +9,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+
+	"zcdns-backend/db"
 )
 
 func sanitizeUserEmail(name string) string {
@@ -394,25 +397,260 @@ func (h *APIHandler) handleOpenWebUITasks(w http.ResponseWriter, r *http.Request
 	})
 }
 
+func customModelToResponse(m *db.OpenWebUICustomModelDB, u *OpenWebUISessionUserInfoResponse) map[string]any {
+	if m == nil {
+		return map[string]any{}
+	}
+	var meta any = map[string]any{}
+	if m.MetaJSON != "" && m.MetaJSON != "{}" {
+		_ = json.Unmarshal([]byte(m.MetaJSON), &meta)
+	}
+	var params any = map[string]any{}
+	if m.ParamsJSON != "" && m.ParamsJSON != "{}" {
+		_ = json.Unmarshal([]byte(m.ParamsJSON), &params)
+	}
+	var grants any = []any{}
+	if m.AccessGrantsJSON != "" && m.AccessGrantsJSON != "[]" {
+		_ = json.Unmarshal([]byte(m.AccessGrantsJSON), &grants)
+	}
+	var baseModel *string
+	if m.BaseModelID != "" {
+		bm := m.BaseModelID
+		baseModel = &bm
+	}
+	return map[string]any{
+		"id":            m.ID,
+		"user_id":       m.UserID,
+		"base_model_id": baseModel,
+		"name":          m.Name,
+		"params":        params,
+		"meta":          meta,
+		"access_grants": grants,
+		"is_active":     m.IsActive,
+		"created_at":    m.CreatedAt,
+		"updated_at":    m.UpdatedAt,
+		"write_access":  true,
+		"user": map[string]any{
+			"id":    u.ID,
+			"name":  u.Name,
+			"email": u.Email,
+		},
+	}
+}
+
 // handleOpenWebUIModels handles GET /api/models, GET /api/v1/models, and /api/v1/models/*
 func (h *APIHandler) handleOpenWebUIModels(w http.ResponseWriter, r *http.Request) {
 	if setOWUCors(w, r) {
 		return
 	}
+	subdomain := h.resolveSubdomain(r)
+	u := h.resolveUser(r)
 
-	if strings.HasSuffix(r.URL.Path, "/list") {
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/models")
+	path = strings.TrimPrefix(path, "/api/models")
+	path = strings.TrimPrefix(path, "/v1/models")
+	path = strings.TrimPrefix(path, "/")
+
+	if path == "list" {
+		cModels, _ := h.db.GetOpenWebUICustomModels(subdomain)
+		query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("query")))
+		var items []any
+		for _, m := range cModels {
+			if query != "" {
+				lID := strings.ToLower(m.ID)
+				lName := strings.ToLower(m.Name)
+				if !strings.Contains(lID, query) && !strings.Contains(lName, query) {
+					continue
+				}
+			}
+			items = append(items, customModelToResponse(&m, u))
+		}
+		if items == nil {
+			items = []any{}
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"items": []any{},
-			"total": 0,
+			"items": items,
+			"total": len(items),
 		})
 		return
 	}
-	if strings.HasSuffix(r.URL.Path, "/tags") || strings.HasSuffix(r.URL.Path, "/base/tags") {
+
+	if path == "create" && r.Method == http.MethodPost {
+		body, _ := io.ReadAll(r.Body)
+		var form struct {
+			ID           string         `json:"id"`
+			BaseModelID  string         `json:"base_model_id"`
+			Name         string         `json:"name"`
+			Meta         map[string]any `json:"meta"`
+			Params       map[string]any `json:"params"`
+			AccessGrants []any          `json:"access_grants"`
+			IsActive     *bool          `json:"is_active"`
+		}
+		_ = json.Unmarshal(body, &form)
+		metaJSON, _ := json.Marshal(form.Meta)
+		paramsJSON, _ := json.Marshal(form.Params)
+		grantsJSON, _ := json.Marshal(form.AccessGrants)
+		isActive := true
+		if form.IsActive != nil {
+			isActive = *form.IsActive
+		}
+		now := time.Now().Unix()
+		modelDB := db.OpenWebUICustomModelDB{
+			ID:               form.ID,
+			Subdomain:        subdomain,
+			UserID:           u.ID,
+			Name:             form.Name,
+			BaseModelID:      form.BaseModelID,
+			MetaJSON:         string(metaJSON),
+			ParamsJSON:       string(paramsJSON),
+			AccessGrantsJSON: string(grantsJSON),
+			IsActive:         isActive,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		_ = h.db.UpsertOpenWebUICustomModel(modelDB)
+		writeJSON(w, http.StatusOK, customModelToResponse(&modelDB, u))
+		return
+	}
+
+	if path == "model" {
+		id := r.URL.Query().Get("id")
+		m, err := h.db.GetOpenWebUICustomModelByID(subdomain, id)
+		if err == nil && m != nil {
+			writeJSON(w, http.StatusOK, customModelToResponse(m, u))
+			return
+		}
+		// Fallback for non-custom base model inspection
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id":            id,
+			"name":          id,
+			"base_model_id": nil,
+			"params":        map[string]any{},
+			"meta":          map[string]any{},
+			"access_grants": []any{},
+			"is_active":     true,
+			"write_access":  true,
+			"created_at":    time.Now().Unix(),
+			"updated_at":    time.Now().Unix(),
+			"user": map[string]any{
+				"id":    u.ID,
+				"name":  u.Name,
+				"email": u.Email,
+			},
+		})
+		return
+	}
+
+	if path == "model/update" && r.Method == http.MethodPost {
+		body, _ := io.ReadAll(r.Body)
+		var form struct {
+			ID           string         `json:"id"`
+			BaseModelID  string         `json:"base_model_id"`
+			Name         string         `json:"name"`
+			Meta         map[string]any `json:"meta"`
+			Params       map[string]any `json:"params"`
+			AccessGrants []any          `json:"access_grants"`
+			IsActive     *bool          `json:"is_active"`
+		}
+		_ = json.Unmarshal(body, &form)
+		metaJSON, _ := json.Marshal(form.Meta)
+		paramsJSON, _ := json.Marshal(form.Params)
+		grantsJSON, _ := json.Marshal(form.AccessGrants)
+		isActive := true
+		if form.IsActive != nil {
+			isActive = *form.IsActive
+		}
+		existing, _ := h.db.GetOpenWebUICustomModelByID(subdomain, form.ID)
+		var createdAt int64 = time.Now().Unix()
+		if existing != nil && existing.CreatedAt > 0 {
+			createdAt = existing.CreatedAt
+		}
+		modelDB := db.OpenWebUICustomModelDB{
+			ID:               form.ID,
+			Subdomain:        subdomain,
+			UserID:           u.ID,
+			Name:             form.Name,
+			BaseModelID:      form.BaseModelID,
+			MetaJSON:         string(metaJSON),
+			ParamsJSON:       string(paramsJSON),
+			AccessGrantsJSON: string(grantsJSON),
+			IsActive:         isActive,
+			CreatedAt:        createdAt,
+			UpdatedAt:        time.Now().Unix(),
+		}
+		_ = h.db.UpsertOpenWebUICustomModel(modelDB)
+		writeJSON(w, http.StatusOK, customModelToResponse(&modelDB, u))
+		return
+	}
+
+	if path == "model/toggle" && r.Method == http.MethodPost {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			body, _ := io.ReadAll(r.Body)
+			var form struct {
+				ID string `json:"id"`
+			}
+			_ = json.Unmarshal(body, &form)
+			id = form.ID
+		}
+		m, err := h.db.ToggleOpenWebUICustomModel(subdomain, id)
+		if err == nil && m != nil {
+			writeJSON(w, http.StatusOK, customModelToResponse(m, u))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": true})
+		return
+	}
+
+	if path == "model/delete" {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			body, _ := io.ReadAll(r.Body)
+			var form struct {
+				ID string `json:"id"`
+			}
+			_ = json.Unmarshal(body, &form)
+			id = form.ID
+		}
+		_ = h.db.DeleteOpenWebUICustomModel(subdomain, u.ID, id)
+		writeJSON(w, http.StatusOK, true)
+		return
+	}
+
+	if path == "model/access/update" && r.Method == http.MethodPost {
+		body, _ := io.ReadAll(r.Body)
+		var form struct {
+			ID           string `json:"id"`
+			AccessGrants []any  `json:"access_grants"`
+		}
+		_ = json.Unmarshal(body, &form)
+		m, err := h.db.GetOpenWebUICustomModelByID(subdomain, form.ID)
+		if err == nil && m != nil {
+			gJSON, _ := json.Marshal(form.AccessGrants)
+			m.AccessGrantsJSON = string(gJSON)
+			_ = h.db.UpsertOpenWebUICustomModel(*m)
+			writeJSON(w, http.StatusOK, customModelToResponse(m, u))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": true})
+		return
+	}
+
+	if path == "tags" || path == "base/tags" {
 		writeJSON(w, http.StatusOK, []string{})
 		return
 	}
 
-	subdomain := h.resolveSubdomain(r)
+	if path == "import" {
+		writeJSON(w, http.StatusOK, true)
+		return
+	}
+
+	if path == "export" {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+
 	seen := map[string]bool{}
 	var models []map[string]interface{}
 
@@ -491,11 +729,42 @@ func (h *APIHandler) handleOpenWebUIModels(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	// 4. Custom models from workspace
+	if cModels, err := h.db.GetOpenWebUICustomModels(subdomain); err == nil {
+		for _, cm := range cModels {
+			if cm.IsActive {
+				label := cm.Name
+				if cm.BaseModelID != "" {
+					label += " (" + cm.BaseModelID + ")"
+				}
+				addModel(cm.ID, label, "custom")
+			}
+		}
+	}
+
 	// Always ensure minimum defaults so UI is never empty
 	addModel("gpt-4o", "GPT-4o", "zcdns")
 	addModel("gpt-4o-mini", "GPT-4o Mini", "zcdns")
 	addModel("claude-3-5-sonnet", "Claude 3.5 Sonnet", "zcdns")
 	addModel("groq/llama-3.3-70b-versatile", "Llama 3.3 70B (Groq)", "zcdns")
+
+	if path == "base" {
+		writeJSON(w, http.StatusOK, models)
+		return
+	}
+
+	if path == "all" {
+		writeJSON(w, http.StatusOK, models)
+		return
+	}
+
+	if strings.HasPrefix(r.URL.Path, "/v1/models") {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"object": "list",
+			"data":   models,
+		})
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": models})
 }

@@ -10,7 +10,37 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"zcdns-backend/db"
 )
+
+func promptToModel(p *db.OpenWebUIPromptDB, u *OpenWebUISessionUserInfoResponse) map[string]any {
+	if p == nil {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"id":            p.ID,
+		"command":       p.Command,
+		"name":          p.Name,
+		"content":       p.Content,
+		"user_id":       p.UserID,
+		"created_at":    p.CreatedAt,
+		"updated_at":    p.UpdatedAt,
+		"data":          map[string]any{},
+		"meta":          map[string]any{},
+		"tags":          []string{},
+		"is_active":     true,
+		"version_id":    nil,
+		"access_grants": []any{},
+		"write_access":  true,
+		"user": map[string]any{
+			"id":    u.ID,
+			"name":  u.Name,
+			"email": u.Email,
+		},
+	}
+}
 
 // handleOpenWebUIPrompts handles /api/v1/prompts/* with DB backing
 func (h *APIHandler) handleOpenWebUIPrompts(w http.ResponseWriter, r *http.Request) {
@@ -24,16 +54,18 @@ func (h *APIHandler) handleOpenWebUIPrompts(w http.ResponseWriter, r *http.Reque
 
 	if path == "list" {
 		prompts, _ := h.db.GetOpenWebUIPrompts(subdomain, u.ID)
+		query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("query")))
 		var items []any
 		for _, p := range prompts {
-			items = append(items, map[string]any{
-				"command":    p.Command,
-				"name":       p.Name,
-				"content":    p.Content,
-				"user_id":    u.ID,
-				"created_at": p.CreatedAt,
-				"updated_at": p.UpdatedAt,
-			})
+			if query != "" {
+				lCmd := strings.ToLower(p.Command)
+				lName := strings.ToLower(p.Name)
+				lContent := strings.ToLower(p.Content)
+				if !strings.Contains(lCmd, query) && !strings.Contains(lName, query) && !strings.Contains(lContent, query) {
+					continue
+				}
+			}
+			items = append(items, promptToModel(&p, u))
 		}
 		if items == nil {
 			items = []any{}
@@ -47,13 +79,33 @@ func (h *APIHandler) handleOpenWebUIPrompts(w http.ResponseWriter, r *http.Reque
 
 	if path == "create" && r.Method == http.MethodPost {
 		body, _ := io.ReadAll(r.Body)
-		var form map[string]string
+		var form struct {
+			ID      string `json:"id"`
+			Command string `json:"command"`
+			Name    string `json:"name"`
+			Content string `json:"content"`
+		}
 		_ = json.Unmarshal(body, &form)
-		randBytes := make([]byte, 8)
-		_, _ = rand.Read(randBytes)
-		pID := hex.EncodeToString(randBytes)
-		_ = h.db.UpsertOpenWebUIPrompt(subdomain, u.ID, pID, form["command"], form["name"], form["content"])
-		writeJSON(w, http.StatusOK, map[string]any{"command": form["command"], "name": form["name"]})
+		pID := form.ID
+		if pID == "" {
+			pID = uuid.New().String()
+		}
+		cmd := strings.TrimPrefix(form.Command, "/")
+		_ = h.db.UpsertOpenWebUIPrompt(subdomain, u.ID, pID, cmd, form.Name, form.Content)
+		p, err := h.db.GetOpenWebUIPromptByID(subdomain, pID)
+		if err != nil || p == nil {
+			p = &db.OpenWebUIPromptDB{
+				ID:        pID,
+				Subdomain: subdomain,
+				UserID:    u.ID,
+				Command:   cmd,
+				Name:      form.Name,
+				Content:   form.Content,
+				CreatedAt: time.Now().Unix(),
+				UpdatedAt: time.Now().Unix(),
+			}
+		}
+		writeJSON(w, http.StatusOK, promptToModel(p, u))
 		return
 	}
 
@@ -62,14 +114,117 @@ func (h *APIHandler) handleOpenWebUIPrompts(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Sub-actions on id/:prompt_id/*
+	if strings.HasPrefix(path, "id/") {
+		sub := strings.TrimPrefix(path, "id/")
+		parts := strings.Split(sub, "/")
+		promptID := parts[0]
+
+		if len(parts) == 1 {
+			if r.Method == http.MethodGet {
+				p, err := h.db.GetOpenWebUIPromptByID(subdomain, promptID)
+				if err != nil || p == nil {
+					writeJSONError(w, http.StatusNotFound, "Prompt not found")
+					return
+				}
+				writeJSON(w, http.StatusOK, promptToModel(p, u))
+				return
+			}
+			if r.Method == http.MethodDelete {
+				_ = h.db.DeleteOpenWebUIPrompt(subdomain, u.ID, promptID)
+				writeJSON(w, http.StatusOK, true)
+				return
+			}
+		}
+
+		if len(parts) >= 2 {
+			action := parts[1]
+			if action == "delete" {
+				_ = h.db.DeleteOpenWebUIPrompt(subdomain, u.ID, promptID)
+				writeJSON(w, http.StatusOK, true)
+				return
+			}
+			if action == "update" {
+				if len(parts) >= 3 && parts[2] == "meta" {
+					body, _ := io.ReadAll(r.Body)
+					var form struct {
+						Name    string   `json:"name"`
+						Command string   `json:"command"`
+						Tags    []string `json:"tags"`
+					}
+					_ = json.Unmarshal(body, &form)
+					cmd := strings.TrimPrefix(form.Command, "/")
+					p, _ := h.db.GetOpenWebUIPromptByID(subdomain, promptID)
+					content := ""
+					name := form.Name
+					if p != nil {
+						content = p.Content
+						if name == "" {
+							name = p.Name
+						}
+						if cmd == "" {
+							cmd = p.Command
+						}
+					}
+					_ = h.db.UpsertOpenWebUIPrompt(subdomain, u.ID, promptID, cmd, name, content)
+					pUpdated, _ := h.db.GetOpenWebUIPromptByID(subdomain, promptID)
+					writeJSON(w, http.StatusOK, promptToModel(pUpdated, u))
+					return
+				}
+				if len(parts) >= 3 && parts[2] == "version" {
+					p, _ := h.db.GetOpenWebUIPromptByID(subdomain, promptID)
+					writeJSON(w, http.StatusOK, promptToModel(p, u))
+					return
+				}
+				body, _ := io.ReadAll(r.Body)
+				var form struct {
+					Command string `json:"command"`
+					Name    string `json:"name"`
+					Content string `json:"content"`
+				}
+				_ = json.Unmarshal(body, &form)
+				cmd := strings.TrimPrefix(form.Command, "/")
+				_ = h.db.UpsertOpenWebUIPrompt(subdomain, u.ID, promptID, cmd, form.Name, form.Content)
+				pUpdated, _ := h.db.GetOpenWebUIPromptByID(subdomain, promptID)
+				writeJSON(w, http.StatusOK, promptToModel(pUpdated, u))
+				return
+			}
+			if action == "toggle" || action == "access" {
+				p, _ := h.db.GetOpenWebUIPromptByID(subdomain, promptID)
+				writeJSON(w, http.StatusOK, promptToModel(p, u))
+				return
+			}
+			if action == "history" {
+				writeJSON(w, http.StatusOK, []any{})
+				return
+			}
+		}
+	}
+
+	// Sub-actions on command/:command/*
+	if strings.HasPrefix(path, "command/") {
+		cmd := strings.TrimPrefix(path, "command/")
+		cmd = strings.TrimPrefix(cmd, "/")
+		if strings.HasSuffix(cmd, "/delete") {
+			cmd = strings.TrimSuffix(cmd, "/delete")
+			cmd = strings.TrimPrefix(cmd, "/")
+			_ = h.db.DeleteOpenWebUIPromptByCommand(subdomain, u.ID, cmd)
+			writeJSON(w, http.StatusOK, true)
+			return
+		}
+		p, err := h.db.GetOpenWebUIPromptByCommand(subdomain, cmd)
+		if err != nil || p == nil {
+			writeJSONError(w, http.StatusNotFound, "Prompt not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, promptToModel(p, u))
+		return
+	}
+
 	prompts, _ := h.db.GetOpenWebUIPrompts(subdomain, u.ID)
 	var list []any
 	for _, p := range prompts {
-		list = append(list, map[string]any{
-			"command": p.Command,
-			"name":    p.Name,
-			"content": p.Content,
-		})
+		list = append(list, promptToModel(&p, u))
 	}
 	if list == nil {
 		list = []any{}
@@ -355,11 +510,212 @@ func (h *APIHandler) handleOpenWebUISkills(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, []any{})
 }
 
+func knowledgeToResponse(k *db.OpenWebUIKnowledgeDB, u *OpenWebUISessionUserInfoResponse) map[string]any {
+	if k == nil {
+		return map[string]any{}
+	}
+	var meta any = map[string]any{}
+	if k.MetaJSON != "" && k.MetaJSON != "{}" {
+		_ = json.Unmarshal([]byte(k.MetaJSON), &meta)
+	}
+	var grants any = []any{}
+	if k.AccessGrantsJSON != "" && k.AccessGrantsJSON != "[]" {
+		_ = json.Unmarshal([]byte(k.AccessGrantsJSON), &grants)
+	}
+	return map[string]any{
+		"id":            k.ID,
+		"user_id":       k.UserID,
+		"name":          k.Name,
+		"description":   k.Description,
+		"meta":          meta,
+		"access_grants": grants,
+		"files":         []any{},
+		"created_at":    k.CreatedAt,
+		"updated_at":    k.UpdatedAt,
+		"write_access":  true,
+		"file_count":    0,
+		"user": map[string]any{
+			"id":    u.ID,
+			"name":  u.Name,
+			"email": u.Email,
+		},
+	}
+}
+
 // handleOpenWebUIKnowledge handles /api/v1/knowledge/*
 func (h *APIHandler) handleOpenWebUIKnowledge(w http.ResponseWriter, r *http.Request) {
 	if setOWUCors(w, r) {
 		return
 	}
+	subdomain := h.resolveSubdomain(r)
+	u := h.resolveUser(r)
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/knowledge")
+	path = strings.TrimPrefix(path, "/")
+
+	if path == "" || path == "/" || path == "search" {
+		kbs, _ := h.db.GetOpenWebUIKnowledgeBases(subdomain, u.ID)
+		query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("query")))
+		var items []any
+		for _, k := range kbs {
+			if query != "" {
+				lName := strings.ToLower(k.Name)
+				lDesc := strings.ToLower(k.Description)
+				if !strings.Contains(lName, query) && !strings.Contains(lDesc, query) {
+					continue
+				}
+			}
+			items = append(items, knowledgeToResponse(&k, u))
+		}
+		if items == nil {
+			items = []any{}
+		}
+		writeJSON(w, http.StatusOK, OpenWebUIPaginatedListResponse{
+			Items: items,
+			Total: int64(len(items)),
+		})
+		return
+	}
+
+	if path == "create" && r.Method == http.MethodPost {
+		body, _ := io.ReadAll(r.Body)
+		var form struct {
+			Name         string `json:"name"`
+			Description  string `json:"description"`
+			AccessGrants []any  `json:"access_grants"`
+		}
+		_ = json.Unmarshal(body, &form)
+		kID := uuid.New().String()
+		now := time.Now().Unix()
+		grantsJSON, _ := json.Marshal(form.AccessGrants)
+		kb := db.OpenWebUIKnowledgeDB{
+			ID:               kID,
+			Subdomain:        subdomain,
+			UserID:           u.ID,
+			Name:             form.Name,
+			Description:      form.Description,
+			MetaJSON:         "{}",
+			AccessGrantsJSON: string(grantsJSON),
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		_ = h.db.UpsertOpenWebUIKnowledge(kb)
+		writeJSON(w, http.StatusOK, knowledgeToResponse(&kb, u))
+		return
+	}
+
+	if path == "reindex" || path == "metadata/reindex" {
+		writeJSON(w, http.StatusOK, true)
+		return
+	}
+
+	if strings.HasPrefix(path, "external/") {
+		sub := strings.TrimPrefix(path, "external/")
+		if sub == "connections" && r.Method == http.MethodGet {
+			writeJSON(w, http.StatusOK, []any{})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": true})
+		return
+	}
+
+	// Sub-actions on {id}/*
+	parts := strings.Split(path, "/")
+	kID := parts[0]
+
+	if len(parts) == 1 {
+		if r.Method == http.MethodGet {
+			kb, err := h.db.GetOpenWebUIKnowledgeByID(subdomain, kID)
+			if err != nil || kb == nil {
+				writeJSONError(w, http.StatusNotFound, "Knowledge base not found")
+				return
+			}
+			writeJSON(w, http.StatusOK, knowledgeToResponse(kb, u))
+			return
+		}
+		if r.Method == http.MethodDelete {
+			_ = h.db.DeleteOpenWebUIKnowledge(subdomain, u.ID, kID)
+			writeJSON(w, http.StatusOK, true)
+			return
+		}
+	}
+
+	if len(parts) >= 2 {
+		action := parts[1]
+		if action == "delete" {
+			_ = h.db.DeleteOpenWebUIKnowledge(subdomain, u.ID, kID)
+			writeJSON(w, http.StatusOK, true)
+			return
+		}
+		if action == "update" {
+			body, _ := io.ReadAll(r.Body)
+			var form struct {
+				Name         *string `json:"name"`
+				Description  *string `json:"description"`
+				AccessGrants []any   `json:"access_grants"`
+			}
+			_ = json.Unmarshal(body, &form)
+			kb, err := h.db.GetOpenWebUIKnowledgeByID(subdomain, kID)
+			if err == nil && kb != nil {
+				if form.Name != nil {
+					kb.Name = *form.Name
+				}
+				if form.Description != nil {
+					kb.Description = *form.Description
+				}
+				if form.AccessGrants != nil {
+					gJSON, _ := json.Marshal(form.AccessGrants)
+					kb.AccessGrantsJSON = string(gJSON)
+				}
+				kb.UpdatedAt = time.Now().Unix()
+				_ = h.db.UpsertOpenWebUIKnowledge(*kb)
+				writeJSON(w, http.StatusOK, knowledgeToResponse(kb, u))
+				return
+			}
+			writeJSONError(w, http.StatusNotFound, "Knowledge base not found")
+			return
+		}
+		if action == "access" {
+			body, _ := io.ReadAll(r.Body)
+			var form struct {
+				AccessGrants []any `json:"access_grants"`
+			}
+			_ = json.Unmarshal(body, &form)
+			kb, err := h.db.GetOpenWebUIKnowledgeByID(subdomain, kID)
+			if err == nil && kb != nil {
+				gJSON, _ := json.Marshal(form.AccessGrants)
+				kb.AccessGrantsJSON = string(gJSON)
+				kb.UpdatedAt = time.Now().Unix()
+				_ = h.db.UpsertOpenWebUIKnowledge(*kb)
+				writeJSON(w, http.StatusOK, knowledgeToResponse(kb, u))
+				return
+			}
+			writeJSONError(w, http.StatusNotFound, "Knowledge base not found")
+			return
+		}
+		if action == "files" {
+			if len(parts) >= 3 && parts[2] == "pending" {
+				writeJSON(w, http.StatusOK, []any{})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"items":       []any{},
+				"directories": []any{},
+				"breadcrumbs": []any{},
+				"total":       0,
+			})
+			return
+		}
+		if action == "file" || action == "reset" {
+			kb, _ := h.db.GetOpenWebUIKnowledgeByID(subdomain, kID)
+			writeJSON(w, http.StatusOK, knowledgeToResponse(kb, u))
+			return
+		}
+		if action == "sync" {
+			writeJSON(w, http.StatusOK, map[string]any{"status": true})
+			return
+		}
+	}
+
 	writeJSON(w, http.StatusOK, OpenWebUIPaginatedListResponse{
 		Items: []any{},
 		Total: 0,

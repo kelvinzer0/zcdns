@@ -251,11 +251,50 @@ func InitDB(dbPath string) (*DB, error) {
 		PRIMARY KEY (subdomain, user_id)
 	);
 
+	CREATE TABLE IF NOT EXISTS openwebui_custom_models (
+		id TEXT NOT NULL,
+		subdomain TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		name TEXT NOT NULL DEFAULT '',
+		base_model_id TEXT,
+		meta_json TEXT NOT NULL DEFAULT '{}',
+		params_json TEXT NOT NULL DEFAULT '{}',
+		access_grants_json TEXT NOT NULL DEFAULT '[]',
+		is_active INTEGER NOT NULL DEFAULT 1,
+		created_at INTEGER NOT NULL DEFAULT 0,
+		updated_at INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (subdomain, id)
+	);
+
+	CREATE TABLE IF NOT EXISTS openwebui_knowledge (
+		id TEXT PRIMARY KEY,
+		subdomain TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		name TEXT NOT NULL DEFAULT '',
+		description TEXT NOT NULL DEFAULT '',
+		meta_json TEXT NOT NULL DEFAULT '{}',
+		access_grants_json TEXT NOT NULL DEFAULT '[]',
+		created_at INTEGER NOT NULL DEFAULT 0,
+		updated_at INTEGER NOT NULL DEFAULT 0
+	);
+
+	CREATE TABLE IF NOT EXISTS openwebui_knowledge_files (
+		id TEXT PRIMARY KEY,
+		subdomain TEXT NOT NULL,
+		knowledge_id TEXT NOT NULL,
+		file_id TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		created_at INTEGER NOT NULL DEFAULT 0
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_owu_chats_subdomain ON openwebui_chats(subdomain, updated_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_owu_folders_subdomain ON openwebui_folders(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_owu_prompts_subdomain ON openwebui_prompts(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_owu_files_sub_user ON openwebui_files(subdomain, user_id, updated_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_owu_user_profiles ON openwebui_user_profiles(subdomain, user_id);
+	CREATE INDEX IF NOT EXISTS idx_owu_custom_models ON openwebui_custom_models(subdomain, updated_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_owu_knowledge ON openwebui_knowledge(subdomain, updated_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_owu_knowledge_files ON openwebui_knowledge_files(subdomain, knowledge_id);
 
 	CREATE INDEX IF NOT EXISTS idx_records_subdomain ON records(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_records_lookup ON records(subdomain, name, type);
