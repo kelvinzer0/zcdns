@@ -561,6 +561,14 @@ def port_all_routers(routers_dir: Path, out_dir: Path):
             print(f"  ✗ {rf.name}: {e}")
 
 
+def ensure_openwebui_repo():
+    target = Path("/tmp/open-webui")
+    if not (target / ".git").exists():
+        print("==> [gython] /tmp/open-webui not found. Cloning automatically...", file=sys.stderr)
+        import subprocess
+        subprocess.run(["git", "clone", "--depth", "1", "https://github.com/open-webui/open-webui.git", str(target)], check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description="gython.py - Python to Go AST Transpiler for OpenWebUI")
     parser.add_argument("--file", default="/tmp/open-webui/backend/open_webui/socket/main.py", help="Python source file to transpile")
@@ -573,6 +581,8 @@ def main():
     parser.add_argument("--output", help="Optional output Go file")
 
     args = parser.parse_args()
+
+    ensure_openwebui_repo()
 
     routers_dir = Path("/tmp/open-webui/backend/open_webui/routers")
     models_dir = Path("/tmp/open-webui/backend/open_webui/models")

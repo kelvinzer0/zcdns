@@ -27,6 +27,10 @@ func (h *APIHandler) locateOpenWebUIDir() string {
 
 const authBootstrapScript = `<script>
 (function() {
+  var loc = localStorage.getItem('locale');
+  if (!loc || loc === 'en' || loc === 'null' || loc === 'undefined') {
+    localStorage.setItem('locale', 'en-US');
+  }
   var p = new URLSearchParams(window.location.search);
   var k = p.get('key');
   if (k) {
