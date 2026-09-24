@@ -208,6 +208,42 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 
 			if action == "shared" {
 				if r.Method == http.MethodGet {
+					if subAction == "chats" || subAction == "" {
+						rawChats, err := h.db.GetOpenWebUIChatsByFolder(subdomain, u.ID, folderID)
+						if err != nil {
+							rawChats = nil
+						}
+						var chatItems []map[string]any
+						for _, c := range rawChats {
+							var lastRead *int64
+							if c.LastReadAt > 0 {
+								lr := c.LastReadAt
+								lastRead = &lr
+							}
+							chatItems = append(chatItems, map[string]any{
+								"id":           c.ID,
+								"title":        c.Title,
+								"user_id":      u.ID,
+								"created_at":   c.CreatedAt,
+								"updated_at":   c.UpdatedAt,
+								"last_read_at": lastRead,
+								"folder_id":    c.FolderID,
+								"owner_name":   u.Name,
+								"active":       false,
+								"readonly":     false,
+							})
+						}
+						if chatItems == nil {
+							chatItems = []map[string]any{}
+						}
+						writeJSON(w, http.StatusOK, map[string]any{
+							"chats":             chatItems,
+							"folder_permission": "write",
+							"total":             len(chatItems),
+							"has_more":          false,
+						})
+						return
+					}
 					writeJSON(w, http.StatusOK, []any{})
 					return
 				}

@@ -15,6 +15,7 @@ type OpenWebUIChatTitleIdResponse struct {
 	Active     bool    `json:"active"`
 	Archived   bool    `json:"archived"`
 	Pinned     bool    `json:"pinned"`
+	FolderID   *string `json:"folder_id,omitempty"`
 }
 
 type OpenWebUIChatResponse struct {

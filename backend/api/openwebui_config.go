@@ -367,16 +367,29 @@ func (h *APIHandler) handleOpenWebUIUserSettings(w http.ResponseWriter, r *http.
 	})
 }
 
-// handleOpenWebUITasks handles /api/v1/tasks/config
+// handleOpenWebUITasks handles /api/tasks/config, /api/tasks/chat/*, and /api/v1/tasks/chat/*
 func (h *APIHandler) handleOpenWebUITasks(w http.ResponseWriter, r *http.Request) {
 	if setOWUCors(w, r) {
 		return
 	}
+	p := strings.TrimPrefix(r.URL.Path, "/api/v1/tasks")
+	p = strings.TrimPrefix(p, "/api/tasks")
+	p = strings.TrimPrefix(p, "/")
+
+	if strings.HasPrefix(p, "chat/") {
+		if r.Method == http.MethodPost && strings.HasSuffix(p, "/stop") {
+			writeJSON(w, http.StatusOK, map[string]interface{}{"status": true})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{"task_ids": []any{}})
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"TASK_MODEL":                 "",
-		"TASK_MODEL_EXTERNAL":        "",
-		"ENABLE_TITLE_GENERATION":    true,
-		"ENABLE_TAGS_GENERATION":     true,
+		"TASK_MODEL":                     "",
+		"TASK_MODEL_EXTERNAL":            "",
+		"ENABLE_TITLE_GENERATION":        true,
+		"ENABLE_TAGS_GENERATION":         true,
 		"ENABLE_AUTOCOMPLETE_GENERATION": false,
 	})
 }

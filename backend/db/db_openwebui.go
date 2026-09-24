@@ -43,7 +43,7 @@ type OpenWebUIPromptDB struct {
 
 // ── Chats ──────────────────────────────────────────────────────────────────────
 
-func (d *DB) GetOpenWebUIChats(subdomain, userID string, includeArchived, includePinned bool) ([]OpenWebUIChatSummary, error) {
+func (d *DB) GetOpenWebUIChats(subdomain, userID string, includeArchived, includePinned, includeFolders bool) ([]OpenWebUIChatSummary, error) {
 	query := `
 		SELECT id, title, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at, COALESCE(last_read_at, 0)
 		FROM openwebui_chats
@@ -55,9 +55,42 @@ func (d *DB) GetOpenWebUIChats(subdomain, userID string, includeArchived, includ
 	if !includePinned {
 		query += ` AND pinned = 0`
 	}
+	if !includeFolders {
+		query += ` AND (folder_id IS NULL OR folder_id = '')`
+	}
 	query += ` ORDER BY updated_at DESC`
 
 	rows, err := d.conn.Query(query, subdomain, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var chats []OpenWebUIChatSummary
+	for rows.Next() {
+		var c OpenWebUIChatSummary
+		var p, a int
+		if err := rows.Scan(&c.ID, &c.Title, &p, &a, &c.FolderID, &c.CreatedAt, &c.UpdatedAt, &c.LastReadAt); err != nil {
+			continue
+		}
+		c.Pinned = p == 1
+		c.Archived = a == 1
+		chats = append(chats, c)
+	}
+	if chats == nil {
+		chats = []OpenWebUIChatSummary{}
+	}
+	return chats, nil
+}
+
+func (d *DB) GetOpenWebUIChatsByFolder(subdomain, userID, folderID string) ([]OpenWebUIChatSummary, error) {
+	query := `
+		SELECT id, title, pinned, archived, COALESCE(folder_id, ''), created_at, updated_at, COALESCE(last_read_at, 0)
+		FROM openwebui_chats
+		WHERE subdomain = ? AND user_id = ? AND folder_id = ? AND archived = 0
+		ORDER BY updated_at DESC
+	`
+	rows, err := d.conn.Query(query, subdomain, userID, folderID)
 	if err != nil {
 		return nil, err
 	}
@@ -214,10 +247,14 @@ func (d *DB) UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID s
 	if err := json.Unmarshal([]byte(chatJSON), &chatObj); err != nil {
 		return err
 	}
-	history, _ := chatObj["history"].(map[string]interface{})
+	targetMap := chatObj
+	if inner, ok := chatObj["chat"].(map[string]interface{}); ok && inner != nil {
+		targetMap = inner
+	}
+	history, _ := targetMap["history"].(map[string]interface{})
 	if history == nil {
 		history = make(map[string]interface{})
-		chatObj["history"] = history
+		targetMap["history"] = history
 	}
 	messages, _ := history["messages"].(map[string]interface{})
 	if messages == nil {
