@@ -154,6 +154,7 @@ func InitDB(dbPath string) (*DB, error) {
 		name TEXT NOT NULL,
 		api_key TEXT NOT NULL,
 		base_url TEXT NOT NULL DEFAULT '',
+		socks5_proxy TEXT NOT NULL DEFAULT '',
 		models_json TEXT NOT NULL DEFAULT '[]',
 		status TEXT NOT NULL DEFAULT 'active',
 		rate_limited_until TIMESTAMP,
@@ -348,6 +349,7 @@ func InitDB(dbPath string) (*DB, error) {
 	// Migrations for existing databases
 	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN api_type TEXT NOT NULL DEFAULT 'openai';")
 	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN models_json TEXT NOT NULL DEFAULT '[]';")
+	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN socks5_proxy TEXT NOT NULL DEFAULT '';")
 	_, _ = conn.Exec("ALTER TABLE ai_router_aliases ADD COLUMN context_size INTEGER NOT NULL DEFAULT 0;")
 	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default';")
 	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;")

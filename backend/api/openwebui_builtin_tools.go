@@ -745,16 +745,18 @@ func (h *APIHandler) dispatchImageGeneration(ctx context.Context, subdomain, act
 		return nil, fmt.Errorf("no AI router connections configured for subdomain %s", subdomain)
 	}
 
-	var apiKey, baseURL string
+	var apiKey, baseURL, socks5Proxy string
 	for _, c := range conns {
 		if c.Provider == "openai" && c.APIKey != "" {
 			apiKey = c.APIKey
 			baseURL = c.BaseURL
+			socks5Proxy = c.Socks5Proxy
 			break
 		}
 		if (c.Provider == "custom" || c.APIType == "openai") && c.APIKey != "" && apiKey == "" {
 			apiKey = c.APIKey
 			baseURL = c.BaseURL
+			socks5Proxy = c.Socks5Proxy
 		}
 	}
 
@@ -792,7 +794,10 @@ func (h *APIHandler) dispatchImageGeneration(ctx context.Context, subdomain, act
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	client := &http.Client{Timeout: 90 * time.Second}
+	client, cErr := createProxyHTTPClient(socks5Proxy, 90*time.Second)
+	if cErr != nil {
+		return nil, fmt.Errorf("proxy error: %w", cErr)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

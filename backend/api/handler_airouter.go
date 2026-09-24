@@ -489,11 +489,13 @@ func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget,
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	client := &http.Client{
-		Timeout: 60 * time.Second,
-		Transport: &http.Transport{
-			DisableCompression: true,
-		},
+	proxyAddr := ""
+	if target.conn != nil {
+		proxyAddr = target.conn.Socks5Proxy
+	}
+	client, cErr := createProxyHTTPClient(proxyAddr, 60*time.Second)
+	if cErr != nil {
+		return fmt.Errorf("proxy error: %w", cErr)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -925,6 +927,7 @@ func (h *APIHandler) streamFollowUpTurn(
 	messages []map[string]interface{},
 	accumulatedContent *strings.Builder,
 	emitEvent func(string, interface{}),
+	socks5Proxy string,
 ) error {
 	var payloadBytes []byte
 	if isAnthropic {
@@ -973,9 +976,9 @@ func (h *APIHandler) streamFollowUpTurn(
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	client := &http.Client{
-		Timeout:   300 * time.Second,
-		Transport: &http.Transport{DisableCompression: true},
+	client, cErr := createProxyHTTPClient(socks5Proxy, 300*time.Second)
+	if cErr != nil {
+		return fmt.Errorf("proxy error: %w", cErr)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -1136,11 +1139,13 @@ func (h *APIHandler) streamTargetToSocket(
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	client := &http.Client{
-		Timeout: 300 * time.Second,
-		Transport: &http.Transport{
-			DisableCompression: true,
-		},
+	proxyAddr := ""
+	if target.conn != nil {
+		proxyAddr = target.conn.Socks5Proxy
+	}
+	client, cErr := createProxyHTTPClient(proxyAddr, 300*time.Second)
+	if cErr != nil {
+		return fmt.Errorf("proxy error: %w", cErr)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -1372,7 +1377,7 @@ func (h *APIHandler) streamTargetToSocket(
 			})
 			followUpMessages = append(followUpMessages, executedToolMessages...)
 
-			_ = h.streamFollowUpTurn(upstreamURL, apiKey, target.model, isAnthropic, followUpMessages, &accumulatedContent, emitEvent)
+			_ = h.streamFollowUpTurn(upstreamURL, apiKey, target.model, isAnthropic, followUpMessages, &accumulatedContent, emitEvent, proxyAddr)
 		}
 	}
 
@@ -1675,19 +1680,23 @@ func (h *APIHandler) handleDeleteAIRouterConnection(w http.ResponseWriter, r *ht
 }
 
 type ConnectionTestRequest struct {
-	ID       int64  `json:"id,omitempty"`
-	Provider string `json:"provider"`
-	APIType  string `json:"api_type"`
-	APIKey   string `json:"api_key"`
-	BaseURL  string `json:"base_url"`
+	ID          int64  `json:"id,omitempty"`
+	Provider    string `json:"provider"`
+	APIType     string `json:"api_type"`
+	APIKey      string `json:"api_key"`
+	BaseURL     string `json:"base_url"`
+	Socks5Proxy string `json:"socks5_proxy,omitempty"`
 }
 
-func testProviderConnection(provider, apiType, apiKey, customBaseURL string) (bool, int64, []string, string) {
+func testProviderConnection(provider, apiType, apiKey, customBaseURL, socks5Proxy string) (bool, int64, []string, string) {
 	start := time.Now()
 	baseURL := providerBaseURL(provider, customBaseURL)
 	isAnthropic := (apiType == "anthropic" || (apiType == "" && provider == "anthropic"))
 
-	client := &http.Client{Timeout: 12 * time.Second}
+	client, cErr := createProxyHTTPClient(socks5Proxy, 15*time.Second)
+	if cErr != nil {
+		return false, time.Since(start).Milliseconds(), nil, fmt.Sprintf("Proxy configuration error: %v", cErr)
+	}
 	var testURL string
 	var httpReq *http.Request
 	var err error
@@ -1790,6 +1799,9 @@ func (h *APIHandler) handleTestAIRouterConnection(w http.ResponseWriter, r *http
 			if body.BaseURL == "" {
 				body.BaseURL = conn.BaseURL
 			}
+			if body.Socks5Proxy == "" {
+				body.Socks5Proxy = conn.Socks5Proxy
+			}
 		}
 	}
 
@@ -1798,7 +1810,7 @@ func (h *APIHandler) handleTestAIRouterConnection(w http.ResponseWriter, r *http
 		return
 	}
 
-	success, latency, models, msg := testProviderConnection(body.Provider, body.APIType, body.APIKey, body.BaseURL)
+	success, latency, models, msg := testProviderConnection(body.Provider, body.APIType, body.APIKey, body.BaseURL, body.Socks5Proxy)
 	if !success {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"success":    false,
@@ -1838,10 +1850,13 @@ func (h *APIHandler) handleFetchAIRouterModels(w http.ResponseWriter, r *http.Re
 			if body.BaseURL == "" {
 				body.BaseURL = conn.BaseURL
 			}
+			if body.Socks5Proxy == "" {
+				body.Socks5Proxy = conn.Socks5Proxy
+			}
 		}
 	}
 
-	success, _, models, msg := testProviderConnection(body.Provider, body.APIType, body.APIKey, body.BaseURL)
+	success, _, models, msg := testProviderConnection(body.Provider, body.APIType, body.APIKey, body.BaseURL, body.Socks5Proxy)
 	if !success {
 		writeJSONError(w, http.StatusBadRequest, msg)
 		return

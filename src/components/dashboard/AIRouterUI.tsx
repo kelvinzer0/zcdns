@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Network, Plus, Trash2, Save, Copy, Check, Eye, EyeOff,
   Loader2, ChevronDown, ChevronRight, AlertCircle, CheckCircle2,
-  Key, ShieldCheck, ExternalLink, MessageSquare, RefreshCw, Zap, X
+  Key, ShieldCheck, Shield, ExternalLink, MessageSquare, RefreshCw, Zap, X
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -13,6 +13,7 @@ interface Connection {
   name: string;
   api_key: string;
   base_url: string;
+  socks5_proxy?: string;
   models_json?: string;
   status: string;
 }
@@ -151,6 +152,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
     name: '',
     api_key: '',
     base_url: 'https://api.openai.com',
+    socks5_proxy: '',
     models: [] as string[]
   });
   const [manualModelInput, setManualModelInput] = useState('');
@@ -245,7 +247,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   };
 
   // Test connection (for new form or existing connection)
-  const testConnection = async (targetConn?: { id?: number; provider: string; api_type: string; api_key: string; base_url: string }) => {
+  const testConnection = async (targetConn?: { id?: number; provider: string; api_type: string; api_key: string; base_url: string; socks5_proxy?: string }) => {
     const isNew = !targetConn?.id;
     if (isNew) {
       if (!newConn.api_key) {
@@ -264,14 +266,16 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
             provider: newConn.provider,
             api_type: newConn.api_type,
             api_key: newConn.api_key,
-            base_url: newConn.base_url
+            base_url: newConn.base_url,
+            socks5_proxy: newConn.socks5_proxy
           }
         : {
             id: targetConn.id,
             provider: targetConn.provider,
             api_type: targetConn.api_type,
             api_key: targetConn.api_key,
-            base_url: targetConn.base_url
+            base_url: targetConn.base_url,
+            socks5_proxy: targetConn.socks5_proxy
           };
 
       const res = await fetch('/api/airouter/connections/test', {
@@ -355,6 +359,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
           name: newConn.name,
           api_key: newConn.api_key,
           base_url: newConn.base_url,
+          socks5_proxy: newConn.socks5_proxy,
           models_json: JSON.stringify(newConn.models)
         })
       });
@@ -365,6 +370,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
         name: '',
         api_key: '',
         base_url: 'https://api.openai.com',
+        socks5_proxy: '',
         models: []
       });
       setTestResult(null);
@@ -745,6 +751,14 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                       Base URL: <span className="text-foreground">{c.base_url}</span>
                     </div>
                   )}
+                  {c.socks5_proxy && (
+                    <div className="text-[11px] text-muted-foreground font-mono flex items-center gap-1.5 pt-0.5">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-semibold border border-cyan-500/20 text-[10px]">
+                        <Shield className="w-3 h-3" /> SOCKS5
+                      </span>
+                      <span className="text-foreground font-mono truncate">{c.socks5_proxy}</span>
+                    </div>
+                  )}
 
                   {/* Model Management Sub-Drawer for Existing Connection */}
                   {isEditingThis ? (
@@ -966,6 +980,44 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                 value={newConn.api_key}
                 onChange={e => setNewConn(c => ({ ...c, api_key: e.target.value }))}
                 placeholder="sk-... or pick key from Vault"
+                className="w-full border border-border rounded-none px-2.5 py-1.5 text-xs bg-background font-mono"
+              />
+            </div>
+
+            {/* SOCKS5 Proxy with Vault Picker */}
+            <div className="sm:col-span-2">
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-medium flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-cyan-500" />
+                  <span>SOCKS5 Proxy (Optional)</span>
+                  <span className="text-[10px] text-muted-foreground font-normal">
+                    (Route requests to this provider through a SOCKS5 proxy)
+                  </span>
+                </label>
+                {vaultSecrets.length > 0 && (
+                  <select
+                    className="text-[11px] text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded-none px-1.5 py-0.5 cursor-pointer font-medium"
+                    onChange={e => {
+                      const found = vaultSecrets.find(s => s.key === e.target.value);
+                      if (found) {
+                        setNewConn(c => ({ ...c, socks5_proxy: found.value }));
+                        toast({ title: `Proxy '${found.key}' loaded from Vault` });
+                      }
+                      e.target.value = "";
+                    }}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>⚡ Pick Proxy from Vault...</option>
+                    {vaultSecrets.map(s => (
+                      <option key={s.key} value={s.key}>{s.key}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <input
+                value={newConn.socks5_proxy}
+                onChange={e => setNewConn(c => ({ ...c, socks5_proxy: e.target.value }))}
+                placeholder="socks5://127.0.0.1:1080 or socks5://user:pass@host:port (optional)"
                 className="w-full border border-border rounded-none px-2.5 py-1.5 text-xs bg-background font-mono"
               />
             </div>
