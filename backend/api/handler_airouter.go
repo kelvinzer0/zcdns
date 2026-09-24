@@ -776,6 +776,35 @@ type accumulatedToolCall struct {
 
 func (h *APIHandler) resolveMCPToolsForChat(subdomain string, rawToolIDs []interface{}) (openaiTools []map[string]interface{}, antTools []map[string]interface{}, toolMap map[string]mcpToolTarget) {
 	toolMap = make(map[string]mcpToolTarget)
+
+	// 1. Register OpenWebUI builtin tools
+	builtinSpecs := GetBuiltinToolSpecs()
+	for _, spec := range builtinSpecs {
+		fnName, _ := spec.Function["name"].(string)
+		desc, _ := spec.Function["description"].(string)
+		params, _ := spec.Function["parameters"].(map[string]any)
+
+		openaiTools = append(openaiTools, map[string]interface{}{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        fnName,
+				"description": desc,
+				"parameters":  params,
+			},
+		})
+
+		antTools = append(antTools, map[string]interface{}{
+			"name":         fnName,
+			"description":  desc,
+			"input_schema": params,
+		})
+
+		toolMap[fnName] = mcpToolTarget{
+			serverURL: "builtin",
+			toolName:  fnName,
+		}
+	}
+
 	if len(rawToolIDs) == 0 {
 		return
 	}
@@ -1294,10 +1323,25 @@ func (h *APIHandler) streamTargetToSocket(
 			var argsObj any
 			_ = json.Unmarshal([]byte(tc.arguments.String()), &argsObj)
 
-			execCtx, execCancel := context.WithTimeout(context.Background(), 60*time.Second)
-			mcpClient := NewMCPClient()
-			rawRes, tErr := mcpClient.ExecuteTool(execCtx, target.serverURL, target.apiKey, target.toolName, argsObj)
-			execCancel()
+			var rawRes any
+			var tErr error
+
+			if target.serverURL == "builtin" {
+				var argsMap map[string]any
+				if m, ok := argsObj.(map[string]any); ok {
+					argsMap = m
+				} else {
+					argsMap = make(map[string]any)
+				}
+				execCtx, execCancel := context.WithTimeout(context.Background(), 60*time.Second)
+				rawRes, tErr = h.ExecuteBuiltinTool(execCtx, target.toolName, argsMap, subdomain, userID, chatID)
+				execCancel()
+			} else {
+				execCtx, execCancel := context.WithTimeout(context.Background(), 60*time.Second)
+				mcpClient := NewMCPClient()
+				rawRes, tErr = mcpClient.ExecuteTool(execCtx, target.serverURL, target.apiKey, target.toolName, argsObj)
+				execCancel()
+			}
 
 			resBytes, _ := json.Marshal(rawRes)
 			resStr := string(resBytes)
@@ -1947,3 +1991,83 @@ func (h *APIHandler) handleDeleteAIRouterUserKey(w http.ResponseWriter, r *http.
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
+
+// handleAIRouterImages handles /v1/images/generations and /v1/images/edits
+func (h *APIHandler) handleAIRouterImages(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		origin = "*"
+	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "*")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	subdomain := r.PathValue("subdomain")
+	if subdomain == "" {
+		subdomain = extractSubdomainFromHost(r.Host)
+	}
+	if subdomain == "" {
+		parts := strings.Split(r.URL.Path, "/")
+		for i, p := range parts {
+			if p == "airouter" && i+1 < len(parts) {
+				subdomain = parts[i+1]
+				break
+			}
+		}
+	}
+	if subdomain == "" {
+		subdomain = h.resolveSubdomain(r)
+	}
+	if subdomain == "" {
+		writeJSONError(w, http.StatusBadRequest, "could not determine subdomain")
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+
+	var reqMap map[string]any
+	if err := json.Unmarshal(bodyBytes, &reqMap); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed JSON body")
+		return
+	}
+
+	action := "generate_image"
+	if strings.Contains(r.URL.Path, "edits") {
+		action = "edit_image"
+	}
+
+	prompt, _ := reqMap["prompt"].(string)
+	size, _ := reqMap["size"].(string)
+	if size == "" {
+		size = "1024x1024"
+	}
+	model, _ := reqMap["model"].(string)
+	if model == "" {
+		model = "dall-e-3"
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	result, err := h.dispatchImageGeneration(ctx, subdomain, action, prompt, size, model, reqMap)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+

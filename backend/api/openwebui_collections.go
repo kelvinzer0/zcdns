@@ -1152,3 +1152,139 @@ func (h *APIHandler) handleOpenWebUIAPIFallback(w http.ResponseWriter, r *http.R
 	// Default for POST/PUT/DELETE mutations
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
 }
+
+// handleOpenWebUIMemories handles /api/v1/memories/*
+func (h *APIHandler) handleOpenWebUIMemories(w http.ResponseWriter, r *http.Request) {
+	if setOWUCors(w, r) {
+		return
+	}
+	subdomain := h.resolveSubdomain(r)
+	u := h.resolveUser(r)
+	if subdomain == "" {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	userID := "usr_guest"
+	if u != nil && u.ID != "" {
+		userID = u.ID
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/memories")
+	path = strings.TrimPrefix(path, "/")
+
+	// GET /api/v1/memories/ or GET /api/v1/memories
+	if (path == "" || path == "/") && r.Method == http.MethodGet {
+		memories, err := h.db.GetOpenWebUIMemories(subdomain, userID)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, memories)
+		return
+	}
+
+	// POST /api/v1/memories/add
+	if (path == "add" || path == "") && r.Method == http.MethodPost {
+		body, _ := io.ReadAll(r.Body)
+		var form struct {
+			Content string `json:"content"`
+			Type    string `json:"type"`
+			Path    string `json:"path"`
+		}
+		_ = json.Unmarshal(body, &form)
+		if form.Content == "" {
+			writeJSONError(w, http.StatusBadRequest, "content is required")
+			return
+		}
+		mID := fmt.Sprintf("mem-%d", time.Now().UnixNano())
+		m := db.OpenWebUIMemoryDB{
+			ID:        mID,
+			Subdomain: subdomain,
+			UserID:    userID,
+			Content:   form.Content,
+			Type:      form.Type,
+			Path:      form.Path,
+		}
+		if err := h.db.InsertOpenWebUIMemory(m); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, m)
+		return
+	}
+
+	// POST /api/v1/memories/search or /api/v1/memories/query
+	if (path == "search" || path == "query") && r.Method == http.MethodPost {
+		body, _ := io.ReadAll(r.Body)
+		var form struct {
+			Query string `json:"query"`
+		}
+		_ = json.Unmarshal(body, &form)
+		memories, err := h.db.SearchOpenWebUIMemories(subdomain, userID, form.Query)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, memories)
+		return
+	}
+
+	// DELETE /api/v1/memories/reset
+	if path == "reset" && r.Method == http.MethodDelete {
+		_ = h.db.DeleteAllOpenWebUIMemories(subdomain, userID)
+		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
+		return
+	}
+
+	// DELETE /api/v1/memories/:id
+	if r.Method == http.MethodDelete && path != "" {
+		_ = h.db.DeleteOpenWebUIMemory(subdomain, userID, path)
+		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
+		return
+	}
+
+	// POST /api/v1/memories/operations
+	if path == "operations" && r.Method == http.MethodPost {
+		body, _ := io.ReadAll(r.Body)
+		var form struct {
+			Operations []struct {
+				Action  string `json:"action"` // add, replace, remove
+				ID      string `json:"id"`
+				Content string `json:"content"`
+				Type    string `json:"type"`
+				Path    string `json:"path"`
+			} `json:"operations"`
+		}
+		_ = json.Unmarshal(body, &form)
+		for _, op := range form.Operations {
+			switch op.Action {
+			case "add":
+				mID := op.ID
+				if mID == "" {
+					mID = fmt.Sprintf("mem-%d", time.Now().UnixNano())
+				}
+				_ = h.db.InsertOpenWebUIMemory(db.OpenWebUIMemoryDB{
+					ID:        mID,
+					Subdomain: subdomain,
+					UserID:    userID,
+					Content:   op.Content,
+					Type:      op.Type,
+					Path:      op.Path,
+				})
+			case "replace", "update":
+				if op.ID != "" {
+					_ = h.db.UpdateOpenWebUIMemory(subdomain, userID, op.ID, op.Content)
+				}
+			case "remove", "delete":
+				if op.ID != "" {
+					_ = h.db.DeleteOpenWebUIMemory(subdomain, userID, op.ID)
+				}
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+

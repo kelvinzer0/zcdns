@@ -20,9 +20,10 @@ func InitDB(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
 	}
 
-	// Performance tuning pragmas
+	// Performance tuning pragmas and connection pooling
+	conn.SetMaxOpenConns(1)
 	_, _ = conn.Exec("PRAGMA journal_mode = WAL;")
-	_, _ = conn.Exec("PRAGMA busy_timeout = 5000;")
+	_, _ = conn.Exec("PRAGMA busy_timeout = 10000;")
 	_, _ = conn.Exec("PRAGMA synchronous = NORMAL;")
 
 	schema := `
@@ -309,6 +310,17 @@ func InitDB(dbPath string) (*DB, error) {
 		created_at INTEGER NOT NULL DEFAULT 0
 	);
 
+	CREATE TABLE IF NOT EXISTS openwebui_memories (
+		id TEXT PRIMARY KEY,
+		subdomain TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		content TEXT NOT NULL,
+		type TEXT NOT NULL DEFAULT 'context',
+		path TEXT NOT NULL DEFAULT '',
+		created_at INTEGER NOT NULL DEFAULT 0,
+		updated_at INTEGER NOT NULL DEFAULT 0
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_owu_chats_subdomain ON openwebui_chats(subdomain, updated_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_owu_folders_subdomain ON openwebui_folders(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_owu_prompts_subdomain ON openwebui_prompts(subdomain);
@@ -317,6 +329,7 @@ func InitDB(dbPath string) (*DB, error) {
 	CREATE INDEX IF NOT EXISTS idx_owu_custom_models ON openwebui_custom_models(subdomain, updated_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_owu_knowledge ON openwebui_knowledge(subdomain, updated_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_owu_knowledge_files ON openwebui_knowledge_files(subdomain, knowledge_id);
+	CREATE INDEX IF NOT EXISTS idx_owu_memories ON openwebui_memories(subdomain, user_id, updated_at DESC);
 
 	CREATE INDEX IF NOT EXISTS idx_records_subdomain ON records(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_records_lookup ON records(subdomain, name, type);

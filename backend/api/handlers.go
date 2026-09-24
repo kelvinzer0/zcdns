@@ -114,6 +114,12 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/chat/completions", h.handleAIRouterOpenAI)
 	mux.HandleFunc("/v1/messages", h.handleAIRouterAnthropic)
 	mux.HandleFunc("/v1/models", h.handleOpenWebUIModels)
+	mux.HandleFunc("/v1/images/generations", h.handleAIRouterImages)
+	mux.HandleFunc("/v1/images/edits", h.handleAIRouterImages)
+	mux.HandleFunc("/api/v1/images/generations", h.handleAIRouterImages)
+	mux.HandleFunc("/api/v1/images/edits", h.handleAIRouterImages)
+	mux.HandleFunc("/api/airouter/{subdomain}/v1/images/generations", h.handleAIRouterImages)
+	mux.HandleFunc("/api/airouter/{subdomain}/v1/images/edits", h.handleAIRouterImages)
 	mux.HandleFunc("/v1/", h.handleAIRouterProxy)
 
 	// OpenWebUI Go-ported Backend API routes
@@ -183,8 +189,8 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/channels/", emptyList)
 	mux.HandleFunc("/api/v1/groups", emptyList)
 	mux.HandleFunc("/api/v1/groups/", emptyList)
-	mux.HandleFunc("/api/v1/memories", emptyList)
-	mux.HandleFunc("/api/v1/memories/", emptyList)
+	mux.HandleFunc("/api/v1/memories", h.handleOpenWebUIMemories)
+	mux.HandleFunc("/api/v1/memories/", h.handleOpenWebUIMemories)
 	mux.HandleFunc("/api/v1/terminals", emptyList)
 	mux.HandleFunc("/api/v1/terminals/", emptyList)
 

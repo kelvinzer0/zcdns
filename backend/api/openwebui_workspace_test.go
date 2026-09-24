@@ -731,8 +731,10 @@ func TestOpenWebUIMCPToolServers(t *testing.T) {
 	handler.handleOpenWebUIConfigs(recDSave, reqDSave)
 
 	oaiTools, _, _ := handler.resolveMCPToolsForChat("test-subdomain", []interface{}{"server:mcp:bridge-1"})
-	if len(oaiTools) != 0 {
-		t.Fatalf("expected fetch_page to be disabled, got %v", oaiTools)
+	for _, tTool := range oaiTools {
+		if fn, ok := tTool["function"].(map[string]interface{}); ok && fn["name"] == "fetch_page" {
+			t.Fatalf("expected fetch_page to be disabled, got %v", oaiTools)
+		}
 	}
 
 	// 8. Delete tool server via saving empty TOOL_SERVER_CONNECTIONS
