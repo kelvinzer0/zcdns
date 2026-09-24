@@ -474,6 +474,10 @@ func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget,
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if isStream {
+		req.Header.Set("Accept-Encoding", "identity")
+		req.Header.Set("Accept", "text/event-stream")
+	}
 	if isAnthropic {
 		req.Header.Set("x-api-key", apiKey)
 		req.Header.Set("anthropic-version", "2023-06-01")
@@ -481,7 +485,12 @@ func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget,
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	client := &http.Client{Timeout: 45 * time.Second}
+	client := &http.Client{
+		Timeout: 60 * time.Second,
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -517,7 +526,7 @@ func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget,
 
 	if isStream && resp.StatusCode == http.StatusOK {
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Cache-Control", "no-cache, no-transform")
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
 	}
