@@ -176,6 +176,35 @@ func (d *DB) GetActiveAIRouterConnection(subdomain, provider string, excludeIDs 
 	return &c, nil
 }
 
+func (d *DB) GetActiveAIRouterConnectionsUnmasked(subdomain string, excludeIDs []int64) ([]AIRouterConnection, error) {
+	excludeClause := ""
+	args := []interface{}{subdomain}
+	for _, id := range excludeIDs {
+		excludeClause += " AND id != ?"
+		args = append(args, id)
+	}
+	rows, err := d.conn.Query(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(models_json, '[]'), status, rate_limited_until, created_at
+		FROM ai_router_connections
+		WHERE subdomain=? AND status='active'`+excludeClause+`
+		ORDER BY id ASC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []AIRouterConnection
+	for rows.Next() {
+		var c AIRouterConnection
+		if err := rows.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.CreatedAt); err != nil {
+			continue
+		}
+		list = append(list, c)
+	}
+	if list == nil {
+		list = []AIRouterConnection{}
+	}
+	return list, nil
+}
+
 func (d *DB) MarkAIRouterConnectionRateLimited(id int64) error {
 	_, err := d.conn.Exec(`UPDATE ai_router_connections SET status='rate_limited', rate_limited_until=datetime('now','+60 seconds') WHERE id=?`, id)
 	return err

@@ -289,6 +289,10 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
             models: Array.from(new Set([...c.models, ...data.models]))
           }));
         }
+      } else {
+        if (data.success && data.models?.length) {
+          setEditingModelsList(l => Array.from(new Set([...l, ...data.models])));
+        }
       }
 
       if (data.success) {

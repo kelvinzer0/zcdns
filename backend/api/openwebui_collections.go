@@ -155,6 +155,14 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
+	// Shared folders endpoint (/api/v1/folders/shared)
+	if path == "shared" || path == "shared/" {
+		if r.Method == http.MethodGet {
+			writeJSON(w, http.StatusOK, []any{})
+			return
+		}
+	}
+
 	// Sub-actions on /folders/{id}/*
 	if path != "" {
 		parts := strings.Split(path, "/")
@@ -196,6 +204,13 @@ func (h *APIHandler) handleOpenWebUIFolders(w http.ResponseWriter, r *http.Reque
 			subAction := ""
 			if len(parts) >= 3 {
 				subAction = parts[2]
+			}
+
+			if action == "shared" {
+				if r.Method == http.MethodGet {
+					writeJSON(w, http.StatusOK, []any{})
+					return
+				}
 			}
 
 			if action == "read" {

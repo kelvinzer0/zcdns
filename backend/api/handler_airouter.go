@@ -274,33 +274,106 @@ func (h *APIHandler) resolveTargets(subdomain, modelStr, endpoint string, bodyBy
 		}
 	}
 
-	// 3. Direct "provider/model" format
-	var provider, model string
+	// 3. Find target connection and model
+	h.db.ReactivateExpiredAIRouterConnections()
+	activeConns, err := h.db.GetActiveAIRouterConnectionsUnmasked(subdomain, excludeConnIDs)
+	if err != nil || len(activeConns) == 0 {
+		return nil, fmt.Errorf("no active connection configured (add one in Dashboard → AI Router → Connections)")
+	}
+
+	// Phase A: Exact model match in any active connection's models_json
+	// e.g. a connection configured with ["deepseek-ai/deepseek-v4.1-flash"] or ["gpt-4o"]
+	for _, c := range activeConns {
+		var models []string
+		_ = json.Unmarshal([]byte(c.ModelsJSON), &models)
+		for _, m := range models {
+			if strings.EqualFold(m, resolved) {
+				connCopy := c
+				return []proxyTarget{{conn: &connCopy, model: m, provider: c.Provider}}, nil
+			}
+		}
+	}
+
+	// Phase B: Connection name or provider prefix match (e.g. "groq/llama-3.3-70b-versatile" or "custom/deepseek-v4")
 	if strings.Contains(resolved, "/") {
 		parts := strings.SplitN(resolved, "/", 2)
-		provider, model = parts[0], parts[1]
-	} else {
-		// Guess provider from model name
-		s := strings.ToLower(resolved)
-		switch {
-		case strings.HasPrefix(s, "claude"):
-			provider = "anthropic"
-		case strings.HasPrefix(s, "llama"), strings.HasPrefix(s, "mixtral"), strings.HasPrefix(s, "gemma"):
-			provider = "groq"
-		default:
-			provider = "openai"
+		prefix := strings.ToLower(parts[0])
+		subModel := parts[1]
+
+		// Check if prefix matches a connection's provider or name
+		for _, c := range activeConns {
+			if strings.EqualFold(c.Provider, prefix) || strings.EqualFold(c.Name, parts[0]) {
+				var models []string
+				_ = json.Unmarshal([]byte(c.ModelsJSON), &models)
+				for _, m := range models {
+					if strings.EqualFold(m, subModel) || strings.EqualFold(m, resolved) {
+						connCopy := c
+						return []proxyTarget{{conn: &connCopy, model: m, provider: c.Provider}}, nil
+					}
+				}
+				connCopy := c
+				return []proxyTarget{{conn: &connCopy, model: subModel, provider: c.Provider}}, nil
+			}
 		}
-		model = resolved
+
+		// Known standard providers
+		standardProviders := []string{"openai", "anthropic", "deepseek", "groq", "together", "openrouter", "custom"}
+		for _, sp := range standardProviders {
+			if prefix == sp {
+				for _, c := range activeConns {
+					if strings.EqualFold(c.Provider, sp) {
+						connCopy := c
+						return []proxyTarget{{conn: &connCopy, model: subModel, provider: c.Provider}}, nil
+					}
+				}
+				return nil, fmt.Errorf("no active connection for provider '%s' (add one in Dashboard → AI Router → Connections)", prefix)
+			}
+		}
 	}
 
-	// 4. Find an active connection
-	h.db.ReactivateExpiredAIRouterConnections()
-	conn, err := h.db.GetActiveAIRouterConnection(subdomain, provider, excludeConnIDs)
-	if err != nil {
-		return nil, fmt.Errorf("no active connection for provider '%s' (add one in Dashboard → AI Router → Connections)", provider)
+	// Phase C: Model heuristics based on keywords/vendor prefixes
+	// (Note: resolved may contain org paths like "deepseek-ai/deepseek-v4.1-flash" or "meta-llama/Llama-3.1-70B")
+	s := strings.ToLower(resolved)
+	var preferredProviders []string
+	switch {
+	case strings.Contains(s, "claude"):
+		preferredProviders = []string{"anthropic", "openrouter", "custom"}
+	case strings.Contains(s, "deepseek"):
+		preferredProviders = []string{"deepseek", "custom", "openrouter", "together"}
+	case strings.Contains(s, "llama"), strings.Contains(s, "mixtral"), strings.Contains(s, "gemma"), strings.Contains(s, "qwen"):
+		preferredProviders = []string{"groq", "together", "openrouter", "custom"}
+	case strings.HasPrefix(s, "gpt-"), strings.HasPrefix(s, "o1"), strings.HasPrefix(s, "o3"), strings.HasPrefix(s, "chatgpt"):
+		preferredProviders = []string{"openai", "openrouter", "custom"}
+	default:
+		preferredProviders = []string{"custom", "openrouter", "openai"}
 	}
 
-	return []proxyTarget{{conn: conn, model: model, provider: provider}}, nil
+	for _, pref := range preferredProviders {
+		for _, c := range activeConns {
+			if strings.EqualFold(c.Provider, pref) {
+				connCopy := c
+				return []proxyTarget{{conn: &connCopy, model: resolved, provider: c.Provider}}, nil
+			}
+		}
+	}
+
+	// Phase D: If user has a "custom" or "openrouter" connection, route any unmatched model to it
+	for _, c := range activeConns {
+		if c.Provider == "custom" || c.Provider == "openrouter" {
+			connCopy := c
+			return []proxyTarget{{conn: &connCopy, model: resolved, provider: c.Provider}}, nil
+		}
+	}
+
+	// Phase E: Single active connection fallback - if only 1 connection exists, route to it
+	if len(activeConns) == 1 {
+		connCopy := activeConns[0]
+		return []proxyTarget{{conn: &connCopy, model: resolved, provider: connCopy.Provider}}, nil
+	}
+
+	// Phase F: Default to first active connection
+	connCopy := activeConns[0]
+	return []proxyTarget{{conn: &connCopy, model: resolved, provider: connCopy.Provider}}, nil
 }
 
 // forwardRequest sends one HTTP request to an upstream provider and streams/copies back
@@ -612,6 +685,10 @@ func testProviderConnection(provider, apiType, apiKey, customBaseURL string) (bo
 		Data []struct {
 			ID string `json:"id"`
 		} `json:"data"`
+		Models []struct {
+			Name  string `json:"name"`
+			Model string `json:"model"`
+		} `json:"models"`
 	}
 	_ = json.Unmarshal(respBytes, &result)
 
@@ -619,6 +696,15 @@ func testProviderConnection(provider, apiType, apiKey, customBaseURL string) (bo
 	for _, m := range result.Data {
 		if m.ID != "" {
 			models = append(models, m.ID)
+		}
+	}
+	for _, m := range result.Models {
+		name := m.Name
+		if name == "" {
+			name = m.Model
+		}
+		if name != "" {
+			models = append(models, name)
 		}
 	}
 	sort.Strings(models)
