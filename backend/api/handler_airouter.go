@@ -377,6 +377,20 @@ func (h *APIHandler) resolveTargets(subdomain, modelStr, endpoint string, bodyBy
 }
 
 // forwardRequest sends one HTTP request to an upstream provider and streams/copies back
+var hopByHopHeaders = map[string]bool{
+	"connection":          true,
+	"proxy-connection":    true,
+	"keep-alive":          true,
+	"proxy-authenticate":  true,
+	"proxy-authorization": true,
+	"te":                  true,
+	"trailer":             true,
+	"trailers":            true,
+	"transfer-encoding":   true,
+	"upgrade":             true,
+	"content-length":      true,
+}
+
 func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget, inputFormat, outputFormat string) error {
 	apiType := ""
 	baseURL := ""
@@ -389,18 +403,70 @@ func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget,
 	upstreamURL := buildUpstreamURL(target.provider, apiType, baseURL, inputFormat)
 	isAnthropic := isAnthropicTarget(target)
 
-	// Adjust model in body
+	// Parse and normalize request body
 	var reqBody map[string]interface{}
 	json.Unmarshal(bodyBytes, &reqBody)
-	reqBody["model"] = target.model
-	// Remove anthropic-only fields if going to openai
-	if !isAnthropic {
-		delete(reqBody, "max_tokens")
-		if _, ok := reqBody["messages"]; !ok {
-			reqBody["messages"] = []interface{}{}
+
+	// Extract messages: handle standard messages or OpenWebUI's user_message
+	var messages []interface{}
+	if rawMsgs, ok := reqBody["messages"].([]interface{}); ok && len(rawMsgs) > 0 {
+		messages = rawMsgs
+	} else if userMsg, ok := reqBody["user_message"].(map[string]interface{}); ok {
+		role, _ := userMsg["role"].(string)
+		if role == "" {
+			role = "user"
 		}
+		content, _ := userMsg["content"].(string)
+		messages = []interface{}{
+			map[string]interface{}{"role": role, "content": content},
+		}
+	} else {
+		messages = []interface{}{}
 	}
-	newBody, _ := json.Marshal(reqBody)
+
+	isStream, _ := reqBody["stream"].(bool)
+
+	// Construct clean upstream request body
+	var newBody []byte
+	if isAnthropic {
+		anthropicBody := map[string]interface{}{
+			"model":      target.model,
+			"messages":   messages,
+			"max_tokens": 4096,
+			"stream":     isStream,
+		}
+		for _, k := range []string{"temperature", "top_p", "system", "tools", "tool_choice"} {
+			if v, ok := reqBody[k]; ok && v != nil {
+				anthropicBody[k] = v
+			}
+		}
+		if mt, ok := reqBody["max_tokens"]; ok && mt != nil {
+			anthropicBody["max_tokens"] = mt
+		}
+		newBody, _ = json.Marshal(anthropicBody)
+	} else {
+		openaiBody := map[string]interface{}{
+			"model":    target.model,
+			"messages": messages,
+			"stream":   isStream,
+		}
+		for _, k := range []string{"temperature", "top_p", "max_tokens", "max_completion_tokens", "frequency_penalty", "presence_penalty", "stop", "tools", "tool_choice", "response_format", "seed"} {
+			if v, ok := reqBody[k]; ok && v != nil {
+				openaiBody[k] = v
+			}
+		}
+		// Also inspect OpenWebUI's nested params
+		if params, ok := reqBody["params"].(map[string]interface{}); ok {
+			for _, k := range []string{"temperature", "top_p", "max_tokens", "frequency_penalty", "presence_penalty", "stop"} {
+				if v, ok := params[k]; ok && v != nil {
+					if _, set := openaiBody[k]; !set {
+						openaiBody[k] = v
+					}
+				}
+			}
+		}
+		newBody, _ = json.Marshal(openaiBody)
+	}
 
 	req, err := http.NewRequest(http.MethodPost, upstreamURL, bytes.NewReader(newBody))
 	if err != nil {
@@ -414,7 +480,7 @@ func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget,
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 45 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -422,20 +488,34 @@ func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget,
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return fmt.Errorf("rate_limited:%d", target.conn.ID)
+		if target.conn != nil {
+			return fmt.Errorf("rate_limited:%d", target.conn.ID)
+		}
+		return fmt.Errorf("rate_limited")
 	}
 
+	// Copy headers excluding hop-by-hop headers
 	for k, vv := range resp.Header {
+		if hopByHopHeaders[strings.ToLower(k)] {
+			continue
+		}
 		for _, v := range vv {
 			w.Header().Add(k, v)
 		}
 	}
 	w.Header().Set("X-Router-Provider", target.provider)
 	w.Header().Set("X-Router-Model", target.model)
+
+	if isStream && resp.StatusCode == http.StatusOK {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+	}
+
 	w.WriteHeader(resp.StatusCode)
 
-	isStream, _ := reqBody["stream"].(bool)
-	if isStream {
+	if isStream && resp.StatusCode == http.StatusOK {
 		buf := make([]byte, 4096)
 		for {
 			n, err := resp.Body.Read(buf)
@@ -530,18 +610,19 @@ func (h *APIHandler) handleAIRouterProxy(w http.ResponseWriter, r *http.Request)
 		var forwarded bool
 		for _, target := range targets {
 			err := forwardRequest(w, bodyBytes, target, inputFormat, outputFormat)
-			if err != nil && strings.HasPrefix(err.Error(), "rate_limited:") {
-				// Mark rate limited and try next
-				idStr := strings.TrimPrefix(err.Error(), "rate_limited:")
-				if id, e := strconv.ParseInt(idStr, 10, 64); e == nil {
-					h.db.MarkAIRouterConnectionRateLimited(id)
-					excludeConnIDs = append(excludeConnIDs, id)
-				}
-				lastErr = "rate limited, trying next connection"
-				continue
-			}
 			if err != nil {
-				lastErr = err.Error()
+				if target.conn != nil {
+					excludeConnIDs = append(excludeConnIDs, target.conn.ID)
+				}
+				if strings.HasPrefix(err.Error(), "rate_limited:") {
+					idStr := strings.TrimPrefix(err.Error(), "rate_limited:")
+					if id, e := strconv.ParseInt(idStr, 10, 64); e == nil {
+						h.db.MarkAIRouterConnectionRateLimited(id)
+					}
+					lastErr = "connection rate limited"
+				} else {
+					lastErr = err.Error()
+				}
 				continue
 			}
 			forwarded = true
