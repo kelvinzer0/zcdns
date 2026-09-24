@@ -389,6 +389,7 @@ var hopByHopHeaders = map[string]bool{
 	"transfer-encoding":   true,
 	"upgrade":             true,
 	"content-length":      true,
+	"content-encoding":    true,
 }
 
 func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget, inputFormat, outputFormat string) error {
@@ -492,6 +493,14 @@ func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget,
 			return fmt.Errorf("rate_limited:%d", target.conn.ID)
 		}
 		return fmt.Errorf("rate_limited")
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		lowerM := strings.ToLower(target.model)
+		if strings.Contains(lowerM, "embed") || strings.Contains(lowerM, "retriever") || strings.Contains(lowerM, "rerank") {
+			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("Model '%s' is an embedding/retrieval model, not a chat completions model. Upstream returned 404. Please select an instruct/chat model (such as meta/llama-3.2-11b-vision-instruct, mistralai/mistral-large-2-instruct, or nvidia/llama-3.1-nemotron-70b-instruct).", target.model))
+			return nil
+		}
 	}
 
 	// Copy headers excluding hop-by-hop headers

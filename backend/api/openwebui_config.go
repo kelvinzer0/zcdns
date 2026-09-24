@@ -446,7 +446,12 @@ func (h *APIHandler) handleOpenWebUIModels(w http.ResponseWriter, r *http.Reques
 			}
 			if len(customModels) > 0 {
 				for _, m := range customModels {
-					addModel(m, m+" ("+c.Name+")", c.Provider)
+					label := m + " (" + c.Name + ")"
+					lm := strings.ToLower(m)
+					if strings.Contains(lm, "embed") || strings.Contains(lm, "retriever") || strings.Contains(lm, "rerank") {
+						label = "[Embedding] " + label
+					}
+					addModel(m, label, c.Provider)
 				}
 			} else {
 				switch c.Provider {
