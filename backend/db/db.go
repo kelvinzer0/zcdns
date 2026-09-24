@@ -247,6 +247,9 @@ func InitDB(dbPath string) (*DB, error) {
 		bio TEXT NOT NULL DEFAULT '',
 		gender TEXT NOT NULL DEFAULT '',
 		date_of_birth TEXT NOT NULL DEFAULT '',
+		status_emoji TEXT NOT NULL DEFAULT '',
+		status_message TEXT NOT NULL DEFAULT '',
+		status_expires_at INTEGER NOT NULL DEFAULT 0,
 		updated_at INTEGER NOT NULL DEFAULT 0,
 		PRIMARY KEY (subdomain, user_id)
 	);
@@ -321,6 +324,9 @@ func InitDB(dbPath string) (*DB, error) {
 	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN last_read_at INTEGER NOT NULL DEFAULT 0;")
 	_, _ = conn.Exec("ALTER TABLE openwebui_folders ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default';")
 	_, _ = conn.Exec("ALTER TABLE openwebui_prompts ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default';")
+	_, _ = conn.Exec("ALTER TABLE openwebui_user_profiles ADD COLUMN status_emoji TEXT NOT NULL DEFAULT '';")
+	_, _ = conn.Exec("ALTER TABLE openwebui_user_profiles ADD COLUMN status_message TEXT NOT NULL DEFAULT '';")
+	_, _ = conn.Exec("ALTER TABLE openwebui_user_profiles ADD COLUMN status_expires_at INTEGER NOT NULL DEFAULT 0;")
 
 	return &DB{conn: conn}, nil
 }

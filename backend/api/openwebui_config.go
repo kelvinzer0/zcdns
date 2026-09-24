@@ -67,7 +67,8 @@ func (h *APIHandler) resolveUserFromToken(subdomain, token string) *OpenWebUISes
 	}
 
 	profileImageURL := fmt.Sprintf("/api/v1/users/%s/profile/image", userID)
-	var bioPtr, genderPtr, dobPtr *string
+	var bioPtr, genderPtr, dobPtr, statusEmojiPtr, statusMessagePtr *string
+	var statusExpiresAtPtr *int64
 
 	if p, err := h.db.GetOpenWebUIUserProfile(subdomain, userID); err == nil && p != nil {
 		if p.Name != "" {
@@ -88,6 +89,18 @@ func (h *APIHandler) resolveUserFromToken(subdomain, token string) *OpenWebUISes
 			dob := p.DateOfBirth
 			dobPtr = &dob
 		}
+		if p.StatusEmoji != "" {
+			se := p.StatusEmoji
+			statusEmojiPtr = &se
+		}
+		if p.StatusMessage != "" {
+			sm := p.StatusMessage
+			statusMessagePtr = &sm
+		}
+		if p.StatusExpiresAt > 0 {
+			sea := p.StatusExpiresAt
+			statusExpiresAtPtr = &sea
+		}
 	}
 
 	return &OpenWebUISessionUserInfoResponse{
@@ -101,6 +114,9 @@ func (h *APIHandler) resolveUserFromToken(subdomain, token string) *OpenWebUISes
 		Bio:             bioPtr,
 		Gender:          genderPtr,
 		DateOfBirth:     dobPtr,
+		StatusEmoji:     statusEmojiPtr,
+		StatusMessage:   statusMessagePtr,
+		StatusExpiresAt: statusExpiresAtPtr,
 		Permissions: map[string]any{
 			"workspace": map[string]bool{
 				"models":    true,
@@ -228,6 +244,8 @@ func (h *APIHandler) handleOpenWebUIConfig(w http.ResponseWriter, r *http.Reques
 			"enable_folders":            true,
 			"enable_channels":           false,
 			"enable_notes":              false,
+			"enable_user_status":        true,
+			"enable_status":             true,
 			"enable_web_search":         false,
 			"enable_image_generation":   false,
 			"enable_community_sharing":  false,

@@ -336,3 +336,87 @@ func TestOpenWebUIModelsCRUD(t *testing.T) {
 		t.Fatalf("expected 0 models after deletion, got %d", listResp2.Total)
 	}
 }
+
+func TestOpenWebUIUserStatus(t *testing.T) {
+	handler, _, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	token := "status-test-token"
+
+	// 1. Update user status
+	statusPayload := map[string]any{
+		"status_emoji":   "rocket",
+		"status_message": "Working on AI features",
+	}
+	body, _ := json.Marshal(statusPayload)
+	reqUpdate := httptest.NewRequest(http.MethodPost, "/api/v1/users/user/status/update", bytes.NewReader(body))
+	reqUpdate.Header.Set("Authorization", "Bearer "+token)
+	recUpdate := httptest.NewRecorder()
+	handler.handleOpenWebUIUsers(recUpdate, reqUpdate)
+
+	if recUpdate.Code != http.StatusOK {
+		t.Fatalf("expected 200 on status update, got %d: %s", recUpdate.Code, recUpdate.Body.String())
+	}
+
+	var updatedUser OpenWebUISessionUserInfoResponse
+	if err := json.Unmarshal(recUpdate.Body.Bytes(), &updatedUser); err != nil {
+		t.Fatalf("failed to decode updated user response: %v", err)
+	}
+	if updatedUser.StatusEmoji == nil || *updatedUser.StatusEmoji != "rocket" {
+		t.Fatalf("expected status_emoji='rocket', got %v", updatedUser.StatusEmoji)
+	}
+	if updatedUser.StatusMessage == nil || *updatedUser.StatusMessage != "Working on AI features" {
+		t.Fatalf("expected status_message='Working on AI features', got %v", updatedUser.StatusMessage)
+	}
+
+	// 2. Query user status endpoint
+	reqGetStatus := httptest.NewRequest(http.MethodGet, "/api/v1/users/user/status", nil)
+	reqGetStatus.Header.Set("Authorization", "Bearer "+token)
+	recGetStatus := httptest.NewRecorder()
+	handler.handleOpenWebUIUsers(recGetStatus, reqGetStatus)
+
+	if recGetStatus.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get status, got %d: %s", recGetStatus.Code, recGetStatus.Body.String())
+	}
+	var statusResp map[string]any
+	_ = json.Unmarshal(recGetStatus.Body.Bytes(), &statusResp)
+	if statusResp["status_emoji"] != "rocket" || statusResp["status_message"] != "Working on AI features" {
+		t.Fatalf("unexpected status response: %v", statusResp)
+	}
+
+	// 3. Verify getSessionUser (/api/v1/auths/) returns the status
+	reqAuth := httptest.NewRequest(http.MethodGet, "/api/v1/auths/", nil)
+	reqAuth.Header.Set("Authorization", "Bearer "+token)
+	recAuth := httptest.NewRecorder()
+	handler.handleOpenWebUIAuth(recAuth, reqAuth)
+
+	if recAuth.Code != http.StatusOK {
+		t.Fatalf("expected 200 on /auths/, got %d: %s", recAuth.Code, recAuth.Body.String())
+	}
+	var sessionUser OpenWebUISessionUserInfoResponse
+	_ = json.Unmarshal(recAuth.Body.Bytes(), &sessionUser)
+	if sessionUser.StatusEmoji == nil || *sessionUser.StatusEmoji != "rocket" {
+		t.Fatalf("expected sessionUser status_emoji='rocket', got %v", sessionUser.StatusEmoji)
+	}
+
+	// 4. Clear status
+	clearPayload := map[string]any{
+		"status_emoji":   "",
+		"status_message": "",
+	}
+	clearBody, _ := json.Marshal(clearPayload)
+	reqClear := httptest.NewRequest(http.MethodPost, "/api/v1/users/user/status/update", bytes.NewReader(clearBody))
+	reqClear.Header.Set("Authorization", "Bearer "+token)
+	recClear := httptest.NewRecorder()
+	handler.handleOpenWebUIUsers(recClear, reqClear)
+
+	if recClear.Code != http.StatusOK {
+		t.Fatalf("expected 200 on clear status, got %d: %s", recClear.Code, recClear.Body.String())
+	}
+	var clearedUser OpenWebUISessionUserInfoResponse
+	_ = json.Unmarshal(recClear.Body.Bytes(), &clearedUser)
+	if clearedUser.StatusEmoji != nil || clearedUser.StatusMessage != nil {
+		t.Fatalf("expected nil status after clearing, got emoji=%v msg=%v", clearedUser.StatusEmoji, clearedUser.StatusMessage)
+	}
+}
+

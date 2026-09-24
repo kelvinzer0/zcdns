@@ -781,18 +781,22 @@ type OpenWebUIUserProfileDB struct {
 	Bio             string `json:"bio"`
 	Gender          string `json:"gender"`
 	DateOfBirth     string `json:"date_of_birth"`
+	StatusEmoji     string `json:"status_emoji"`
+	StatusMessage   string `json:"status_message"`
+	StatusExpiresAt int64  `json:"status_expires_at"`
 	UpdatedAt       int64  `json:"updated_at"`
 }
 
 func (d *DB) GetOpenWebUIUserProfile(subdomain, userID string) (*OpenWebUIUserProfileDB, error) {
 	row := d.conn.QueryRow(`
-		SELECT subdomain, user_id, name, profile_image_url, bio, gender, date_of_birth, updated_at
+		SELECT subdomain, user_id, name, profile_image_url, bio, gender, date_of_birth,
+		       COALESCE(status_emoji, ''), COALESCE(status_message, ''), COALESCE(status_expires_at, 0), updated_at
 		FROM openwebui_user_profiles
 		WHERE subdomain = ? AND user_id = ?
 	`, subdomain, userID)
 
 	var p OpenWebUIUserProfileDB
-	if err := row.Scan(&p.Subdomain, &p.UserID, &p.Name, &p.ProfileImageURL, &p.Bio, &p.Gender, &p.DateOfBirth, &p.UpdatedAt); err != nil {
+	if err := row.Scan(&p.Subdomain, &p.UserID, &p.Name, &p.ProfileImageURL, &p.Bio, &p.Gender, &p.DateOfBirth, &p.StatusEmoji, &p.StatusMessage, &p.StatusExpiresAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &p, nil
@@ -812,6 +816,21 @@ func (d *DB) UpsertOpenWebUIUserProfile(subdomain, userID, name, profileImageURL
 			date_of_birth = excluded.date_of_birth,
 			updated_at = excluded.updated_at
 	`, subdomain, userID, name, profileImageURL, bio, gender, dateOfBirth, now)
+	return err
+}
+
+func (d *DB) UpdateOpenWebUIUserStatus(subdomain, userID, emoji, message string, expiresAt int64) error {
+	now := time.Now().Unix()
+	_, err := d.conn.Exec(`
+		INSERT INTO openwebui_user_profiles (
+			subdomain, user_id, status_emoji, status_message, status_expires_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(subdomain, user_id) DO UPDATE SET
+			status_emoji = excluded.status_emoji,
+			status_message = excluded.status_message,
+			status_expires_at = excluded.status_expires_at,
+			updated_at = excluded.updated_at
+	`, subdomain, userID, emoji, message, expiresAt, now)
 	return err
 }
 

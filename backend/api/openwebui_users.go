@@ -127,6 +127,72 @@ func (h *APIHandler) handleOpenWebUIUsers(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// 2.5 User Status: /users/user/status/update or /users/{id}/status/update
+	if strings.HasSuffix(path, "/status/update") || path == "user/status/update" {
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			var form struct {
+				StatusEmoji     string `json:"status_emoji"`
+				StatusMessage   string `json:"status_message"`
+				StatusExpiresAt *int64 `json:"status_expires_at"`
+			}
+			_ = json.Unmarshal(body, &form)
+
+			var expiresAt int64
+			if form.StatusExpiresAt != nil {
+				expiresAt = *form.StatusExpiresAt
+			}
+
+			_ = h.db.UpdateOpenWebUIUserStatus(subdomain, u.ID, form.StatusEmoji, form.StatusMessage, expiresAt)
+
+			// Broadcast socket.io event for user status update
+			statusPayload, _ := json.Marshal(map[string]interface{}{
+				"id":                u.ID,
+				"status_emoji":      form.StatusEmoji,
+				"status_message":    form.StatusMessage,
+				"status_expires_at": expiresAt,
+			})
+			globalSocketHub.broadcastToRoom("user:"+u.ID, []byte(fmt.Sprintf(`42["events",{"type":"user:update","data":%s}]`, string(statusPayload))), "")
+
+			updatedUser := h.resolveUser(r)
+			writeJSON(w, http.StatusOK, updatedUser)
+			return
+		}
+	}
+
+	// User Status GET: /users/user/status or /users/{id}/status
+	if strings.HasSuffix(path, "/status") || path == "user/status" {
+		if r.Method == http.MethodGet {
+			targetUserID := strings.TrimSuffix(path, "/status")
+			targetUserID = strings.Trim(targetUserID, "/")
+			if targetUserID == "" || targetUserID == "user" {
+				targetUserID = u.ID
+			}
+
+			var statusEmoji, statusMessage *string
+			var statusExpiresAt *int64
+
+			if p, err := h.db.GetOpenWebUIUserProfile(subdomain, targetUserID); err == nil && p != nil {
+				if p.StatusEmoji != "" {
+					statusEmoji = &p.StatusEmoji
+				}
+				if p.StatusMessage != "" {
+					statusMessage = &p.StatusMessage
+				}
+				if p.StatusExpiresAt > 0 {
+					statusExpiresAt = &p.StatusExpiresAt
+				}
+			}
+
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"status_emoji":      statusEmoji,
+				"status_message":    statusMessage,
+				"status_expires_at": statusExpiresAt,
+			})
+			return
+		}
+	}
+
 	// 3. Update User: /users/{id}/update or /users/user/update or /users/user/info/update
 	if strings.HasSuffix(path, "/update") {
 		targetUserID := strings.TrimSuffix(path, "/update")
@@ -201,7 +267,7 @@ func (h *APIHandler) handleOpenWebUIUsers(w http.ResponseWriter, r *http.Request
 		name = "User " + targetUserID[:4]
 	}
 	profileImage := fmt.Sprintf("/api/v1/users/%s/profile/image", targetUserID)
-	var bio, gender, dob *string
+	var bio, gender, dob, statusEmoji, statusMessage *string
 	if p, err := h.db.GetOpenWebUIUserProfile(subdomain, targetUserID); err == nil && p != nil {
 		if p.Name != "" {
 			name = p.Name
@@ -218,6 +284,14 @@ func (h *APIHandler) handleOpenWebUIUsers(w http.ResponseWriter, r *http.Request
 		if p.DateOfBirth != "" {
 			dob = &p.DateOfBirth
 		}
+		if p.StatusEmoji != "" {
+			se := p.StatusEmoji
+			statusEmoji = &se
+		}
+		if p.StatusMessage != "" {
+			sm := p.StatusMessage
+			statusMessage = &sm
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -229,6 +303,8 @@ func (h *APIHandler) handleOpenWebUIUsers(w http.ResponseWriter, r *http.Request
 		"bio":               bio,
 		"gender":            gender,
 		"date_of_birth":     dob,
+		"status_emoji":      statusEmoji,
+		"status_message":    statusMessage,
 		"is_active":         true,
 	})
 }
