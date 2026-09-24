@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -785,7 +786,107 @@ func (h *APIHandler) handleOpenWebUITools(w http.ResponseWriter, r *http.Request
 	if setOWUCors(w, r) {
 		return
 	}
-	writeJSON(w, http.StatusOK, []any{})
+	subdomain := h.resolveSubdomain(r)
+	u := h.resolveUser(r)
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/tools")
+	path = strings.TrimPrefix(path, "/")
+
+	// Sub-actions on id/:id/*
+	if strings.HasPrefix(path, "id/") {
+		sub := strings.TrimPrefix(path, "id/")
+		parts := strings.Split(sub, "/")
+		toolID := parts[0]
+		cleanID := strings.TrimPrefix(toolID, "server:mcp:")
+
+		if len(parts) >= 2 && parts[1] == "call" && r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			var form struct {
+				Name   string `json:"name"`
+				Params any    `json:"params"`
+			}
+			_ = json.Unmarshal(body, &form)
+
+			servers, _ := h.db.GetOpenWebUIToolServers(subdomain)
+			var targetServer *db.OpenWebUIToolServerDB
+			for _, s := range servers {
+				if s.ID == cleanID || s.ID == toolID {
+					targetServer = &s
+					break
+				}
+			}
+			if targetServer != nil && targetServer.URL != "" {
+				ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+				defer cancel()
+				client := NewMCPClient()
+				res, err := client.ExecuteTool(ctx, targetServer.URL, targetServer.APIKey, form.Name, form.Params)
+				if err != nil {
+					writeJSONError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, res)
+				return
+			}
+			writeJSONError(w, http.StatusNotFound, "Tool server not found")
+			return
+		}
+
+		if len(parts) == 1 && r.Method == http.MethodGet {
+			servers, _ := h.db.GetOpenWebUIToolServers(subdomain)
+			for _, s := range servers {
+				if s.ID == cleanID || s.ID == toolID {
+					var info map[string]any
+					_ = json.Unmarshal([]byte(s.InfoJSON), &info)
+					desc := ""
+					if info != nil {
+						if d, ok := info["description"].(string); ok {
+							desc = d
+						}
+					}
+					writeJSON(w, http.StatusOK, map[string]any{
+						"id":         "server:mcp:" + s.ID,
+						"user_id":    u.ID,
+						"name":       s.Name,
+						"meta":       map[string]any{"description": desc},
+						"updated_at": s.UpdatedAt,
+						"created_at": s.CreatedAt,
+					})
+					return
+				}
+			}
+			writeJSONError(w, http.StatusNotFound, "Tool not found")
+			return
+		}
+	}
+
+	servers, _ := h.db.GetOpenWebUIToolServers(subdomain)
+	var tools []map[string]any
+	for _, s := range servers {
+		var cfg map[string]any
+		_ = json.Unmarshal([]byte(s.ConfigJSON), &cfg)
+		if enabled, ok := cfg["enable"].(bool); ok && !enabled {
+			continue
+		}
+		var info map[string]any
+		_ = json.Unmarshal([]byte(s.InfoJSON), &info)
+		desc := ""
+		if info != nil {
+			if d, ok := info["description"].(string); ok {
+				desc = d
+			}
+		}
+		tools = append(tools, map[string]any{
+			"id":         "server:mcp:" + s.ID,
+			"user_id":    u.ID,
+			"name":       s.Name,
+			"meta":       map[string]any{"description": desc},
+			"updated_at": s.UpdatedAt,
+			"created_at": s.CreatedAt,
+		})
+	}
+	if tools == nil {
+		tools = []map[string]any{}
+	}
+	writeJSON(w, http.StatusOK, tools)
 }
 
 // handleOpenWebUIFunctions handles /api/v1/functions/*
@@ -801,6 +902,8 @@ func (h *APIHandler) handleOpenWebUIConfigs(w http.ResponseWriter, r *http.Reque
 	if setOWUCors(w, r) {
 		return
 	}
+	subdomain := h.resolveSubdomain(r)
+	u := h.resolveUser(r)
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/configs")
 	path = strings.TrimPrefix(path, "/")
 
@@ -808,6 +911,159 @@ func (h *APIHandler) handleOpenWebUIConfigs(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
+
+	if path == "tool_servers/verify" && r.Method == http.MethodPost {
+		body, _ := io.ReadAll(r.Body)
+		var form struct {
+			URL      string            `json:"url"`
+			Type     string            `json:"type"`
+			AuthType string            `json:"auth_type"`
+			Key      string            `json:"key"`
+			Headers  map[string]string `json:"headers"`
+		}
+		_ = json.Unmarshal(body, &form)
+		targetURL := strings.TrimSpace(form.URL)
+		if targetURL == "" {
+			writeJSONError(w, http.StatusBadRequest, "URL is required")
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		client := NewMCPClient()
+		tools, err := client.ListTools(ctx, targetURL, form.Key)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("Failed to connect to MCP server: %v", err))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": true,
+			"specs":  tools,
+		})
+		return
+	}
+
+	if path == "tool_servers" {
+		if r.Method == http.MethodGet {
+			servers, _ := h.db.GetOpenWebUIToolServers(subdomain)
+			var connList []map[string]any
+			for _, s := range servers {
+				var cfg map[string]any
+				_ = json.Unmarshal([]byte(s.ConfigJSON), &cfg)
+				if cfg == nil {
+					cfg = map[string]any{"enable": true}
+				}
+				var info map[string]any
+				_ = json.Unmarshal([]byte(s.InfoJSON), &info)
+				if info == nil {
+					info = map[string]any{"id": s.ID, "name": s.Name}
+				}
+				connList = append(connList, map[string]any{
+					"id":        s.ID,
+					"name":      s.Name,
+					"type":      s.Type,
+					"url":       s.URL,
+					"auth_type": s.AuthType,
+					"key":       s.APIKey,
+					"config":    cfg,
+					"info":      info,
+				})
+			}
+			if connList == nil {
+				connList = []map[string]any{}
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"TOOL_SERVER_CONNECTIONS": connList,
+			})
+			return
+		}
+
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			var form struct {
+				Connections []struct {
+					ID       string         `json:"id"`
+					Name     string         `json:"name"`
+					Type     string         `json:"type"`
+					URL      string         `json:"url"`
+					AuthType string         `json:"auth_type"`
+					Key      string         `json:"key"`
+					Config   map[string]any `json:"config"`
+					Info     map[string]any `json:"info"`
+				} `json:"TOOL_SERVER_CONNECTIONS"`
+			}
+			_ = json.Unmarshal(body, &form)
+			now := time.Now().Unix()
+			for _, c := range form.Connections {
+				sID := c.ID
+				if sID == "" {
+					if c.Info != nil {
+						if idVal, ok := c.Info["id"].(string); ok && idVal != "" {
+							sID = idVal
+						}
+					}
+				}
+				if sID == "" {
+					sID = uuid.New().String()
+				}
+				sName := c.Name
+				if sName == "" && c.Info != nil {
+					if nameVal, ok := c.Info["name"].(string); ok && nameVal != "" {
+						sName = nameVal
+					}
+				}
+				if sName == "" {
+					sName = "MCP Server"
+				}
+				cfgJSON, _ := json.Marshal(c.Config)
+				infoJSON, _ := json.Marshal(c.Info)
+				srvType := c.Type
+				if srvType == "" {
+					srvType = "mcp"
+				}
+				_ = h.db.UpsertOpenWebUIToolServer(db.OpenWebUIToolServerDB{
+					ID:         sID,
+					Subdomain:  subdomain,
+					UserID:     u.ID,
+					Name:       sName,
+					Type:       srvType,
+					URL:        c.URL,
+					AuthType:   c.AuthType,
+					APIKey:     c.Key,
+					ConfigJSON: string(cfgJSON),
+					InfoJSON:   string(infoJSON),
+					CreatedAt:  now,
+					UpdatedAt:  now,
+				})
+			}
+			servers, _ := h.db.GetOpenWebUIToolServers(subdomain)
+			var connList []map[string]any
+			for _, s := range servers {
+				var cfg map[string]any
+				_ = json.Unmarshal([]byte(s.ConfigJSON), &cfg)
+				var info map[string]any
+				_ = json.Unmarshal([]byte(s.InfoJSON), &info)
+				connList = append(connList, map[string]any{
+					"id":        s.ID,
+					"name":      s.Name,
+					"type":      s.Type,
+					"url":       s.URL,
+					"auth_type": s.AuthType,
+					"key":       s.APIKey,
+					"config":    cfg,
+					"info":      info,
+				})
+			}
+			if connList == nil {
+				connList = []map[string]any{}
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"TOOL_SERVER_CONNECTIONS": connList,
+			})
+			return
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 

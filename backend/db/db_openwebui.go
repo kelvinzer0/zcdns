@@ -1030,3 +1030,68 @@ func (d *DB) DeleteOpenWebUIKnowledge(subdomain, userID, id string) error {
 	return err
 }
 
+type OpenWebUIToolServerDB struct {
+	ID         string `json:"id"`
+	Subdomain  string `json:"subdomain"`
+	UserID     string `json:"user_id"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`      // "mcp" or "openapi"
+	URL        string `json:"url"`       // e.g. "https://mcp-bridge.../mcp?room=..."
+	AuthType   string `json:"auth_type"` // "none", "bearer"
+	APIKey     string `json:"api_key"`
+	ConfigJSON string `json:"config_json"`
+	InfoJSON   string `json:"info_json"`
+	CreatedAt  int64  `json:"created_at"`
+	UpdatedAt  int64  `json:"updated_at"`
+}
+
+func (d *DB) GetOpenWebUIToolServers(subdomain string) ([]OpenWebUIToolServerDB, error) {
+	rows, err := d.conn.Query(`
+		SELECT id, subdomain, user_id, name, type, url, auth_type, api_key, config_json, info_json, created_at, updated_at
+		FROM openwebui_tool_servers
+		WHERE subdomain = ?
+		ORDER BY created_at ASC
+	`, subdomain)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var servers []OpenWebUIToolServerDB
+	for rows.Next() {
+		var s OpenWebUIToolServerDB
+		if err := rows.Scan(
+			&s.ID, &s.Subdomain, &s.UserID, &s.Name, &s.Type, &s.URL,
+			&s.AuthType, &s.APIKey, &s.ConfigJSON, &s.InfoJSON,
+			&s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
+			continue
+		}
+		servers = append(servers, s)
+	}
+	return servers, nil
+}
+
+func (d *DB) UpsertOpenWebUIToolServer(s OpenWebUIToolServerDB) error {
+	_, err := d.conn.Exec(`
+		INSERT INTO openwebui_tool_servers (
+			id, subdomain, user_id, name, type, url, auth_type, api_key, config_json, info_json, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(subdomain, id) DO UPDATE SET
+			name = excluded.name,
+			type = excluded.type,
+			url = excluded.url,
+			auth_type = excluded.auth_type,
+			api_key = excluded.api_key,
+			config_json = excluded.config_json,
+			info_json = excluded.info_json,
+			updated_at = excluded.updated_at
+	`, s.ID, s.Subdomain, s.UserID, s.Name, s.Type, s.URL, s.AuthType, s.APIKey, s.ConfigJSON, s.InfoJSON, s.CreatedAt, s.UpdatedAt)
+	return err
+}
+
+func (d *DB) DeleteOpenWebUIToolServer(subdomain, id string) error {
+	_, err := d.conn.Exec(`DELETE FROM openwebui_tool_servers WHERE subdomain = ? AND id = ?`, subdomain, id)
+	return err
+}
+

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -528,6 +529,172 @@ func TestOpenWebUIPagination(t *testing.T) {
 	}
 	if len(respPage2.Items) != 0 || respPage2.Total != 1 {
 		t.Fatalf("expected 0 items on page 2, got len=%d total=%d", len(respPage2.Items), respPage2.Total)
+	}
+}
+
+func TestOpenWebUIMCPToolServers(t *testing.T) {
+	// Mock MCP Server mimicking mcp-bridge-go / mcp-bridge-cf
+	mockMCPServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("event: endpoint\ndata: /mcp?room=testroom\n\n"))
+			return
+		}
+		if r.Method == http.MethodPost {
+			var req map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			method, _ := req["method"].(string)
+			id := req["id"]
+
+			w.Header().Set("Content-Type", "application/json")
+			switch method {
+			case "initialize":
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]any{
+						"protocolVersion": "2024-11-05",
+						"capabilities":    map[string]any{"tools": map[string]any{}},
+						"serverInfo":      map[string]any{"name": "mock-mcp-bridge", "version": "1.0"},
+					},
+				})
+			case "tools/list":
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]any{
+						"tools": []map[string]any{
+							{
+								"name":        "fetch_page",
+								"description": "Fetch web page content",
+								"inputSchema": map[string]any{"type": "object"},
+							},
+						},
+					},
+				})
+			case "tools/call":
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": "Page content successfully retrieved"},
+						},
+						"isError": false,
+					},
+				})
+			default:
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result":  map[string]any{},
+				})
+			}
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer mockMCPServer.Close()
+
+	handler, _, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	// 1. Verify MCP tool server endpoint via POST /api/v1/configs/tool_servers/verify
+	verifyPayload := map[string]any{
+		"url":       mockMCPServer.URL + "/mcp?room=testroom",
+		"type":      "mcp",
+		"auth_type": "none",
+	}
+	body, _ := json.Marshal(verifyPayload)
+	reqVerify := httptest.NewRequest(http.MethodPost, "/api/v1/configs/tool_servers/verify", bytes.NewReader(body))
+	reqVerify.Header.Set("Authorization", "Bearer test-token-1")
+	recVerify := httptest.NewRecorder()
+	handler.handleOpenWebUIConfigs(recVerify, reqVerify)
+
+	if recVerify.Code != http.StatusOK {
+		t.Fatalf("expected 200 on verify MCP tool server, got %d: %s", recVerify.Code, recVerify.Body.String())
+	}
+	var verifyResp map[string]any
+	_ = json.Unmarshal(recVerify.Body.Bytes(), &verifyResp)
+	if verifyResp["status"] != true {
+		t.Fatalf("expected status=true on verify, got %v", verifyResp)
+	}
+
+	// 2. Save tool server via POST /api/v1/configs/tool_servers
+	savePayload := map[string]any{
+		"TOOL_SERVER_CONNECTIONS": []map[string]any{
+			{
+				"id":        "bridge-1",
+				"name":      "Browser Bridge Go",
+				"type":      "mcp",
+				"url":       mockMCPServer.URL + "/mcp?room=testroom",
+				"auth_type": "none",
+				"config":    map[string]any{"enable": true},
+				"info":      map[string]any{"id": "bridge-1", "name": "Browser Bridge Go", "description": "MCP Bridge"},
+			},
+		},
+	}
+	saveBody, _ := json.Marshal(savePayload)
+	reqSave := httptest.NewRequest(http.MethodPost, "/api/v1/configs/tool_servers", bytes.NewReader(saveBody))
+	reqSave.Header.Set("Authorization", "Bearer test-token-1")
+	recSave := httptest.NewRecorder()
+	handler.handleOpenWebUIConfigs(recSave, reqSave)
+
+	if recSave.Code != http.StatusOK {
+		t.Fatalf("expected 200 on save tool server, got %d: %s", recSave.Code, recSave.Body.String())
+	}
+
+	// 3. Get tool servers via GET /api/v1/configs/tool_servers
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/v1/configs/tool_servers", nil)
+	reqGet.Header.Set("Authorization", "Bearer test-token-1")
+	recGet := httptest.NewRecorder()
+	handler.handleOpenWebUIConfigs(recGet, reqGet)
+
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get tool servers, got %d: %s", recGet.Code, recGet.Body.String())
+	}
+	var getResp struct {
+		Connections []map[string]any `json:"TOOL_SERVER_CONNECTIONS"`
+	}
+	_ = json.Unmarshal(recGet.Body.Bytes(), &getResp)
+	if len(getResp.Connections) != 1 || getResp.Connections[0]["name"] != "Browser Bridge Go" {
+		t.Fatalf("expected 1 saved connection, got %v", getResp.Connections)
+	}
+
+	// 4. List tools via GET /api/v1/tools/
+	reqTools := httptest.NewRequest(http.MethodGet, "/api/v1/tools/", nil)
+	reqTools.Header.Set("Authorization", "Bearer test-token-1")
+	recTools := httptest.NewRecorder()
+	handler.handleOpenWebUITools(recTools, reqTools)
+
+	if recTools.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get tools, got %d: %s", recTools.Code, recTools.Body.String())
+	}
+	var toolsResp []map[string]any
+	_ = json.Unmarshal(recTools.Body.Bytes(), &toolsResp)
+	if len(toolsResp) != 1 || toolsResp[0]["name"] != "Browser Bridge Go" {
+		t.Fatalf("expected 1 tool returned, got %v", toolsResp)
+	}
+
+	// 5. Call tool via POST /api/v1/tools/id/server:mcp:bridge-1/call
+	callPayload := map[string]any{
+		"name":   "fetch_page",
+		"params": map[string]any{"url": "https://example.com"},
+	}
+	callBody, _ := json.Marshal(callPayload)
+	reqCall := httptest.NewRequest(http.MethodPost, "/api/v1/tools/id/server:mcp:bridge-1/call", bytes.NewReader(callBody))
+	reqCall.Header.Set("Authorization", "Bearer test-token-1")
+	recCall := httptest.NewRecorder()
+	handler.handleOpenWebUITools(recCall, reqCall)
+
+	if recCall.Code != http.StatusOK {
+		t.Fatalf("expected 200 on call tool, got %d: %s", recCall.Code, recCall.Body.String())
+	}
+	var callResp map[string]any
+	_ = json.Unmarshal(recCall.Body.Bytes(), &callResp)
+	if callResp["content"] == nil {
+		t.Fatalf("expected tool content result, got %v", callResp)
 	}
 }
 

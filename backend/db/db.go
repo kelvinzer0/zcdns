@@ -269,6 +269,22 @@ func InitDB(dbPath string) (*DB, error) {
 		PRIMARY KEY (subdomain, id)
 	);
 
+	CREATE TABLE IF NOT EXISTS openwebui_tool_servers (
+		id TEXT NOT NULL,
+		subdomain TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		name TEXT NOT NULL DEFAULT '',
+		type TEXT NOT NULL DEFAULT 'mcp',
+		url TEXT NOT NULL DEFAULT '',
+		auth_type TEXT NOT NULL DEFAULT 'none',
+		api_key TEXT NOT NULL DEFAULT '',
+		config_json TEXT NOT NULL DEFAULT '{}',
+		info_json TEXT NOT NULL DEFAULT '{}',
+		created_at INTEGER NOT NULL DEFAULT 0,
+		updated_at INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (subdomain, id)
+	);
+
 	CREATE TABLE IF NOT EXISTS openwebui_knowledge (
 		id TEXT PRIMARY KEY,
 		subdomain TEXT NOT NULL,

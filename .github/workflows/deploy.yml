@@ -38,8 +38,8 @@ jobs:
       - name: Build OpenWebUI Frontend
         run: |
           mkdir -p dist/openwebui
-          echo "==> Cloning OpenWebUI source..."
-          git clone --depth 1 https://github.com/open-webui/open-webui.git /tmp/open-webui
+          echo "==> Cloning OpenWebUI source (stable tag v0.11.4)..."
+          git clone --depth 1 --branch v0.11.4 https://github.com/open-webui/open-webui.git /tmp/open-webui
           
           echo "==> Applying custom patches..."
           chmod +x scripts/patch_openwebui.sh
