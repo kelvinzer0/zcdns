@@ -52,6 +52,17 @@ type AIRouterAlias struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+// ── Model Context Sizes ───────────────────────────────────────────────────────
+
+type AIRouterModelContext struct {
+	ID          int64     `json:"id"`
+	Subdomain   string    `json:"subdomain"`
+	ModelName   string    `json:"model_name"`
+	ContextSize int       `json:"context_size"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 // ── Proxy Client API Keys ─────────────────────────────────────────────────────
 
 type AIRouterUserKey struct {
@@ -369,3 +380,45 @@ func (d *DB) CountAIRouterUserKeys(subdomain string) int {
 	_ = d.conn.QueryRow(`SELECT COUNT(*) FROM ai_router_user_keys WHERE subdomain=?`, subdomain).Scan(&count)
 	return count
 }
+
+// ── Model Context Sizes ───────────────────────────────────────────────────────
+
+func (d *DB) GetAIRouterModelContexts(subdomain string) ([]AIRouterModelContext, error) {
+	rows, err := d.conn.Query(`SELECT id, subdomain, model_name, context_size, created_at, updated_at FROM ai_router_model_contexts WHERE subdomain=? ORDER BY model_name`, subdomain)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []AIRouterModelContext
+	for rows.Next() {
+		var mc AIRouterModelContext
+		if err := rows.Scan(&mc.ID, &mc.Subdomain, &mc.ModelName, &mc.ContextSize, &mc.CreatedAt, &mc.UpdatedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, mc)
+	}
+	return list, nil
+}
+
+func (d *DB) GetAIRouterModelContext(subdomain, modelName string) (*AIRouterModelContext, error) {
+	row := d.conn.QueryRow(`SELECT id, subdomain, model_name, context_size, created_at, updated_at FROM ai_router_model_contexts WHERE subdomain=? AND model_name=?`, subdomain, modelName)
+	var mc AIRouterModelContext
+	if err := row.Scan(&mc.ID, &mc.Subdomain, &mc.ModelName, &mc.ContextSize, &mc.CreatedAt, &mc.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return &mc, nil
+}
+
+func (d *DB) UpsertAIRouterModelContext(subdomain, modelName string, contextSize int) error {
+	_, err := d.conn.Exec(`INSERT INTO ai_router_model_contexts (subdomain, model_name, context_size, updated_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(subdomain, model_name) DO UPDATE SET context_size=excluded.context_size, updated_at=CURRENT_TIMESTAMP`,
+		subdomain, modelName, contextSize)
+	return err
+}
+
+func (d *DB) DeleteAIRouterModelContext(subdomain string, id int64) error {
+	_, err := d.conn.Exec(`DELETE FROM ai_router_model_contexts WHERE id=? AND subdomain=?`, id, subdomain)
+	return err
+}
+

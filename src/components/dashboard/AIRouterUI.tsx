@@ -3,7 +3,7 @@ import {
   Network, Plus, Trash2, Save, Copy, Check, Eye, EyeOff,
   Loader2, ChevronDown, ChevronRight, AlertCircle, CheckCircle2,
   Key, ShieldCheck, Shield, ExternalLink, MessageSquare, RefreshCw, Zap, X,
-  Terminal, Globe
+  Terminal, Globe, Sparkles
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -30,7 +30,15 @@ interface Alias {
   id: number;
   alias_name: string;
   target_model: string;
+}
+
+interface ModelContext {
+  id: number;
+  subdomain: string;
+  model_name: string;
   context_size: number;
+  created_at: string;
+  updated_at: string;
 }
 
 interface UserKey {
@@ -71,20 +79,21 @@ const STRATEGIES = [
 ];
 
 const CONTEXT_PRESETS = [
-  { value: 0, label: 'Auto / Default' },
-  { value: 4096, label: '4k' },
-  { value: 8192, label: '8k' },
-  { value: 16384, label: '16k' },
-  { value: 32768, label: '32k' },
-  { value: 65536, label: '64k' },
-  { value: 131072, label: '128k' },
-  { value: 200000, label: '200k+' },
-  { value: -1, label: 'Custom...' },
+  { value: 4096, label: '4k (4,096 tokens)' },
+  { value: 8192, label: '8k (8,192 tokens)' },
+  { value: 16384, label: '16k (16,384 tokens)' },
+  { value: 32768, label: '32k (32,768 tokens)' },
+  { value: 65536, label: '64k (65,536 tokens)' },
+  { value: 128000, label: '128k (128,000 tokens)' },
+  { value: 200000, label: '200k (200,000 tokens)' },
+  { value: 1000000, label: '1M (1,000,000 tokens)' },
+  { value: 2000000, label: '2M (2,000,000 tokens)' },
+  { value: -1, label: 'Custom Token Size...' },
 ];
 
 function formatContextSize(size: number): string {
   if (!size || size <= 0) return 'Auto';
-  if (size >= 1000000) return `${(size / 1000000).toFixed(1)}M`;
+  if (size >= 1000000) return `${(size / 1000000).toFixed(size % 1000000 === 0 ? 0 : 1)}M`;
   if (size >= 1000) return `${Math.round(size / 1000)}k`;
   return `${size}`;
 }
@@ -136,6 +145,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [combos, setCombos] = useState<Combo[]>([]);
   const [aliases, setAliases] = useState<Alias[]>([]);
+  const [modelContexts, setModelContexts] = useState<ModelContext[]>([]);
   const [userKeys, setUserKeys] = useState<UserKey[]>([]);
   const [newKeyName, setNewKeyName] = useState('');
   const [creatingKey, setCreatingKey] = useState(false);
@@ -144,7 +154,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
 
   const [copiedUrl, setCopiedUrl] = useState('');
   const [showKeys, setShowKeys] = useState(false);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ connections: true, combos: false, aliases: false });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ connections: true, contexts: false, combos: false, aliases: false });
 
   // Featured agents carousel state
   const [agentSlide, setAgentSlide] = useState(0);
@@ -179,13 +189,18 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   const [editingModelInput, setEditingModelInput] = useState('');
   const [savingConnModels, setSavingConnModels] = useState(false);
 
+  // New model context window form
+  const [newCtxModel, setNewCtxModel] = useState({ model_name: '', context_size: 128000 });
+  const [isCustomCtxSize, setIsCustomCtxSize] = useState(false);
+  const [savingCtx, setSavingCtx] = useState(false);
+  const [autoDetectingCtx, setAutoDetectingCtx] = useState(false);
+
   // New combo form
   const [newCombo, setNewCombo] = useState({ name: '', strategy: 'fallback', models: [''] });
   const [savingCombo, setSavingCombo] = useState(false);
 
-  // New alias form
-  const [newAlias, setNewAlias] = useState({ alias_name: '', target_model: '', context_size: 0 });
-  const [isCustomCtx, setIsCustomCtx] = useState(false);
+  // New alias form (pure name -> target mapping)
+  const [newAlias, setNewAlias] = useState({ alias_name: '', target_model: '' });
   const [savingAlias, setSavingAlias] = useState(false);
 
   const fetchAll = useCallback(async () => {
@@ -198,6 +213,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
       setConnections(data.connections || []);
       setCombos(data.combos || []);
       setAliases(data.aliases || []);
+      setModelContexts(data.model_contexts || []);
       setUserKeys(data.user_keys || []);
 
       // Fetch vault secrets for selection
@@ -474,6 +490,87 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
     await fetchAll();
   };
 
+  const saveModelContext = async () => {
+    if (!newCtxModel.model_name.trim()) {
+      toast({ title: 'Model name required', variant: 'destructive' });
+      return;
+    }
+    setSavingCtx(true);
+    try {
+      const res = await fetch('/api/airouter/contexts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Subdomain': subdomain },
+        body: JSON.stringify(newCtxModel),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast({ title: 'Context Saved', description: `Context window for ${newCtxModel.model_name} set to ${formatContextSize(newCtxModel.context_size)}.` });
+      setNewCtxModel({ model_name: '', context_size: 128000 });
+      setIsCustomCtxSize(false);
+      await fetchAll();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setSavingCtx(false);
+    }
+  };
+
+  const deleteModelContext = async (id: number) => {
+    try {
+      const res = await fetch(`/api/airouter/contexts/${id}`, {
+        method: 'DELETE',
+        headers: { 'X-Subdomain': subdomain },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await fetchAll();
+      toast({ title: 'Deleted', description: 'Model context override removed.' });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    }
+  };
+
+  const autoDetectAllContexts = async () => {
+    setAutoDetectingCtx(true);
+    try {
+      const modelsToDetect = Array.from(new Set([
+        ...allDiscoveredModels,
+        ...combos.flatMap(c => {
+          try { return JSON.parse(c.models_json || '[]'); } catch { return []; }
+        }),
+      ])).filter(Boolean);
+
+      if (modelsToDetect.length === 0) {
+        toast({ title: 'No models found', description: 'Configure a provider connection or add models to combos first.', variant: 'destructive' });
+        return;
+      }
+
+      const res = await fetch('/api/airouter/contexts/auto-detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Subdomain': subdomain },
+        body: JSON.stringify({ models: modelsToDetect, save: true }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      await fetchAll();
+      toast({
+        title: 'Auto-Detect Complete',
+        description: `Mapped context windows for ${data.detected?.length || modelsToDetect.length} models.`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setAutoDetectingCtx(false);
+    }
+  };
+
+  const getModelCtxBadge = (name: string): string | null => {
+    if (!name) return null;
+    const found = modelContexts.find(c => c.model_name.toLowerCase() === name.toLowerCase());
+    if (found && found.context_size > 0) {
+      return formatContextSize(found.context_size);
+    }
+    return null;
+  };
+
   const saveAlias = async () => {
     if (!newAlias.alias_name || !newAlias.target_model) {
       toast({ title: 'Alias name and target required', variant: 'destructive' });
@@ -487,8 +584,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
         body: JSON.stringify(newAlias)
       });
       if (!res.ok) throw new Error(await res.text());
-      setNewAlias({ alias_name: '', target_model: '', context_size: 0 });
-      setIsCustomCtx(false);
+      setNewAlias({ alias_name: '', target_model: '' });
       await fetchAll();
       toast({ title: 'Alias saved' });
     } catch (e: any) {
@@ -1244,10 +1340,103 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
         </div>
       </RouterSection>
 
+      {/* ── MODEL CONTEXT REGISTRY ────────────────────────────────────────── */}
+      <RouterSection title="Model Context Windows" count={modelContexts.length} expanded={!!expanded.contexts} onToggle={() => toggle('contexts')}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+          <p className="text-xs text-muted-foreground">
+            Map or auto-detect model context window sizes. Essential for <strong>Smart Context</strong> combos to route queries to the most cost-effective model and prevent prompt token overflow.
+          </p>
+          <button
+            type="button"
+            onClick={autoDetectAllContexts}
+            disabled={autoDetectingCtx}
+            className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1 bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border rounded-none text-xs font-medium whitespace-nowrap transition-colors"
+          >
+            {autoDetectingCtx ? <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" /> : <Sparkles className="w-3.5 h-3.5 text-yellow-500" />}
+            <span>Auto-Detect Contexts</span>
+          </button>
+        </div>
+
+        {modelContexts.length > 0 && (
+          <div className="mb-3 space-y-1.5 max-h-60 overflow-y-auto pr-1">
+            {modelContexts.map(c => (
+              <div key={c.id} className="flex items-center gap-3 p-2.5 bg-muted/40 rounded-none border border-border text-xs">
+                <code className="font-mono font-medium text-foreground flex-1 truncate">{c.model_name}</code>
+                <span className="text-[11px] bg-primary/10 text-primary px-2 py-0.5 rounded-none font-mono font-semibold">
+                  {formatContextSize(c.context_size)} ({c.context_size.toLocaleString()} tokens)
+                </span>
+                <span className="text-[10px] text-muted-foreground uppercase border border-border px-1">
+                  Custom
+                </span>
+                <button onClick={() => deleteModelContext(c.id)} className="text-destructive hover:text-destructive/80 p-0.5" title="Remove custom override">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="border border-border rounded-none p-3 space-y-2.5 bg-card">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+            Add / Override Model Context Window
+          </p>
+          <div className="flex gap-2 flex-wrap items-center">
+            <input
+              value={newCtxModel.model_name}
+              onChange={e => setNewCtxModel(m => ({ ...m, model_name: e.target.value }))}
+              list="ctx-model-target-list"
+              placeholder="e.g. gpt-4o, claude-3-5-sonnet, or local-llama"
+              className="flex-1 min-w-[200px] border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono"
+            />
+            <datalist id="ctx-model-target-list">
+              {allDiscoveredModels.map(s => <option key={s} value={s} />)}
+            </datalist>
+
+            <div className="flex items-center gap-1.5">
+              <select
+                value={isCustomCtxSize ? -1 : newCtxModel.context_size}
+                onChange={e => {
+                  const val = parseInt(e.target.value, 10);
+                  if (val === -1) {
+                    setIsCustomCtxSize(true);
+                  } else {
+                    setIsCustomCtxSize(false);
+                    setNewCtxModel(m => ({ ...m, context_size: val }));
+                  }
+                }}
+                className="border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono"
+              >
+                {CONTEXT_PRESETS.map(p => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
+              {isCustomCtxSize && (
+                <input
+                  type="number"
+                  placeholder="Tokens (e.g. 32768)"
+                  value={newCtxModel.context_size || ''}
+                  onChange={e => setNewCtxModel(m => ({ ...m, context_size: parseInt(e.target.value, 10) || 0 }))}
+                  className="border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono w-28"
+                />
+              )}
+            </div>
+
+            <button
+              onClick={saveModelContext}
+              disabled={savingCtx}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-none text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
+            >
+              {savingCtx ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              <span>Save Context</span>
+            </button>
+          </div>
+        </div>
+      </RouterSection>
+
       {/* ── MODEL COMBOS ────────────────────────────────────────────────────── */}
       <RouterSection title="Model Combos" count={combos.length} expanded={!!expanded.combos} onToggle={() => toggle('combos')}>
         <p className="text-xs text-muted-foreground mb-2">
-          Group multiple models together under a single combo name with smart routing strategies.
+          Group multiple models together under a single combo name with smart routing strategies (including Smart Context).
         </p>
 
         {combos.length > 0 && (
@@ -1264,11 +1453,19 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                     </button>
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {models.map(m => (
-                      <span key={m} className="text-[11px] bg-muted border border-border px-1.5 py-0.5 rounded-none font-mono">
-                        {m}
-                      </span>
-                    ))}
+                    {models.map(m => {
+                      const ctxBadge = getModelCtxBadge(m);
+                      return (
+                        <span key={m} className="text-[11px] bg-muted border border-border px-1.5 py-0.5 rounded-none font-mono flex items-center gap-1">
+                          <span>{m}</span>
+                          {ctxBadge && (
+                            <span className="text-[9px] bg-primary/10 text-primary px-1 font-sans font-semibold rounded-none">
+                              {ctxBadge}
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -1368,9 +1565,6 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                 <code className="font-mono font-bold text-primary">{a.alias_name}</code>
                 <span className="text-muted-foreground">→</span>
                 <code className="font-mono text-xs flex-1">{a.target_model}</code>
-                <span className="text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-none font-mono">
-                  {formatContextSize(a.context_size)} ctx
-                </span>
                 <button onClick={() => deleteAlias(a.id)} className="text-destructive hover:text-destructive/80">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -1386,7 +1580,7 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
               value={newAlias.alias_name}
               onChange={e => setNewAlias(a => ({ ...a, alias_name: e.target.value }))}
               placeholder="claude"
-              className="border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono w-28"
+              className="border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono w-32"
             />
             <span className="self-center text-muted-foreground">→</span>
             <input
@@ -1394,42 +1588,12 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
               onChange={e => setNewAlias(a => ({ ...a, target_model: e.target.value }))}
               list="alias-target-list"
               placeholder="claude-3-5-sonnet, gpt-4o, or combo"
-              className="flex-1 min-w-[180px] border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono"
+              className="flex-1 min-w-[200px] border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono"
             />
             <datalist id="alias-target-list">
               {allDiscoveredModels.map(s => <option key={s} value={s} />)}
               {combos.map(c => <option key={c.name} value={c.name} />)}
             </datalist>
-
-            <div className="flex items-center gap-1.5">
-              <label className="text-xs text-muted-foreground whitespace-nowrap">Context:</label>
-              <select
-                value={isCustomCtx ? -1 : (newAlias.context_size || 0)}
-                onChange={e => {
-                  const val = parseInt(e.target.value, 10);
-                  if (val === -1) {
-                    setIsCustomCtx(true);
-                  } else {
-                    setIsCustomCtx(false);
-                    setNewAlias(a => ({ ...a, context_size: val }));
-                  }
-                }}
-                className="border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono"
-              >
-                {CONTEXT_PRESETS.map(p => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
-              {isCustomCtx && (
-                <input
-                  type="number"
-                  placeholder="Tokens"
-                  value={newAlias.context_size || ''}
-                  onChange={e => setNewAlias(a => ({ ...a, context_size: parseInt(e.target.value, 10) || 0 }))}
-                  className="border border-border rounded-none px-2 py-1.5 text-xs bg-background font-mono w-24"
-                />
-              )}
-            </div>
 
             <button
               onClick={saveAlias}

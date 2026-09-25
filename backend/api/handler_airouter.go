@@ -72,33 +72,51 @@ func estimateInputTokens(bodyBytes []byte) int {
 func getDefaultContextSize(modelName string) int {
 	s := strings.ToLower(modelName)
 	switch {
-	case strings.Contains(s, "claude-3-5") || strings.Contains(s, "claude-3"):
+	case strings.Contains(s, "gemini-1.5-pro") || strings.Contains(s, "gemini-2.0-pro"):
+		return 2000000
+	case strings.Contains(s, "gemini-1.5") || strings.Contains(s, "gemini-2.0") || strings.Contains(s, "gemini-flash"):
+		return 1000000
+	case strings.Contains(s, "claude-3-7") || strings.Contains(s, "claude-3-5") || strings.Contains(s, "claude-3"):
 		return 200000
-	case strings.Contains(s, "gpt-4o") || strings.Contains(s, "o1") || strings.Contains(s, "o3"):
+	case strings.Contains(s, "gpt-4o") || strings.Contains(s, "o1") || strings.Contains(s, "o3") || strings.Contains(s, "gpt-4.5") || strings.Contains(s, "gpt-4-turbo"):
+		return 128000
+	case strings.Contains(s, "deepseek-r1") || strings.Contains(s, "deepseek-v3") || strings.Contains(s, "deepseek-chat") || strings.Contains(s, "deepseek-coder"):
+		return 128000
+	case strings.Contains(s, "qwen-2.5") || strings.Contains(s, "qwen2.5"):
 		return 128000
 	case strings.Contains(s, "llama-3.1") || strings.Contains(s, "llama-3.3") || strings.Contains(s, "llama-3.2"):
 		return 128000
-	case strings.Contains(s, "llama-3-"):
-		return 8192
-	case strings.Contains(s, "gemma-2") || strings.Contains(s, "gemma2"):
-		return 8192
-	case strings.Contains(s, "mistral-large"):
+	case strings.Contains(s, "mistral-large") || strings.Contains(s, "mistral-small") || strings.Contains(s, "mistral-nemo") || strings.Contains(s, "pixtral"):
 		return 128000
-	case strings.Contains(s, "mixtral"):
+	case strings.Contains(s, "phi-4"):
+		return 128000
+	case strings.Contains(s, "codestral") || strings.Contains(s, "mixtral"):
 		return 32768
-	case strings.Contains(s, "gpt-4-turbo"):
-		return 128000
 	case strings.Contains(s, "gpt-4-32k"):
 		return 32768
-	case strings.Contains(s, "gpt-4"):
-		return 8192
 	case strings.Contains(s, "gpt-3.5-turbo-16k"):
 		return 16384
-	case strings.Contains(s, "gpt-3.5"):
+	case strings.Contains(s, "gpt-4") || strings.Contains(s, "llama-3-") || strings.Contains(s, "gemma-2") || strings.Contains(s, "gemma2"):
+		return 8192
+	case strings.Contains(s, "gpt-3.5") || strings.Contains(s, "phi-3"):
 		return 4096
 	default:
 		return 128000
 	}
+}
+
+// getModelContextSize resolves context size from DB mapping -> alias target -> auto-detection
+func (h *APIHandler) getModelContextSize(subdomain, modelName string) int {
+	if mc, err := h.db.GetAIRouterModelContext(subdomain, modelName); err == nil && mc != nil && mc.ContextSize > 0 {
+		return mc.ContextSize
+	}
+	resolved := h.db.ResolveAIRouterAlias(subdomain, modelName)
+	if resolved != modelName {
+		if mc, err := h.db.GetAIRouterModelContext(subdomain, resolved); err == nil && mc != nil && mc.ContextSize > 0 {
+			return mc.ContextSize
+		}
+	}
+	return getDefaultContextSize(resolved)
 }
 
 func extractSubdomainFromHost(host string) string {
@@ -222,12 +240,7 @@ func (h *APIHandler) resolveTargets(subdomain, modelStr, endpoint string, bodyBy
 			}
 			var candidates []candidate
 			for _, m := range models {
-				ctx := 0
-				if alias, err := h.db.GetAIRouterAlias(subdomain, m); err == nil && alias != nil && alias.ContextSize > 0 {
-					ctx = alias.ContextSize
-				} else {
-					ctx = getDefaultContextSize(m)
-				}
+				ctx := h.getModelContextSize(subdomain, m)
 				candidates = append(candidates, candidate{model: m, ctxSize: ctx})
 			}
 			// Sort candidates by context size ascending
@@ -1709,14 +1722,16 @@ func (h *APIHandler) handleGetAIRouterConfig(w http.ResponseWriter, r *http.Requ
 	conns, _ := h.db.GetAIRouterConnections(subdomain)
 	combos, _ := h.db.GetAIRouterCombos(subdomain)
 	aliases, _ := h.db.GetAIRouterAliases(subdomain)
+	modelContexts, _ := h.db.GetAIRouterModelContexts(subdomain)
 	userKeys, _ := h.db.GetAIRouterUserKeys(subdomain)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"config":      cfg,
-		"connections": conns,
-		"combos":      combos,
-		"aliases":     aliases,
-		"user_keys":   userKeys,
+		"config":         cfg,
+		"connections":    conns,
+		"combos":         combos,
+		"aliases":        aliases,
+		"model_contexts": modelContexts,
+		"user_keys":      userKeys,
 	})
 }
 
@@ -2020,6 +2035,98 @@ func (h *APIHandler) handleDeleteAIRouterAlias(w http.ResponseWriter, r *http.Re
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	h.db.DeleteAIRouterAlias(subdomain, id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// ── Model Context Sizes CRUD ──────────────────────────────────────────────────
+
+func (h *APIHandler) handleGetAIRouterModelContexts(w http.ResponseWriter, r *http.Request, subdomain string) {
+	contexts, err := h.db.GetAIRouterModelContexts(subdomain)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if contexts == nil {
+		contexts = []db.AIRouterModelContext{}
+	}
+	writeJSON(w, http.StatusOK, contexts)
+}
+
+func (h *APIHandler) handleUpsertAIRouterModelContext(w http.ResponseWriter, r *http.Request, subdomain string) {
+	var body struct {
+		ModelName   string `json:"model_name"`
+		ContextSize int    `json:"context_size"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	body.ModelName = strings.TrimSpace(body.ModelName)
+	if body.ModelName == "" {
+		writeJSONError(w, http.StatusBadRequest, "model_name required")
+		return
+	}
+	if body.ContextSize <= 0 {
+		body.ContextSize = getDefaultContextSize(body.ModelName)
+	}
+	if err := h.db.UpsertAIRouterModelContext(subdomain, body.ModelName, body.ContextSize); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":       "ok",
+		"model_name":   body.ModelName,
+		"context_size": body.ContextSize,
+	})
+}
+
+func (h *APIHandler) handleDeleteAIRouterModelContext(w http.ResponseWriter, r *http.Request, subdomain string) {
+	idStr := r.PathValue("id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+	_ = h.db.DeleteAIRouterModelContext(subdomain, id)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *APIHandler) handleAutoDetectModelContexts(w http.ResponseWriter, r *http.Request, subdomain string) {
+	var req struct {
+		Models []string `json:"models"`
+		Save   bool     `json:"save"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	type detectedItem struct {
+		ModelName   string `json:"model_name"`
+		ContextSize int    `json:"context_size"`
+		IsCustom    bool   `json:"is_custom"`
+	}
+	var result []detectedItem
+
+	existingMap := make(map[string]int)
+	if customList, err := h.db.GetAIRouterModelContexts(subdomain); err == nil {
+		for _, c := range customList {
+			existingMap[c.ModelName] = c.ContextSize
+		}
+	}
+
+	for _, m := range req.Models {
+		m = strings.TrimSpace(m)
+		if m == "" {
+			continue
+		}
+		if customCtx, ok := existingMap[m]; ok && customCtx > 0 {
+			result = append(result, detectedItem{ModelName: m, ContextSize: customCtx, IsCustom: true})
+		} else {
+			ctx := getDefaultContextSize(m)
+			if req.Save {
+				_ = h.db.UpsertAIRouterModelContext(subdomain, m, ctx)
+			}
+			result = append(result, detectedItem{ModelName: m, ContextSize: ctx, IsCustom: false})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":   "ok",
+		"detected": result,
+	})
 }
 
 // ── Proxy Client API Key Authentication & Management ─────────────────────────

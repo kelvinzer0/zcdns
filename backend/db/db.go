@@ -181,6 +181,16 @@ func InitDB(dbPath string) (*DB, error) {
 		UNIQUE(subdomain, alias_name)
 	);
 
+	CREATE TABLE IF NOT EXISTS ai_router_model_contexts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		subdomain TEXT NOT NULL,
+		model_name TEXT NOT NULL,
+		context_size INTEGER NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(subdomain, model_name)
+	);
+
 	CREATE TABLE IF NOT EXISTS ai_router_user_keys (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		subdomain TEXT NOT NULL,
