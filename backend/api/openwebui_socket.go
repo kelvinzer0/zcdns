@@ -24,16 +24,69 @@ type SocketClient struct {
 	email       string
 	lastSeenAt  int64
 	rooms       map[string]bool
+	send        chan []byte
+	closed      bool
+	closeMu     sync.Mutex
 	writeMu     sync.Mutex
 	ackCounter  int64
 	ackMu       sync.Mutex
 	pendingAcks map[int64]chan any
 }
 
+func (c *SocketClient) close() {
+	c.closeMu.Lock()
+	if c.closed {
+		c.closeMu.Unlock()
+		return
+	}
+	c.closed = true
+	c.closeMu.Unlock()
+
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
+	if c.send != nil {
+		close(c.send)
+	}
+}
+
 func (c *SocketClient) write(msg []byte) error {
+	c.closeMu.Lock()
+	if c.closed {
+		c.closeMu.Unlock()
+		return fmt.Errorf("client closed")
+	}
+	c.closeMu.Unlock()
+
+	if c.send == nil {
+		return c.writeDirect(msg)
+	}
+
+	select {
+	case c.send <- msg:
+		return nil
+	default:
+		// Queue full, write direct with short deadline so frames are delivered
+		return c.writeDirect(msg)
+	}
+}
+
+func (c *SocketClient) writeDirect(msg []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if c.conn == nil {
+		return fmt.Errorf("no connection")
+	}
+	_ = c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	return c.conn.WriteMessage(websocket.TextMessage, msg)
+}
+
+func (c *SocketClient) writePump() {
+	for msg := range c.send {
+		if err := c.writeDirect(msg); err != nil {
+			break
+		}
+	}
 }
 
 // Call sends an RPC event to the client and blocks until the client returns an ACK or timeout expires
@@ -105,6 +158,7 @@ func (h *SocketHub) register(c *SocketClient) {
 }
 
 func (h *SocketHub) unregister(c *SocketClient) {
+	c.close()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.clients, c.sid)
@@ -225,7 +279,6 @@ func (h *SocketHub) disconnectUserSessions(userID string) {
 	h.mu.Unlock()
 
 	for _, client := range targets {
-		_ = client.conn.Close()
 		h.unregister(client)
 	}
 }
@@ -312,10 +365,9 @@ func (h *SocketHub) startPruner() {
 					delete(h.usagePool, model)
 				}
 			}
-			// 2. Prune dead client sessions (> 300s without heartbeat)
+			// 2. Prune dead client sessions (> 120s without heartbeat or ping)
 			for sid, client := range h.clients {
-				if now-client.lastSeenAt > 300 {
-					_ = client.conn.Close()
+				if now-client.lastSeenAt > 120 {
 					delete(h.clients, sid)
 					for room := range client.rooms {
 						if set, ok := h.rooms[room]; ok {
@@ -325,6 +377,7 @@ func (h *SocketHub) startPruner() {
 							}
 						}
 					}
+					client.close()
 				}
 			}
 			h.mu.Unlock()
@@ -397,6 +450,35 @@ func (h *APIHandler) GetEventEmitter(subdomain, userID, chatID, messageID string
 		return h.MakeChannelEmitter(subdomain, channelID, messageID)
 	}
 
+	var mu sync.Mutex
+	var accumChunk strings.Builder
+	var lastDbWrite time.Time
+
+	flushMessageChunk := func(force bool) {
+		if !updateDB || messageID == "" || chatID == "" {
+			return
+		}
+		mu.Lock()
+		if accumChunk.Len() == 0 {
+			mu.Unlock()
+			return
+		}
+		if !force && time.Since(lastDbWrite) < 1500*time.Millisecond {
+			mu.Unlock()
+			return
+		}
+		toFlush := accumChunk.String()
+		accumChunk.Reset()
+		lastDbWrite = time.Now()
+		mu.Unlock()
+
+		_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID, func(msg map[string]interface{}) map[string]interface{} {
+			curr, _ := msg["content"].(string)
+			msg["content"] = curr + toFlush
+			return msg
+		})
+	}
+
 	return func(eventData map[string]any) {
 		if eventData == nil {
 			return
@@ -431,13 +513,13 @@ func (h *APIHandler) GetEventEmitter(subdomain, userID, chatID, messageID string
 		case "message":
 			if dataMap != nil {
 				chunk, _ := dataMap["content"].(string)
-				_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID, func(msg map[string]interface{}) map[string]interface{} {
-					curr, _ := msg["content"].(string)
-					msg["content"] = curr + chunk
-					return msg
-				})
+				mu.Lock()
+				accumChunk.WriteString(chunk)
+				mu.Unlock()
+				flushMessageChunk(false)
 			}
 		case "replace":
+			flushMessageChunk(true)
 			if dataMap != nil {
 				content, _ := dataMap["content"].(string)
 				_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID, func(msg map[string]interface{}) map[string]interface{} {
@@ -445,6 +527,12 @@ func (h *APIHandler) GetEventEmitter(subdomain, userID, chatID, messageID string
 					return msg
 				})
 			}
+		case "done":
+			flushMessageChunk(true)
+			_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID, func(msg map[string]interface{}) map[string]interface{} {
+				msg["done"] = true
+				return msg
+			})
 		case "embeds":
 			if dataMap != nil {
 				embeds, _ := dataMap["embeds"].([]any)
@@ -658,10 +746,12 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 			userName:    "Guest",
 			lastSeenAt:  time.Now().Unix(),
 			rooms:       make(map[string]bool),
+			send:        make(chan []byte, 256),
 			pendingAcks: make(map[int64]chan any),
 		}
 
 		globalSocketHub.register(client)
+		go client.writePump()
 		defer func() {
 			// Leave doc rooms and notify if any
 			for rName := range client.rooms {
@@ -678,20 +768,27 @@ func (h *APIHandler) handleOpenWebUISocketIO(w http.ResponseWriter, r *http.Requ
 			globalSocketHub.unregister(client)
 		}()
 
-		// Engine.IO v4 Handshake packet
-		handshake := fmt.Sprintf(`0{"sid":"%s","upgrades":[],"pingInterval":25000,"pingTimeout":20000}`, sid)
-		if err := client.write([]byte(handshake)); err != nil {
+		// Engine.IO v4 Handshake packet: pingInterval 25s, pingTimeout 60s
+		handshake := fmt.Sprintf(`0{"sid":"%s","upgrades":[],"pingInterval":25000,"pingTimeout":60000}`, sid)
+		if err := client.writeDirect([]byte(handshake)); err != nil {
 			return
 		}
+
+		conn.SetReadLimit(10 * 1024 * 1024)
+		_ = conn.SetReadDeadline(time.Now().Add(75 * time.Second))
 
 		for {
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
 				break
 			}
+			// Extend read deadline on ANY message from client
+			_ = conn.SetReadDeadline(time.Now().Add(75 * time.Second))
+			client.lastSeenAt = time.Now().Unix()
+
 			s := string(msg)
-			if s == "2" { // Engine.IO ping -> reply pong
-				_ = client.write([]byte("3"))
+			if s == "2" { // Engine.IO ping -> reply pong directly
+				_ = client.writeDirect([]byte("3"))
 			} else if strings.HasPrefix(s, "40") { // Socket.IO CONNECT
 				connectResp := fmt.Sprintf(`40{"sid":"%s"}`, sid)
 				_ = client.write([]byte(connectResp))
