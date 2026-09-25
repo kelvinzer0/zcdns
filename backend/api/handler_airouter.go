@@ -1015,6 +1015,7 @@ func (h *APIHandler) streamFollowUpTurn(
 	}
 
 	reader := bufio.NewReader(resp.Body)
+	thinkFilter := newThinkingStreamFilter()
 	for {
 		line, rErr := reader.ReadString('\n')
 		line = strings.TrimSpace(line)
@@ -1027,40 +1028,56 @@ func (h *APIHandler) streamFollowUpTurn(
 				var antChunk struct {
 					Type  string `json:"type"`
 					Delta struct {
-						Type string `json:"type"`
-						Text string `json:"text"`
+						Type     string `json:"type"`
+						Text     string `json:"text"`
+						Thinking string `json:"thinking"`
 					} `json:"delta"`
 				}
-				if json.Unmarshal([]byte(dataStr), &antChunk) == nil && antChunk.Delta.Text != "" {
-					accumulatedContent.WriteString(antChunk.Delta.Text)
-					emitEvent("chat:completion", map[string]interface{}{
-						"choices": []interface{}{
-							map[string]interface{}{
-								"delta": map[string]interface{}{
-									"content": antChunk.Delta.Text,
+				if json.Unmarshal([]byte(dataStr), &antChunk) == nil {
+					chunkText := ""
+					if antChunk.Delta.Thinking != "" {
+						chunkText = thinkFilter.ProcessReasoning(antChunk.Delta.Thinking)
+					} else if antChunk.Delta.Text != "" {
+						chunkText = thinkFilter.ProcessContent(antChunk.Delta.Text)
+					}
+					if chunkText != "" {
+						accumulatedContent.WriteString(chunkText)
+						emitEvent("chat:completion", map[string]interface{}{
+							"choices": []interface{}{
+								map[string]interface{}{
+									"delta": map[string]interface{}{
+										"content": chunkText,
+									},
 								},
 							},
-						},
-						"done": false,
-					})
+							"done": false,
+						})
+					}
 				}
 			} else {
 				var oaiChunk struct {
 					Choices []struct {
 						Delta struct {
-							Content string `json:"content"`
+							Content          string `json:"content"`
+							ReasoningContent string `json:"reasoning_content"`
 						} `json:"delta"`
 					} `json:"choices"`
 				}
 				if json.Unmarshal([]byte(dataStr), &oaiChunk) == nil && len(oaiChunk.Choices) > 0 {
-					text := oaiChunk.Choices[0].Delta.Content
-					if text != "" {
-						accumulatedContent.WriteString(text)
+					delta := oaiChunk.Choices[0].Delta
+					chunkText := ""
+					if delta.ReasoningContent != "" {
+						chunkText = thinkFilter.ProcessReasoning(delta.ReasoningContent)
+					} else if delta.Content != "" {
+						chunkText = thinkFilter.ProcessContent(delta.Content)
+					}
+					if chunkText != "" {
+						accumulatedContent.WriteString(chunkText)
 						emitEvent("chat:completion", map[string]interface{}{
 							"choices": []interface{}{
 								map[string]interface{}{
 									"delta": map[string]interface{}{
-										"content": text,
+										"content": chunkText,
 									},
 								},
 							},
@@ -1073,6 +1090,19 @@ func (h *APIHandler) streamFollowUpTurn(
 		if rErr != nil {
 			break
 		}
+	}
+	if flush := thinkFilter.Flush(); flush != "" {
+		accumulatedContent.WriteString(flush)
+		emitEvent("chat:completion", map[string]interface{}{
+			"choices": []interface{}{
+				map[string]interface{}{
+					"delta": map[string]interface{}{
+						"content": flush,
+					},
+				},
+			},
+			"done": false,
+		})
 	}
 	return nil
 }
@@ -1183,7 +1213,7 @@ func (h *APIHandler) streamTargetToSocket(
 
 	reader := bufio.NewReader(resp.Body)
 	var accumulatedContent strings.Builder
-	inReasoning := false
+	thinkFilter := newThinkingStreamFilter()
 	pendingToolCalls := make(map[int]*accumulatedToolCall)
 
 	for {
@@ -1201,18 +1231,25 @@ func (h *APIHandler) streamTargetToSocket(
 					var antChunk struct {
 						Type  string `json:"type"`
 						Delta struct {
-							Type string `json:"type"`
-							Text string `json:"text"`
+							Type     string `json:"type"`
+							Text     string `json:"text"`
+							Thinking string `json:"thinking"`
 						} `json:"delta"`
 					}
 					if json.Unmarshal([]byte(dataStr), &antChunk) == nil {
-						if antChunk.Delta.Text != "" {
-							accumulatedContent.WriteString(antChunk.Delta.Text)
+						chunkText := ""
+						if antChunk.Delta.Thinking != "" {
+							chunkText = thinkFilter.ProcessReasoning(antChunk.Delta.Thinking)
+						} else if antChunk.Delta.Text != "" {
+							chunkText = thinkFilter.ProcessContent(antChunk.Delta.Text)
+						}
+						if chunkText != "" {
+							accumulatedContent.WriteString(chunkText)
 							emitEvent("chat:completion", map[string]interface{}{
 								"choices": []interface{}{
 									map[string]interface{}{
 										"delta": map[string]interface{}{
-											"content": antChunk.Delta.Text,
+											"content": chunkText,
 										},
 									},
 								},
@@ -1243,19 +1280,9 @@ func (h *APIHandler) streamTargetToSocket(
 						chunkText := ""
 
 						if delta.ReasoningContent != "" {
-							if !inReasoning {
-								inReasoning = true
-								chunkText = "<think>\n" + delta.ReasoningContent
-							} else {
-								chunkText = delta.ReasoningContent
-							}
+							chunkText = thinkFilter.ProcessReasoning(delta.ReasoningContent)
 						} else if delta.Content != "" {
-							if inReasoning {
-								inReasoning = false
-								chunkText = "\n</think>\n\n" + delta.Content
-							} else {
-								chunkText = delta.Content
-							}
+							chunkText = thinkFilter.ProcessContent(delta.Content)
 						}
 
 						if chunkText != "" {
@@ -1305,13 +1332,13 @@ func (h *APIHandler) streamTargetToSocket(
 		}
 	}
 
-	if inReasoning {
-		accumulatedContent.WriteString("\n</think>\n")
+	if flush := thinkFilter.Flush(); flush != "" {
+		accumulatedContent.WriteString(flush)
 		emitEvent("chat:completion", map[string]interface{}{
 			"choices": []interface{}{
 				map[string]interface{}{
 					"delta": map[string]interface{}{
-						"content": "\n</think>\n",
+						"content": flush,
 					},
 				},
 			},
