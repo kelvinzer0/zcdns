@@ -361,7 +361,7 @@
 						</span>
 					</div>
 					<p class="text-xs text-gray-500 dark:text-gray-400">
-						Model Context Protocol (MCP) servers (seperti Aria Page Agent, mcp-bridge-go/cf) untuk automasi browser & sistem tools.
+						Model Context Protocol (MCP) servers (seperti Aria Page Agent, Linux Agent, mcp-bridge-go/cf) untuk automasi browser & eksekusi Linux.
 					</p>
 				</div>
 			</div>
@@ -382,7 +382,7 @@
 						Belum ada MCP Server yang terhubung
 					</div>
 					<div class="text-gray-500 dark:text-gray-400 leading-relaxed">
-						Gunakan <a href="https://github.com/kelvinzer0/aria-page-agent" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 font-semibold underline">Aria Page Agent</a> untuk memberikan kemampuan browser ke AI Anda, atau hubungkan endpoint MCP apa pun dengan tipe SSE / HTTP streamable.
+						Gunakan <a href="https://github.com/kelvinzer0/aria-page-agent" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 font-semibold underline">Aria Page Agent</a> untuk browser automation atau <a href="https://github.com/kelvinzer0/linux-agent" target="_blank" rel="noopener noreferrer" class="text-emerald-600 dark:text-emerald-400 font-semibold underline">Linux Agent</a> untuk Code Interpreter & 18 OpenCode tools, atau hubungkan endpoint MCP apa pun dengan tipe SSE / HTTP streamable.
 					</div>
 				</div>
 				<a

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Network, Plus, Trash2, Save, Copy, Check, Eye, EyeOff,
   Loader2, ChevronDown, ChevronRight, AlertCircle, CheckCircle2,
-  Key, ShieldCheck, Shield, ExternalLink, MessageSquare, RefreshCw, Zap, X
+  Key, ShieldCheck, Shield, ExternalLink, MessageSquare, RefreshCw, Zap, X,
+  Terminal, Globe
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -145,6 +146,11 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   const [showKeys, setShowKeys] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ connections: true, combos: false, aliases: false });
 
+  // Featured agents carousel state
+  const [agentSlide, setAgentSlide] = useState(0);
+  const [isAgentPaused, setIsAgentPaused] = useState(false);
+  const [copiedCurl, setCopiedCurl] = useState(false);
+
   // New connection form
   const [newConn, setNewConn] = useState({
     provider: 'openai',
@@ -210,6 +216,23 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   }, [subdomain]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Auto-rotate featured agent carousel every 6.5 seconds (pauses on hover)
+  useEffect(() => {
+    if (isAgentPaused) return;
+    const timer = setInterval(() => {
+      setAgentSlide(prev => (prev === 0 ? 1 : 0));
+    }, 6500);
+    return () => clearInterval(timer);
+  }, [isAgentPaused]);
+
+  const copyLinuxCurl = () => {
+    const cmd = 'curl -fsSL https://raw.githubusercontent.com/kelvinzer0/linux-agent/main/install.sh | sudo bash';
+    navigator.clipboard.writeText(cmd);
+    setCopiedCurl(true);
+    toast({ title: 'Copied!', description: '1-line curl install command copied to clipboard.' });
+    setTimeout(() => setCopiedCurl(false), 2000);
+  };
 
   // Aggregate all discovered/configured models across all connections
   const allDiscoveredModels = Array.from(new Set([
@@ -571,32 +594,108 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
           ))}
         </div>
 
-        {/* Featured Browser Agent: Aria Page Agent */}
-        <div className="p-3 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border border-blue-500/20 rounded-none flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-foreground flex items-center gap-1.5">
-                <ExternalLink className="w-3.5 h-3.5 text-blue-500" />
-                Featured: Aria Page Agent (AI Browser MCP)
-              </span>
-              <span className="text-[10px] bg-blue-500/20 text-blue-600 dark:text-blue-400 font-medium px-1.5 py-0.2 rounded-none">
-                SSE & HTTP Streamable
-              </span>
+        {/* Featured Agents Carousel: Aria Page Agent & Linux Agent */}
+        <div
+          onMouseEnter={() => setIsAgentPaused(true)}
+          onMouseLeave={() => setIsAgentPaused(false)}
+          className={`p-3.5 border transition-all duration-300 rounded-none relative ${
+            agentSlide === 0
+              ? 'bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border-blue-500/30'
+              : 'bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border-emerald-500/30'
+          }`}
+        >
+          {agentSlide === 0 ? (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-foreground flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-blue-500" />
+                    Featured: Aria Page Agent (AI Browser MCP)
+                  </span>
+                  <span className="text-[10px] bg-blue-500/20 text-blue-600 dark:text-blue-400 font-medium px-1.5 py-0.2 rounded-none">
+                    SSE & HTTP Streamable
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-normal">
+                  Beri AI kemampuan menjelajah & mengontrol web browser Anda secara interaktif (baca DOM, navigasi halaman, form autofill). Cukup pasang ekstensi Chrome, ambil URL MCP-nya, lalu gunakan di AI Router ZCDNS & OpenWebUI.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href="https://github.com/kelvinzer0/aria-page-agent"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-none transition-colors"
+                >
+                  <span>GitHub Repo</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
             </div>
-            <p className="text-[11px] text-muted-foreground leading-normal">
-              Beri AI kemampuan menjelajah & mengontrol web browser Anda. Cukup pasang ekstensi Chrome, ambil URL MCP-nya, lalu gunakan di AI Router ZCDNS & OpenWebUI.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <a
-              href="https://github.com/kelvinzer0/aria-page-agent"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-none transition-colors"
-            >
-              <span>GitHub Repo</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
+          ) : (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-foreground flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5 text-emerald-500" />
+                    Featured: Linux Agent (Linux Daemon & Code Interpreter MCP)
+                  </span>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-medium px-1.5 py-0.2 rounded-none">
+                    18 Tools Native & Python/Bash
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-normal">
+                  Daemon Linux mandiri: eksekusi script Python & Bash (Code Interpreter), 100% OpenCode tooling (edit, patch, diff, grep, view, ls), dan runner otomatis <code className="bg-muted px-1 py-0.2 font-mono text-[10px]">.agents/skills</code>.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={copyLinuxCurl}
+                  title="Copy 1-line curl install command"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-background hover:bg-muted border border-border text-foreground font-medium text-xs rounded-none transition-colors"
+                >
+                  {copiedCurl ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedCurl ? 'Copied' : '1-Line Curl'}</span>
+                </button>
+                <a
+                  href="https://github.com/kelvinzer0/linux-agent"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs rounded-none transition-colors"
+                >
+                  <span>GitHub Repo</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+          )}
+
+          {/* Carousel Content Dots & Switcher */}
+          <div className="flex items-center justify-between pt-2 mt-2 border-t border-border/40 text-[10px] text-muted-foreground">
+            <span className="font-mono text-[10px]">
+              {agentSlide === 0 ? '1/2 • Browser Automation Agent' : '2/2 • Linux Daemon & Code Interpreter'}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setAgentSlide(0)}
+                title="Aria Browser Agent"
+                aria-label="Aria Browser Agent"
+                className={`transition-all duration-300 h-1.5 rounded-full ${
+                  agentSlide === 0 ? 'w-5 bg-blue-500' : 'w-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/60'
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => setAgentSlide(1)}
+                title="Linux Agent"
+                aria-label="Linux Agent"
+                className={`transition-all duration-300 h-1.5 rounded-full ${
+                  agentSlide === 1 ? 'w-5 bg-emerald-500' : 'w-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/60'
+                }`}
+              />
+            </div>
           </div>
         </div>
 

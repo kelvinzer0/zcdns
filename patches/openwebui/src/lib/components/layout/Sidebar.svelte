@@ -74,6 +74,7 @@
 	import { getChannels, createNewChannel } from '$lib/apis/channels';
 	import ChannelModal from './Sidebar/ChannelModal.svelte';
 	import AriaAgentModal from './Sidebar/AriaAgentModal.svelte';
+	import LinuxAgentModal from './Sidebar/LinuxAgentModal.svelte';
 	import ChannelItem from './Sidebar/ChannelItem.svelte';
 	import SearchModal from './SearchModal.svelte';
 	import FolderModal from './Sidebar/Folders/FolderModal.svelte';
@@ -121,6 +122,10 @@
 
 	let showCreateFolderModal = false;
 	let showAriaModal = false;
+	let showLinuxAgentModal = false;
+	let agentSlideIndex = 0;
+	let isAgentSlidePaused = false;
+	let agentSlideTimer: any = null;
 
 	let showPinnedModels = true;
 	let showPinnedNotes = false;
@@ -649,12 +654,20 @@
 	};
 
 	onDestroy(() => {
+		if (agentSlideTimer) {
+			clearInterval(agentSlideTimer);
+		}
 		if (isResizing) {
 			document.body.style.userSelect = '';
 		}
 	});
 
 	onMount(async () => {
+		agentSlideTimer = setInterval(() => {
+			if (!isAgentSlidePaused) {
+				agentSlideIndex = agentSlideIndex === 0 ? 1 : 0;
+			}
+		}, 6500);
 		try {
 			const width = Number(localStorage.getItem('sidebarWidth'));
 			if (!Number.isNaN(width) && width >= MIN_WIDTH && width <= MAX_WIDTH) {
@@ -885,6 +898,7 @@
 />
 
 <AriaAgentModal bind:show={showAriaModal} />
+<LinuxAgentModal bind:show={showLinuxAgentModal} />
 
 <svelte:window
 	on:pointermove={(e) => {
@@ -1078,26 +1092,46 @@
 			<div>
 				<div>
 					<div class=" flex flex-col justify-center items-center">
-						<Tooltip content="Aria Browser Agent (MCP)" placement="right">
-							<button
-								type="button"
-								class="cursor-pointer flex size-8.5 items-center justify-center transition group rounded-lg hover:bg-blue-100/70 dark:hover:bg-blue-950/40 text-blue-600 dark:text-blue-400 mb-1"
-								on:click={() => {
-									showAriaModal = true;
-								}}
-								aria-label="Aria Browser Agent"
-							>
-								<div class="p-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 group-hover:scale-105 transition-transform">
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
-										<circle cx="12" cy="12" r="10" />
-										<circle cx="12" cy="12" r="4" />
-										<line x1="21.17" y1="8" x2="12" y2="8" />
-										<line x1="3.95" y1="6.06" x2="8.54" y2="14" />
-										<line x1="10.88" y1="21.94" x2="15.46" y2="14" />
-									</svg>
-								</div>
-							</button>
-						</Tooltip>
+						{#if agentSlideIndex === 0}
+							<Tooltip content="Aria Browser Agent (MCP)" placement="right">
+								<button
+									type="button"
+									class="cursor-pointer flex size-8.5 items-center justify-center transition group rounded-lg hover:bg-blue-100/70 dark:hover:bg-blue-950/40 text-blue-600 dark:text-blue-400 mb-1"
+									on:click={() => {
+										showAriaModal = true;
+									}}
+									aria-label="Aria Browser Agent"
+								>
+									<div class="p-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 group-hover:scale-105 transition-transform">
+										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
+											<circle cx="12" cy="12" r="10" />
+											<circle cx="12" cy="12" r="4" />
+											<line x1="21.17" y1="8" x2="12" y2="8" />
+											<line x1="3.95" y1="6.06" x2="8.54" y2="14" />
+											<line x1="10.88" y1="21.94" x2="15.46" y2="14" />
+										</svg>
+									</div>
+								</button>
+							</Tooltip>
+						{:else}
+							<Tooltip content="Linux Agent (MCP Daemon & Code Interpreter)" placement="right">
+								<button
+									type="button"
+									class="cursor-pointer flex size-8.5 items-center justify-center transition group rounded-lg hover:bg-emerald-100/70 dark:hover:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 mb-1"
+									on:click={() => {
+										showLinuxAgentModal = true;
+									}}
+									aria-label="Linux Agent"
+								>
+									<div class="p-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 group-hover:scale-105 transition-transform">
+										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
+											<polyline points="4 17 10 11 4 5" />
+											<line x1="12" y1="19" x2="20" y2="19" />
+										</svg>
+									</div>
+								</button>
+							</Tooltip>
+						{/if}
 
 						{#if $user !== undefined && $user !== null}
 							<UserMenu role={$user?.role} profile={$config?.features?.enable_user_status ?? true}>
@@ -1731,37 +1765,99 @@
 						class=" sidebar-bg-gradient-to-t bg-linear-to-t from-gray-50 dark:from-gray-950 to-transparent from-50% pointer-events-none absolute inset-0 -z-10 -mt-6"
 					></div>
 					<div class="flex flex-col gap-1.5">
-						<!-- Aria Page Agent Promotion -->
-						<button
-							type="button"
-							class="flex items-center justify-between rounded-xl py-1.5 px-2 w-full text-left bg-blue-50/60 hover:bg-blue-100/70 dark:bg-blue-950/20 dark:hover:bg-blue-950/40 border border-blue-200/50 dark:border-blue-900/40 transition group cursor-pointer mb-0.5"
-							on:click={() => {
-								showAriaModal = true;
-							}}
+						<!-- Agents Promotion Carousel (Aria Browser Agent & Linux Agent) -->
+						<div
+							class="flex flex-col gap-1 mb-1"
+							on:mouseenter={() => (isAgentSlidePaused = true)}
+							on:mouseleave={() => (isAgentSlidePaused = false)}
+							role="region"
+							aria-label="Featured AI Agents"
 						>
-							<div class="flex items-center min-w-0 gap-2">
-								<div class="p-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform shrink-0">
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
-										<circle cx="12" cy="12" r="10" />
-										<circle cx="12" cy="12" r="4" />
-										<line x1="21.17" y1="8" x2="12" y2="8" />
-										<line x1="3.95" y1="6.06" x2="8.54" y2="14" />
-										<line x1="10.88" y1="21.94" x2="15.46" y2="14" />
-									</svg>
-								</div>
-								<div class="flex flex-col min-w-0">
-									<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate flex items-center gap-1">
-										<span>Aria Browser Agent</span>
+							{#if agentSlideIndex === 0}
+								<!-- Aria Page Agent -->
+								<button
+									type="button"
+									class="flex items-center justify-between rounded-xl py-1.5 px-2 w-full text-left bg-blue-50/70 hover:bg-blue-100/80 dark:bg-blue-950/30 dark:hover:bg-blue-950/50 border border-blue-200/60 dark:border-blue-900/50 transition-all duration-300 group cursor-pointer"
+									on:click={() => {
+										showAriaModal = true;
+									}}
+								>
+									<div class="flex items-center min-w-0 gap-2">
+										<div class="p-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform shrink-0">
+											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
+												<circle cx="12" cy="12" r="10" />
+												<circle cx="12" cy="12" r="4" />
+												<line x1="21.17" y1="8" x2="12" y2="8" />
+												<line x1="3.95" y1="6.06" x2="8.54" y2="14" />
+												<line x1="10.88" y1="21.94" x2="15.46" y2="14" />
+											</svg>
+										</div>
+										<div class="flex flex-col min-w-0">
+											<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate flex items-center gap-1">
+												<span>Aria Browser Agent</span>
+											</div>
+											<div class="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+												AI Browser via MCP (SSE)
+											</div>
+										</div>
 									</div>
-									<div class="text-[10px] text-gray-500 dark:text-gray-400 truncate">
-										AI Browser via MCP (SSE)
+									<span class="text-[9px] font-bold uppercase tracking-wider bg-blue-600 text-white dark:bg-blue-500 px-1.5 py-0.5 rounded-full shrink-0 shadow-xs">
+										MCP
+									</span>
+								</button>
+							{:else}
+								<!-- Linux Agent -->
+								<button
+									type="button"
+									class="flex items-center justify-between rounded-xl py-1.5 px-2 w-full text-left bg-emerald-50/70 hover:bg-emerald-100/80 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-900/50 transition-all duration-300 group cursor-pointer"
+									on:click={() => {
+										showLinuxAgentModal = true;
+									}}
+								>
+									<div class="flex items-center min-w-0 gap-2">
+										<div class="p-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 group-hover:scale-105 transition-transform shrink-0">
+											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
+												<polyline points="4 17 10 11 4 5" />
+												<line x1="12" y1="19" x2="20" y2="19" />
+											</svg>
+										</div>
+										<div class="flex flex-col min-w-0">
+											<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate flex items-center gap-1">
+												<span>Linux Agent</span>
+											</div>
+											<div class="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+												Code Interpreter & 18 Tools
+											</div>
+										</div>
 									</div>
-								</div>
+									<span class="text-[9px] font-bold uppercase tracking-wider bg-emerald-600 text-white dark:bg-emerald-500 px-1.5 py-0.5 rounded-full shrink-0 shadow-xs">
+										MCP
+									</span>
+								</button>
+							{/if}
+
+							<!-- Carousel Content Dots -->
+							<div class="flex items-center justify-center gap-1.5 py-0.5">
+								<button
+									type="button"
+									class="h-1 rounded-full transition-all duration-300 cursor-pointer {agentSlideIndex === 0
+										? 'w-4 bg-blue-600 dark:bg-blue-400'
+										: 'w-1.5 bg-gray-300 dark:bg-gray-700 hover:bg-gray-400'}"
+									on:click|stopPropagation={() => (agentSlideIndex = 0)}
+									aria-label="Aria Browser Agent"
+									title="Aria Browser Agent"
+								></button>
+								<button
+									type="button"
+									class="h-1 rounded-full transition-all duration-300 cursor-pointer {agentSlideIndex === 1
+										? 'w-4 bg-emerald-600 dark:bg-emerald-400'
+										: 'w-1.5 bg-gray-300 dark:bg-gray-700 hover:bg-gray-400'}"
+									on:click|stopPropagation={() => (agentSlideIndex = 1)}
+									aria-label="Linux Agent"
+									title="Linux Agent"
+								></button>
 							</div>
-							<span class="text-[9px] font-bold uppercase tracking-wider bg-blue-600 text-white dark:bg-blue-500 px-1.5 py-0.5 rounded-full shrink-0 shadow-xs">
-								MCP
-							</span>
-						</button>
+						</div>
 
 						{#if $user !== undefined && $user !== null}
 							<UserMenu
