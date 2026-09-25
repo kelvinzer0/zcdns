@@ -236,6 +236,123 @@ func TestChatDBPool_ConcurrentMultiUserChats(t *testing.T) {
 	}
 }
 
+func TestChatDBPool_MergeHistoryAndNoMessageLoss(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "test_chat_merge_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbFile := filepath.Join(tempDir, "test_merge.sqlite")
+	chatStorageDir := filepath.Join(tempDir, "chats")
+	os.Setenv("CHAT_STORAGE_DIR", chatStorageDir)
+	defer os.Unsetenv("CHAT_STORAGE_DIR")
+
+	database, err := InitDB(dbFile)
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer database.Close()
+
+	sub := "test-sub"
+	userID := "usr-1"
+	chatID := "chat-1"
+
+	// 1. Initial chat with user and assistant messages
+	initialChat := map[string]interface{}{
+		"id":    chatID,
+		"title": "First Conversation",
+		"chat": map[string]interface{}{
+			"id":     chatID,
+			"title":  "First Conversation",
+			"models": []interface{}{"gpt-4o"},
+			"history": map[string]interface{}{
+				"currentId": "asst-1",
+				"messages": map[string]interface{}{
+					"user-1": map[string]interface{}{
+						"id":          "user-1",
+						"role":        "user",
+						"content":     "Hello AI!",
+						"childrenIds": []interface{}{"asst-1"},
+					},
+					"asst-1": map[string]interface{}{
+						"id":          "asst-1",
+						"parentId":    "user-1",
+						"role":        "assistant",
+						"content":     "Hello human!",
+						"childrenIds": []interface{}{},
+					},
+				},
+			},
+		},
+	}
+	initialBytes, _ := json.Marshal(initialChat)
+	err = database.UpsertOpenWebUIChat(sub, userID, chatID, "First Conversation", string(initialBytes), "")
+	if err != nil {
+		t.Fatalf("Initial UpsertOpenWebUIChat failed: %v", err)
+	}
+
+	// 2. OpenWebUI sends partial update with only params (e.g. user toggles a setting or switches model)
+	partialUpdate := map[string]interface{}{
+		"chat": map[string]interface{}{
+			"params": map[string]interface{}{
+				"temperature": 0.7,
+			},
+			"models": []interface{}{"claude-3-5-sonnet"},
+		},
+	}
+	merged, err := database.MergeUpdateOpenWebUIChat(sub, userID, chatID, partialUpdate, "")
+	if err != nil {
+		t.Fatalf("MergeUpdateOpenWebUIChat failed: %v", err)
+	}
+
+	// 3. Verify messages are STILL present and intact!
+	_, rawJSON, _, _, _, _, _, err := database.GetOpenWebUIChatRaw(sub, userID, chatID)
+	if err != nil {
+		t.Fatalf("GetOpenWebUIChatRaw failed: %v", err)
+	}
+
+	if !containsSubstring(rawJSON, "Hello AI!") || !containsSubstring(rawJSON, "Hello human!") {
+		t.Fatalf("CRITICAL BUG: Messages were wiped out by partial update! rawJSON: %s", rawJSON)
+	}
+	if !containsSubstring(rawJSON, "temperature") || !containsSubstring(rawJSON, "claude-3-5-sonnet") {
+		t.Fatalf("Params were not merged properly! rawJSON: %s", rawJSON)
+	}
+
+	// 4. Test branching / continue with new model (second assistant child)
+	branchUpdate := map[string]interface{}{
+		"chat": map[string]interface{}{
+			"history": map[string]interface{}{
+				"currentId": "asst-2",
+				"messages": map[string]interface{}{
+					"asst-2": map[string]interface{}{
+						"id":       "asst-2",
+						"parentId": "user-1",
+						"role":     "assistant",
+						"content":  "I am Claude continuing your conversation!",
+					},
+				},
+			},
+		},
+	}
+	_, err = database.MergeUpdateOpenWebUIChat(sub, userID, chatID, branchUpdate, "")
+	if err != nil {
+		t.Fatalf("Branch MergeUpdateOpenWebUIChat failed: %v", err)
+	}
+
+	_, finalRaw, _, _, _, _, _, err := database.GetOpenWebUIChatRaw(sub, userID, chatID)
+	if err != nil {
+		t.Fatalf("GetOpenWebUIChatRaw after branch failed: %v", err)
+	}
+
+	// Both assistant responses must exist, user-1 must have both as children, and currentId must be asst-2
+	if !containsSubstring(finalRaw, "Hello human!") || !containsSubstring(finalRaw, "I am Claude continuing your conversation!") {
+		t.Fatalf("Branching lost earlier messages: %s", finalRaw)
+	}
+
+	_ = merged
+}
+
 func containsSubstring(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {

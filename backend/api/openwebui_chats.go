@@ -264,15 +264,23 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 				folderID = fid
 			}
 
-			now := time.Now().Unix()
-			_ = h.db.UpsertOpenWebUIChat(subdomain, u.ID, id, title, string(body), folderID)
+			mergedObj, err := h.db.MergeUpdateOpenWebUIChat(subdomain, u.ID, id, parsed, folderID)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 
-			chatObj := parsed["chat"]
+			title, chatJSON, pinned, archived, updatedFolderID, createdAt, updatedAt, _ := h.db.GetOpenWebUIChatRaw(subdomain, u.ID, id)
+			var chatData map[string]interface{}
+			_ = json.Unmarshal([]byte(chatJSON), &chatData)
+			chatObj := chatData["chat"]
 			if chatObj == nil {
-				chatObj = parsed
+				chatObj = chatData
 			}
 			var variables map[string]any
-			if v, ok := parsed["variables"].(map[string]any); ok {
+			if v, ok := chatData["variables"].(map[string]any); ok {
+				variables = v
+			} else if v, ok := mergedObj["variables"].(map[string]any); ok {
 				variables = v
 			}
 
@@ -281,11 +289,11 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 				UserID:    u.ID,
 				Title:     title,
 				Chat:      chatObj,
-				CreatedAt: now,
-				UpdatedAt: now,
-				Archived:  false,
-				Pinned:    false,
-				FolderID:  optStr(folderID),
+				CreatedAt: createdAt,
+				UpdatedAt: updatedAt,
+				Archived:  archived,
+				Pinned:    pinned,
+				FolderID:  optStr(updatedFolderID),
 				Variables: variables,
 			})
 			return
@@ -482,34 +490,28 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 			var parsed map[string]interface{}
 			_ = json.Unmarshal(body, &parsed)
 
-			title := "Chat"
-			if t, ok := parsed["title"].(string); ok && t != "" {
-				title = t
-			} else if c, ok := parsed["chat"].(map[string]interface{}); ok {
-				if t, ok := c["title"].(string); ok && t != "" {
-					title = t
-				}
-			}
-
 			folderID := ""
 			if fid, ok := parsed["folder_id"].(string); ok {
 				folderID = fid
-			} else {
-				_, _, _, _, existingFolder, _, _, err := h.db.GetOpenWebUIChatRaw(subdomain, u.ID, chatID)
-				if err == nil && existingFolder != "" {
-					folderID = existingFolder
-				}
 			}
 
-			_ = h.db.UpsertOpenWebUIChat(subdomain, u.ID, chatID, title, string(body), folderID)
-			now := time.Now().Unix()
+			mergedObj, err := h.db.MergeUpdateOpenWebUIChat(subdomain, u.ID, chatID, parsed, folderID)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 
-			chatObj := parsed["chat"]
+			title, chatJSON, pinned, archived, updatedFolderID, createdAt, updatedAt, _ := h.db.GetOpenWebUIChatRaw(subdomain, u.ID, chatID)
+			var chatData map[string]interface{}
+			_ = json.Unmarshal([]byte(chatJSON), &chatData)
+			chatObj := chatData["chat"]
 			if chatObj == nil {
-				chatObj = parsed
+				chatObj = chatData
 			}
 			var variables map[string]any
-			if v, ok := parsed["variables"].(map[string]any); ok {
+			if v, ok := chatData["variables"].(map[string]any); ok {
+				variables = v
+			} else if v, ok := mergedObj["variables"].(map[string]any); ok {
 				variables = v
 			}
 
@@ -518,11 +520,11 @@ func (h *APIHandler) handleOpenWebUIChats(w http.ResponseWriter, r *http.Request
 				UserID:    u.ID,
 				Title:     title,
 				Chat:      chatObj,
-				CreatedAt: now,
-				UpdatedAt: now,
-				Archived:  false,
-				Pinned:    false,
-				FolderID:  optStr(folderID),
+				CreatedAt: createdAt,
+				UpdatedAt: updatedAt,
+				Archived:  archived,
+				Pinned:    pinned,
+				FolderID:  optStr(updatedFolderID),
 				Variables: variables,
 			})
 			return

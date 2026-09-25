@@ -716,6 +716,7 @@ func (h *APIHandler) buildOpenWebUIMessages(subdomain, userID, chatID, userMessa
 	}
 
 	// 2. Load conversation history from SQLite DB if available
+	loadedFromDB := false
 	if chatID != "" && userMessageID != "" {
 		_, chatJSON, _, _, _, _, _, err := h.db.GetOpenWebUIChatRaw(subdomain, userID, chatID)
 		if err == nil && chatJSON != "" {
@@ -749,14 +750,36 @@ func (h *APIHandler) buildOpenWebUIMessages(subdomain, userID, chatID, userMessa
 							pid, _ := m["parentId"].(string)
 							currID = pid
 						}
-						messages = append(messages, chain...)
+						if len(chain) > 0 {
+							messages = append(messages, chain...)
+							loadedFromDB = true
+						}
 					}
 				}
 			}
 		}
 	}
 
-	// 3. Append current user message
+	// 3. Fallback to client-provided messages in reqBody if DB chain is not found or empty (e.g. continuing an assistant message)
+	if !loadedFromDB {
+		if rawMsgs, ok := reqBody["messages"].([]interface{}); ok && len(rawMsgs) > 0 {
+			for _, item := range rawMsgs {
+				if mMap, ok := item.(map[string]interface{}); ok {
+					r, _ := mMap["role"].(string)
+					c := mMap["content"]
+					if r != "" && c != nil {
+						if r == "system" && systemPrompt != "" {
+							continue
+						}
+						messages = append(messages, map[string]interface{}{"role": r, "content": c})
+					}
+				}
+			}
+			return messages
+		}
+	}
+
+	// 4. Append current user message
 	if userContentObj != nil && userContentObj != "" {
 		messages = append(messages, map[string]interface{}{"role": "user", "content": userContentObj})
 	}
@@ -1389,7 +1412,9 @@ func (h *APIHandler) streamTargetToSocket(
 	// 2. Persist assistant message in DB
 	finalContent := accumulatedContent.String()
 	_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, assistantMessageID, func(msg map[string]interface{}) map[string]interface{} {
-		msg["content"] = finalContent
+		if finalContent != "" {
+			msg["content"] = finalContent
+		}
 		msg["done"] = true
 		return msg
 	})
@@ -1447,7 +1472,7 @@ func (h *APIHandler) handleOpenWebUIChatCompletion(w http.ResponseWriter, r *htt
 	}
 	folderID, _ := reqBody["folder_id"].(string)
 
-	// Persist initial chat and message state in database
+	var previousContent string
 	_, existingChatJSON, _, _, _, _, _, getErr := h.db.GetOpenWebUIChatRaw(subdomain, u.ID, chatID)
 	if getErr != nil || existingChatJSON == "" {
 		title := "New Chat"
@@ -1494,12 +1519,15 @@ func (h *APIHandler) handleOpenWebUIChatCompletion(w http.ResponseWriter, r *htt
 		_ = h.db.UpsertOpenWebUIChat(subdomain, u.ID, chatID, title, string(chatBytes), folderID)
 	} else {
 		_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, u.ID, chatID, assistantMessageID, func(msg map[string]interface{}) map[string]interface{} {
+			if c, ok := msg["content"].(string); ok && strings.TrimSpace(c) != "" {
+				previousContent = c
+				msg["originalContent"] = c
+			}
 			msg["id"] = assistantMessageID
 			if userMessageID != "" {
 				msg["parentId"] = userMessageID
 			}
 			msg["role"] = "assistant"
-			msg["content"] = ""
 			msg["done"] = false
 			msg["model"] = requestedModel
 			msg["timestamp"] = time.Now().Unix()
@@ -1581,6 +1609,18 @@ func (h *APIHandler) handleOpenWebUIChatCompletion(w http.ResponseWriter, r *htt
 			if err != nil {
 				errMsg = err.Error()
 			}
+			_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, u.ID, chatID, assistantMessageID, func(msg map[string]interface{}) map[string]interface{} {
+				msg["done"] = true
+				msg["error"] = map[string]interface{}{"content": errMsg}
+				if curr, ok := msg["content"].(string); !ok || strings.TrimSpace(curr) == "" {
+					if previousContent != "" {
+						msg["content"] = previousContent
+					} else {
+						msg["content"] = fmt.Sprintf("⚠️ *Error: %s*", errMsg)
+					}
+				}
+				return msg
+			})
 			emitEvent("chat:message:error", map[string]interface{}{
 				"error": map[string]interface{}{"content": errMsg},
 				"done":  true,
@@ -1598,8 +1638,21 @@ func (h *APIHandler) handleOpenWebUIChatCompletion(w http.ResponseWriter, r *htt
 		}
 
 		if lastErr != nil {
+			errMsg := lastErr.Error()
+			_ = h.db.UpdateOpenWebUIMessageInChat(subdomain, u.ID, chatID, assistantMessageID, func(msg map[string]interface{}) map[string]interface{} {
+				msg["done"] = true
+				msg["error"] = map[string]interface{}{"content": errMsg}
+				if curr, ok := msg["content"].(string); !ok || strings.TrimSpace(curr) == "" {
+					if previousContent != "" {
+						msg["content"] = previousContent
+					} else {
+						msg["content"] = fmt.Sprintf("⚠️ *Error: %s*", errMsg)
+					}
+				}
+				return msg
+			})
 			emitEvent("chat:message:error", map[string]interface{}{
-				"error": map[string]interface{}{"content": lastErr.Error()},
+				"error": map[string]interface{}{"content": errMsg},
 				"done":  true,
 			})
 			emitEvent("chat:active", map[string]interface{}{"active": false, "folder_id": folderID})

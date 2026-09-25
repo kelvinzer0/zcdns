@@ -271,7 +271,7 @@ func (p *ChatDBPool) SyncMessagesTree(db *sql.DB, chatJSON string) {
 			INSERT INTO messages (id, parent_id, role, content, meta_json, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
-				content = excluded.content,
+				content = CASE WHEN excluded.content != '' THEN excluded.content ELSE messages.content END,
 				meta_json = excluded.meta_json,
 				updated_at = excluded.updated_at
 		`, msgID, parentID, role, content, string(metaBytes), ts, now)

@@ -224,10 +224,260 @@ func (d *DB) GetOpenWebUIChatRaw(subdomain, userID, id string) (string, string, 
 	return title, chatJSON, pinned == 1, archived == 1, folderID, createdAt, updatedAt, nil
 }
 
-func (d *DB) UpsertOpenWebUIChat(subdomain, userID, id, title, chatJSON string, folderID string) error {
+// MergeHistory reconciles an incoming DAG history with the existing DAG history.
+// It ensures that partial updates, stale clients, or new branches never delete existing messages.
+func MergeHistory(existingHistory, incomingHistory map[string]interface{}) map[string]interface{} {
+	existingMsgs, _ := existingHistory["messages"].(map[string]interface{})
+	incomingMsgs, _ := incomingHistory["messages"].(map[string]interface{})
+
+	if existingMsgs == nil {
+		existingMsgs = make(map[string]interface{})
+	}
+	if incomingMsgs == nil {
+		incomingMsgs = make(map[string]interface{})
+	}
+
+	mergedMsgs := make(map[string]interface{})
+
+	// 1. Copy all existing messages first
+	for id, m := range existingMsgs {
+		if mMap, ok := m.(map[string]interface{}); ok {
+			cloned := make(map[string]interface{}, len(mMap)+1)
+			for k, v := range mMap {
+				cloned[k] = v
+			}
+			cloned["childrenIds"] = []interface{}{}
+			mergedMsgs[id] = cloned
+		}
+	}
+
+	// 2. Merge incoming messages
+	for id, m := range incomingMsgs {
+		if mMap, ok := m.(map[string]interface{}); ok {
+			existingMsg, exists := mergedMsgs[id].(map[string]interface{})
+			if exists && existingMsg != nil {
+				newContent, _ := mMap["content"].(string)
+				oldContent, _ := existingMsg["content"].(string)
+				for k, v := range mMap {
+					existingMsg[k] = v
+				}
+				// Safeguard: never overwrite non-empty content with empty string unless explicitly intentional
+				if strings.TrimSpace(newContent) == "" && strings.TrimSpace(oldContent) != "" {
+					existingMsg["content"] = oldContent
+				}
+				existingMsg["childrenIds"] = []interface{}{}
+			} else {
+				cloned := make(map[string]interface{}, len(mMap)+1)
+				for k, v := range mMap {
+					cloned[k] = v
+				}
+				cloned["childrenIds"] = []interface{}{}
+				mergedMsgs[id] = cloned
+			}
+		}
+	}
+
+	// 3. Rebuild childrenIds from parentId
+	for id, m := range mergedMsgs {
+		if mMap, ok := m.(map[string]interface{}); ok {
+			if pid, ok := mMap["parentId"].(string); ok && pid != "" {
+				if parent, exists := mergedMsgs[pid].(map[string]interface{}); exists && parent != nil {
+					cIds, _ := parent["childrenIds"].([]interface{})
+					found := false
+					for _, c := range cIds {
+						if c == id {
+							found = true
+							break
+						}
+					}
+					if !found {
+						parent["childrenIds"] = append(cIds, id)
+					}
+				}
+			}
+		}
+	}
+
+	// 4. Resolve currentId
+	var currentID interface{}
+	if curr, ok := incomingHistory["currentId"].(string); ok && curr != "" {
+		if _, exists := mergedMsgs[curr]; exists {
+			currentID = curr
+		}
+	}
+	if currentID == nil {
+		if curr, ok := existingHistory["currentId"].(string); ok && curr != "" {
+			if _, exists := mergedMsgs[curr]; exists {
+				currentID = curr
+			}
+		}
+	}
+
+	// 5. Construct merged history
+	result := make(map[string]interface{})
+	for k, v := range existingHistory {
+		result[k] = v
+	}
+	for k, v := range incomingHistory {
+		result[k] = v
+	}
+	result["messages"] = mergedMsgs
+	if currentID != nil {
+		result["currentId"] = currentID
+	}
+
+	return result
+}
+
+// MergeUpdateOpenWebUIChat safely merges incoming chat updates into existing chat state.
+// This prevents partial updates (e.g. setting params, title, tags) or switching models from wiping out messages.
+func (d *DB) MergeUpdateOpenWebUIChat(subdomain, userID, id string, incomingChat map[string]interface{}, folderID string) (map[string]interface{}, error) {
 	now := time.Now().Unix()
 
-	// 1. Write to isolated conversation SQLite database
+	// 1. Get existing chat
+	existingTitle, existingJSON, pinned, archived, existingFolderID, createdAt, _, _ := d.GetOpenWebUIChatRaw(subdomain, userID, id)
+
+	var storedObj map[string]interface{}
+	if existingJSON != "" && existingJSON != "{}" {
+		_ = json.Unmarshal([]byte(existingJSON), &storedObj)
+	}
+	if storedObj == nil {
+		storedObj = make(map[string]interface{})
+	}
+
+	storedChat := storedObj
+	if inner, ok := storedObj["chat"].(map[string]interface{}); ok && inner != nil {
+		storedChat = inner
+	}
+
+	incomingTarget := incomingChat
+	if inner, ok := incomingChat["chat"].(map[string]interface{}); ok && inner != nil {
+		incomingTarget = inner
+	}
+
+	// 2. Merge top-level fields
+	updatedChat := make(map[string]interface{})
+	for k, v := range storedChat {
+		updatedChat[k] = v
+	}
+	for k, v := range incomingTarget {
+		if k == "history" {
+			continue // Handled below
+		}
+		updatedChat[k] = v
+	}
+
+	// 3. Merge history
+	incomingHist, hasIncomingHist := incomingTarget["history"].(map[string]interface{})
+	existingHist, _ := storedChat["history"].(map[string]interface{})
+
+	if hasIncomingHist && incomingHist != nil {
+		updatedChat["history"] = MergeHistory(existingHist, incomingHist)
+	} else if existingHist != nil {
+		updatedChat["history"] = existingHist
+	}
+
+	// 4. Resolve Title
+	finalTitle := existingTitle
+	if t, ok := incomingTarget["title"].(string); ok && strings.TrimSpace(t) != "" {
+		finalTitle = strings.TrimSpace(t)
+	} else if t, ok := incomingChat["title"].(string); ok && strings.TrimSpace(t) != "" {
+		finalTitle = strings.TrimSpace(t)
+	}
+	if finalTitle == "" {
+		finalTitle = "Chat"
+	}
+	updatedChat["title"] = finalTitle
+
+	// 5. Resolve FolderID
+	finalFolderID := existingFolderID
+	if folderID != "" {
+		finalFolderID = folderID
+	} else if fid, ok := incomingTarget["folder_id"].(string); ok && fid != "" {
+		finalFolderID = fid
+	} else if fid, ok := incomingChat["folder_id"].(string); ok && fid != "" {
+		finalFolderID = fid
+	}
+
+	// 6. Ensure id and timestamps
+	updatedChat["id"] = id
+	if createdAt == 0 {
+		createdAt = now
+	}
+
+	// Preserve format structure (wrapped in { "chat": ... } or root)
+	var finalObj map[string]interface{}
+	if _, ok := storedObj["chat"]; ok || incomingChat["chat"] != nil {
+		finalObj = map[string]interface{}{
+			"chat": updatedChat,
+		}
+		if v, ok := incomingChat["variables"]; ok {
+			finalObj["variables"] = v
+		} else if v, ok := storedObj["variables"]; ok {
+			finalObj["variables"] = v
+		}
+	} else {
+		finalObj = updatedChat
+	}
+
+	newJSONBytes, err := json.Marshal(finalObj)
+	if err != nil {
+		return nil, err
+	}
+	newJSON := string(newJSONBytes)
+
+	// 7. Write to isolated conversation SQLite database
+	if d.chatPool != nil {
+		if chatDB, _, poolErr := d.chatPool.GetChatDB(subdomain, userID, id); poolErr == nil && chatDB != nil {
+			p := 0
+			if pinned {
+				p = 1
+			}
+			a := 0
+			if archived {
+				a = 1
+			}
+			_, _ = chatDB.Exec(`
+				INSERT INTO chat_session (id, subdomain, user_id, title, folder_id, pinned, archived, chat_json, created_at, updated_at, last_read_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+				ON CONFLICT(id) DO UPDATE SET
+					title = excluded.title,
+					folder_id = excluded.folder_id,
+					chat_json = excluded.chat_json,
+					updated_at = excluded.updated_at
+			`, id, subdomain, userID, finalTitle, finalFolderID, p, a, newJSON, createdAt, now)
+
+			d.chatPool.SyncMessagesTree(chatDB, newJSON)
+		}
+	}
+
+	// 8. Update central index
+	_, err = d.conn.Exec(`
+		INSERT INTO openwebui_chats (id, subdomain, user_id, title, chat_json, folder_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			title = excluded.title,
+			chat_json = excluded.chat_json,
+			folder_id = excluded.folder_id,
+			updated_at = excluded.updated_at
+	`, id, subdomain, userID, finalTitle, newJSON, finalFolderID, createdAt, now)
+
+	return finalObj, err
+}
+
+func (d *DB) UpsertOpenWebUIChat(subdomain, userID, id, title, chatJSON string, folderID string) error {
+	var incoming map[string]interface{}
+	if err := json.Unmarshal([]byte(chatJSON), &incoming); err == nil && incoming != nil {
+		if title != "" {
+			incoming["title"] = title
+		}
+		_, err := d.MergeUpdateOpenWebUIChat(subdomain, userID, id, incoming, folderID)
+		return err
+	}
+
+	now := time.Now().Unix()
+
+	// Fallback write if not valid JSON
 	if d.chatPool != nil {
 		if chatDB, _, err := d.chatPool.GetChatDB(subdomain, userID, id); err == nil && chatDB != nil {
 			_, _ = chatDB.Exec(`
@@ -244,7 +494,6 @@ func (d *DB) UpsertOpenWebUIChat(subdomain, userID, id, title, chatJSON string, 
 		}
 	}
 
-	// 2. Also keep summary index and redundant backup in main database
 	_, err := d.conn.Exec(`
 		INSERT INTO openwebui_chats (id, subdomain, user_id, title, chat_json, folder_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -380,6 +629,29 @@ func (d *DB) UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID s
 			}
 			updatedMsg := updateFn(targetMsg)
 			messages[messageID] = updatedMsg
+
+			// Ensure parent's childrenIds includes this messageID
+			if pid, ok := updatedMsg["parentId"].(string); ok && pid != "" {
+				if parent, ok := messages[pid].(map[string]interface{}); ok && parent != nil {
+					cIds, _ := parent["childrenIds"].([]interface{})
+					found := false
+					for _, c := range cIds {
+						if c == messageID {
+							found = true
+							break
+						}
+					}
+					if !found {
+						parent["childrenIds"] = append(cIds, messageID)
+					}
+				}
+			}
+
+			// If this is an assistant message or active branch leaf, update history.currentId
+			if r, _ := updatedMsg["role"].(string); r == "assistant" {
+				history["currentId"] = messageID
+			}
+
 			newChatJSON, err := json.Marshal(chatObj)
 			if err != nil {
 				return err
@@ -417,7 +689,7 @@ func (d *DB) UpdateOpenWebUIMessageInChat(subdomain, userID, chatID, messageID s
 				INSERT INTO messages (id, parent_id, role, content, meta_json, created_at, updated_at)
 				VALUES (?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(id) DO UPDATE SET
-					content = excluded.content,
+					content = CASE WHEN excluded.content != '' THEN excluded.content ELSE messages.content END,
 					meta_json = excluded.meta_json,
 					updated_at = excluded.updated_at
 			`, messageID, parentID, role, contentStr, string(metaBytes), now, now)
