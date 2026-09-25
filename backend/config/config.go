@@ -25,7 +25,33 @@ type Config struct {
 	TLSKeyFile  string
 }
 
+func loadEnvFiles(paths ...string) {
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				k := strings.TrimSpace(parts[0])
+				v := strings.Trim(strings.TrimSpace(parts[1]), "\"'")
+				if os.Getenv(k) == "" {
+					_ = os.Setenv(k, v)
+				}
+			}
+		}
+	}
+}
+
 func LoadConfig() *Config {
+	loadEnvFiles("/opt/zcdns/.env", ".env")
+
 	httpPort := getEnv("PORT", "8085")
 	if !strings.Contains(httpPort, ":") {
 		httpPort = "127.0.0.1:" + httpPort
@@ -56,7 +82,30 @@ func LoadConfig() *Config {
 	}
 
 	if len(dnsAddrs) == 0 {
-		dnsAddrs = []string{fmt.Sprintf(":%d", dnsPort)}
+		// Auto-detect shared-ip dummy interfaces (10.0.0.10)
+		hasSharedIP := false
+		if ifAddrs, err := net.InterfaceAddrs(); err == nil {
+			for _, a := range ifAddrs {
+				if ipNet, ok := a.(*net.IPNet); ok {
+					if ipNet.IP.String() == "10.0.0.10" {
+						hasSharedIP = true
+						break
+					}
+				}
+			}
+		}
+
+		if hasSharedIP {
+			dnsAddrs = []string{
+				fmt.Sprintf("10.0.0.10:%d", dnsPort),
+				fmt.Sprintf("10.0.0.11:%d", dnsPort),
+				fmt.Sprintf("[fd00::10]:%d", dnsPort),
+				fmt.Sprintf("[fd00::11]:%d", dnsPort),
+				fmt.Sprintf("127.0.0.1:%d", dnsPort),
+			}
+		} else {
+			dnsAddrs = []string{fmt.Sprintf(":%d", dnsPort)}
+		}
 	}
 
 	baseDomain := getEnv("BASE_DOMAIN", "zcdns.id")

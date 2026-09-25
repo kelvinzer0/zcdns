@@ -55,7 +55,9 @@ func NewServer(cfg *config.Config, database *db.DB, broadcaster QueryBroadcaster
 func (s *Server) Start() error {
 	dns.HandleFunc(".", s.handleDNSRequest)
 
-	errChan := make(chan error, len(s.cfg.DNSAddrs)*2)
+	totalServers := len(s.cfg.DNSAddrs) * 2
+	errChan := make(chan error, totalServers)
+	var errList []error
 
 	for _, addr := range s.cfg.DNSAddrs {
 		udpSrv := &dns.Server{Addr: addr, Net: "udp"}
@@ -65,6 +67,7 @@ func (s *Server) Start() error {
 		go func(srv *dns.Server, address string) {
 			log.Printf("[DNS] Starting UDP DNS listener on %s (domain: *.%s)", address, s.cfg.BaseDomain)
 			if err := srv.ListenAndServe(); err != nil {
+				log.Printf("[WARN] UDP listener error on %s: %v", address, err)
 				errChan <- fmt.Errorf("UDP error on %s: %w", address, err)
 			}
 		}(udpSrv, addr)
@@ -72,17 +75,26 @@ func (s *Server) Start() error {
 		go func(srv *dns.Server, address string) {
 			log.Printf("[DNS] Starting TCP DNS listener on %s", address)
 			if err := srv.ListenAndServe(); err != nil {
+				log.Printf("[WARN] TCP listener error on %s: %v", address, err)
 				errChan <- fmt.Errorf("TCP error on %s: %w", address, err)
 			}
 		}(tcpSrv, addr)
 	}
 
-	select {
-	case err := <-errChan:
-		return err
-	case <-time.After(150 * time.Millisecond):
-		s.startFallbackUpdater()
-		return nil
+	timer := time.NewTimer(250 * time.Millisecond)
+	defer timer.Stop()
+
+	for {
+		select {
+		case err := <-errChan:
+			errList = append(errList, err)
+		case <-timer.C:
+			if len(errList) >= totalServers && totalServers > 0 {
+				return errList[0]
+			}
+			s.startFallbackUpdater()
+			return nil
+		}
 	}
 }
 

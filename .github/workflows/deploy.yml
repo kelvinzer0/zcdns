@@ -156,12 +156,23 @@ jobs:
             (which ufw >/dev/null 2>&1 && (ufw allow 53/tcp; ufw allow 53/udp; ufw allow 853/tcp) || true) &&
             (which ip6tables >/dev/null 2>&1 && (ip6tables -I INPUT -p tcp --dport 53 -j ACCEPT; ip6tables -I INPUT -p udp --dport 53 -j ACCEPT; ip6tables -I INPUT -p tcp --dport 853 -j ACCEPT) || true) &&
             (which iptables >/dev/null 2>&1 && (iptables -I INPUT -p tcp --dport 53 -j ACCEPT; iptables -I INPUT -p udp --dport 53 -j ACCEPT; iptables -I INPUT -p tcp --dport 853 -j ACCEPT) || true) &&
-            # Configure shared-ip DNS mappings so port 53 traffic for zcdns.id routes to zcdns-server
-            shared-ip add zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
-            shared-ip add ns2.zcdns.id --localport=53 --localipv4=10.0.0.11 --localipv6=fd00::11 || true &&
+            # Configure DNS_ADDRS in /opt/zcdns/.env so zcdns binds to virtual interfaces
+            touch /opt/zcdns/.env &&
+            if grep -q '^DNS_ADDRS=' /opt/zcdns/.env; then
+              sed -i 's|^DNS_ADDRS=.*|DNS_ADDRS="10.0.0.10:53,10.0.0.11:53,[fd00::10]:53,[fd00::11]:53,127.0.0.1:53"|' /opt/zcdns/.env
+            else
+              echo 'DNS_ADDRS="10.0.0.10:53,10.0.0.11:53,[fd00::10]:53,[fd00::11]:53,127.0.0.1:53"' >> /opt/zcdns/.env
+            fi &&
+
+            # Configure shared-ip DNS mappings so port 53 traffic routes to zcdns-server on 10.0.0.10 / 10.0.0.11
+            shared-ip update zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 2>/dev/null || shared-ip add zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
+            shared-ip update ns1.zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 2>/dev/null || shared-ip add ns1.zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
+            shared-ip update ns2.zcdns.id --localport=53 --localipv4=10.0.0.11 --localipv6=fd00::11 2>/dev/null || shared-ip add ns2.zcdns.id --localport=53 --localipv4=10.0.0.11 --localipv6=fd00::11 || true &&
+            shared-ip update "*.zcdns.id" --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 2>/dev/null || shared-ip add "*.zcdns.id" --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
+            shared-ip update admin.zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 2>/dev/null || shared-ip add admin.zcdns.id --localport=53 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
             # Configure shared-ip DoT mapping so port 853 traffic for guard.zcdns.id routes to zcdns-server
-            shared-ip add guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
-            shared-ip add "*.guard.zcdns.id" --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || shared-ip update "*.guard.zcdns.id" --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
+            shared-ip update guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 2>/dev/null || shared-ip add guard.zcdns.id --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
+            shared-ip update "*.guard.zcdns.id" --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 2>/dev/null || shared-ip add "*.guard.zcdns.id" --localport=853 --localipv4=10.0.0.10 --localipv6=fd00::10 || true &&
 
             # Configure shared-ip HTTPS mapping for AI Router proxy (points to Nginx on 10.0.0.12 / fd00::12)
             shared-ip update router.zcdns.id --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || shared-ip add router.zcdns.id --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || true &&
