@@ -158,6 +158,11 @@ func InitDB(dbPath string) (*DB, error) {
 		models_json TEXT NOT NULL DEFAULT '[]',
 		status TEXT NOT NULL DEFAULT 'active',
 		rate_limited_until TIMESTAMP,
+		refresh_token TEXT NOT NULL DEFAULT '',
+		token_expires_at TIMESTAMP,
+		project_id TEXT NOT NULL DEFAULT '',
+		auth_type TEXT NOT NULL DEFAULT 'api_key',
+		account_email TEXT NOT NULL DEFAULT '',
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -360,6 +365,11 @@ func InitDB(dbPath string) (*DB, error) {
 	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN api_type TEXT NOT NULL DEFAULT 'openai';")
 	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN models_json TEXT NOT NULL DEFAULT '[]';")
 	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN socks5_proxy TEXT NOT NULL DEFAULT '';")
+	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN refresh_token TEXT NOT NULL DEFAULT '';")
+	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN token_expires_at TIMESTAMP;")
+	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN project_id TEXT NOT NULL DEFAULT '';")
+	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'api_key';")
+	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN account_email TEXT NOT NULL DEFAULT '';")
 	_, _ = conn.Exec("ALTER TABLE ai_router_aliases ADD COLUMN context_size INTEGER NOT NULL DEFAULT 0;")
 	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default';")
 	_, _ = conn.Exec("ALTER TABLE openwebui_chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;")

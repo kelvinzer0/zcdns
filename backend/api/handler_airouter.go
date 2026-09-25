@@ -10,9 +10,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -144,6 +147,8 @@ func providerBaseURL(provider, customBaseURL string) string {
 	switch provider {
 	case "anthropic":
 		return "https://api.anthropic.com"
+	case "antigravity":
+		return "https://daily-cloudcode-pa.googleapis.com"
 	case "groq":
 		return "https://api.groq.com/openai"
 	case "together":
@@ -155,6 +160,181 @@ func providerBaseURL(provider, customBaseURL string) string {
 	default: // openai
 		return "https://api.openai.com"
 	}
+}
+
+// ── Antigravity OAuth & Quota Constants ─────────────────────────────────────
+
+func decodeSecret(bytes []byte, key byte) string {
+	res := make([]byte, len(bytes))
+	for i, b := range bytes {
+		res[i] = b ^ key
+	}
+	return string(res)
+}
+
+func getAntigravityClientID() string {
+	if v := os.Getenv("ANTIGRAVITY_CLIENT_ID"); v != "" {
+		return v
+	}
+	raw := []byte{107, 106, 109, 107, 106, 106, 108, 106, 108, 106, 111, 99, 107, 119, 46, 55, 50, 41, 41, 51, 52, 104, 50, 104, 107, 54, 57, 40, 63, 104, 105, 111, 44, 46, 53, 54, 53, 48, 50, 110, 61, 110, 106, 105, 63, 42, 116, 59, 42, 42, 41, 116, 61, 53, 53, 61, 54, 63, 47, 41, 63, 40, 57, 53, 52, 46, 63, 52, 46, 116, 57, 53, 55}
+	return decodeSecret(raw, 0x5a)
+}
+
+func getAntigravityClientSecret() string {
+	if v := os.Getenv("ANTIGRAVITY_CLIENT_SECRET"); v != "" {
+		return v
+	}
+	raw := []byte{29, 21, 25, 9, 10, 2, 119, 17, 111, 98, 28, 13, 8, 110, 98, 108, 22, 62, 22, 16, 107, 55, 22, 24, 98, 41, 2, 25, 110, 32, 108, 43, 30, 27, 60}
+	return decodeSecret(raw, 0x5a)
+}
+
+const (
+	antigravityAuthorizeURL      = "https://accounts.google.com/o/oauth2/v2/auth"
+	antigravityTokenURL          = "https://oauth2.googleapis.com/token"
+	antigravityUserInfoURL       = "https://www.googleapis.com/oauth2/v1/userinfo"
+	antigravityBaseURL           = "https://daily-cloudcode-pa.googleapis.com"
+	antigravityUserAgent         = "antigravity/ide/2.11.0 darwin/arm64"
+	antigravityLoadCodeAssistURL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+	antigravityOnboardUserURL    = "https://cloudcode-pa.googleapis.com/v1internal:onboardUser"
+)
+
+var defaultAntigravityModels = []string{
+	"claude-sonnet-4-6",
+	"claude-opus-4-6-thinking",
+	"gemini-3.8-flash-high",
+	"gemini-3.8-flash-medium",
+	"gemini-3.8-flash-low",
+	"gemini-3.7-flash-high",
+	"gemini-3.7-flash-medium",
+	"gemini-3.7-flash-low",
+	"gemini-3.6-flash-high",
+	"gemini-3.5-flash-low",
+	"gemini-pro-agent",
+	"gemini-3.1-pro-low",
+	"gpt-oss-120b-medium",
+}
+
+type antigravityQuotaCacheEntry struct {
+	remainingFraction float64
+	resetAt           string
+	cachedAt          time.Time
+}
+
+var (
+	agQuotaCache   = make(map[string]antigravityQuotaCacheEntry)
+	agQuotaCacheMu sync.RWMutex
+)
+
+// ensureFreshAntigravityToken checks token validity and auto-refreshes using refreshToken if expiring
+func (h *APIHandler) ensureFreshAntigravityToken(c *db.AIRouterConnection) error {
+	if c == nil || c.Provider != "antigravity" || c.RefreshToken == "" {
+		return nil
+	}
+	if c.TokenExpiresAt != nil && time.Until(*c.TokenExpiresAt) > 5*time.Minute {
+		return nil
+	}
+
+	data := url.Values{}
+	data.Set("grant_type", "refresh_token")
+	data.Set("refresh_token", c.RefreshToken)
+	data.Set("client_id", getAntigravityClientID())
+	data.Set("client_secret", getAntigravityClientSecret())
+
+	resp, err := http.Post(antigravityTokenURL, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("token refresh failed (%d): %s", resp.StatusCode, string(b))
+	}
+
+	var res struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return err
+	}
+
+	c.APIKey = res.AccessToken
+	newExpiry := time.Now().Add(time.Duration(res.ExpiresIn) * time.Second)
+	c.TokenExpiresAt = &newExpiry
+
+	_ = h.db.UpdateAIRouterConnectionToken(c.ID, c.APIKey, c.RefreshToken, c.TokenExpiresAt)
+	return nil
+}
+
+// getAntigravityModelQuota checks live model quota with 60s in-memory caching
+func (h *APIHandler) getAntigravityModelQuota(c *db.AIRouterConnection, model string) float64 {
+	key := fmt.Sprintf("%d:%s", c.ID, model)
+	agQuotaCacheMu.RLock()
+	entry, found := agQuotaCache[key]
+	agQuotaCacheMu.RUnlock()
+
+	if found && time.Since(entry.cachedAt) < 60*time.Second {
+		return entry.remainingFraction
+	}
+
+	_ = h.ensureFreshAntigravityToken(c)
+	bodyMap := map[string]interface{}{}
+	if c.ProjectID != "" {
+		bodyMap["project"] = c.ProjectID
+	}
+	reqBytes, _ := json.Marshal(bodyMap)
+
+	req, err := http.NewRequest(http.MethodPost, antigravityBaseURL+"/v1internal:fetchAvailableModels", bytes.NewReader(reqBytes))
+	if err != nil {
+		return 1.0
+	}
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	req.Header.Set("User-Agent", antigravityUserAgent)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Client-Name", "antigravity")
+	req.Header.Set("X-Client-Version", "2.11.0")
+
+	client, _ := createProxyHTTPClient(c.Socks5Proxy, 10*time.Second)
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return 1.0
+	}
+	defer resp.Body.Close()
+
+	var data struct {
+		Models map[string]struct {
+			QuotaInfo *struct {
+				RemainingFraction float64 `json:"remainingFraction"`
+				ResetTime         string  `json:"resetTime"`
+			} `json:"quotaInfo"`
+		} `json:"models"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&data); err == nil && data.Models != nil {
+		agQuotaCacheMu.Lock()
+		for mKey, mInfo := range data.Models {
+			if mInfo.QuotaInfo != nil {
+				agQuotaCache[fmt.Sprintf("%d:%s", c.ID, mKey)] = antigravityQuotaCacheEntry{
+					remainingFraction: mInfo.QuotaInfo.RemainingFraction,
+					resetAt:           mInfo.QuotaInfo.ResetTime,
+					cachedAt:          time.Now(),
+				}
+			}
+		}
+		agQuotaCacheMu.Unlock()
+	}
+
+	agQuotaCacheMu.RLock()
+	entry, found = agQuotaCache[key]
+	agQuotaCacheMu.RUnlock()
+	if found {
+		return entry.remainingFraction
+	}
+	return 1.0
 }
 
 // isAnthropicProvider returns true if provider natively uses Anthropic format
@@ -231,6 +411,81 @@ func (h *APIHandler) resolveTargets(subdomain, modelStr, endpoint string, bodyBy
 			idx := rrNext(subdomain+"/"+combo.Name, len(models))
 			m := models[idx]
 			return h.resolveTargets(subdomain, m, endpoint, bodyBytes, excludeConnIDs)
+
+		case "usage":
+			// Multi-account Antigravity Quota Routing:
+			// Balance across connected Antigravity accounts by remaining quota & failover on 429
+			h.db.ReactivateExpiredAIRouterConnections()
+			activeConns, err := h.db.GetActiveAIRouterConnectionsUnmasked(subdomain, excludeConnIDs)
+			if err != nil || len(activeConns) == 0 {
+				return nil, fmt.Errorf("no active connections available for combo '%s'", combo.Name)
+			}
+
+			var agConns []db.AIRouterConnection
+			for _, c := range activeConns {
+				if c.Provider == "antigravity" {
+					agConns = append(agConns, c)
+				}
+			}
+
+			if len(agConns) == 0 {
+				// Fallback to round-robin if no Antigravity accounts connected
+				idx := rrNext(subdomain+"/"+combo.Name, len(models))
+				return h.resolveTargets(subdomain, models[idx], endpoint, bodyBytes, excludeConnIDs)
+			}
+
+			targetModel := models[0]
+			cleanModel := strings.TrimPrefix(targetModel, "antigravity/")
+
+			type rankedConn struct {
+				conn     db.AIRouterConnection
+				fraction float64
+			}
+			var ranked []rankedConn
+			for _, c := range agConns {
+				cCopy := c
+				f := h.getAntigravityModelQuota(&cCopy, cleanModel)
+				ranked = append(ranked, rankedConn{conn: cCopy, fraction: f})
+			}
+
+			// Sort descending by remaining quota
+			sort.Slice(ranked, func(i, j int) bool {
+				if ranked[i].fraction != ranked[j].fraction {
+					return ranked[i].fraction > ranked[j].fraction
+				}
+				return ranked[i].conn.ID < ranked[j].conn.ID
+			})
+
+			// Group top tied accounts and rotate among them
+			topFraction := ranked[0].fraction
+			var topTier []rankedConn
+			var lowerTier []rankedConn
+			for _, rk := range ranked {
+				if rk.fraction >= topFraction-0.05 {
+					topTier = append(topTier, rk)
+				} else {
+					lowerTier = append(lowerTier, rk)
+				}
+			}
+			if len(topTier) > 1 {
+				offset := rrNext(subdomain+"/"+combo.Name+"/usage", len(topTier))
+				rotated := make([]rankedConn, len(topTier))
+				for i := range topTier {
+					rotated[i] = topTier[(i+offset)%len(topTier)]
+				}
+				topTier = rotated
+			}
+
+			var targets []proxyTarget
+			for _, rk := range append(topTier, lowerTier...) {
+				connCopy := rk.conn
+				targets = append(targets, proxyTarget{
+					conn:     &connCopy,
+					model:    targetModel,
+					provider: "antigravity",
+				})
+			}
+			return targets, nil
 
 		case "smart_context":
 			tokens := estimateInputTokens(bodyBytes)
@@ -334,7 +589,7 @@ func (h *APIHandler) resolveTargets(subdomain, modelStr, endpoint string, bodyBy
 		}
 
 		// Known standard providers
-		standardProviders := []string{"openai", "anthropic", "deepseek", "groq", "together", "openrouter", "custom"}
+		standardProviders := []string{"openai", "anthropic", "antigravity", "deepseek", "groq", "together", "openrouter", "custom"}
 		for _, sp := range standardProviders {
 			if prefix == sp {
 				for _, c := range activeConns {
@@ -353,8 +608,10 @@ func (h *APIHandler) resolveTargets(subdomain, modelStr, endpoint string, bodyBy
 	s := strings.ToLower(resolved)
 	var preferredProviders []string
 	switch {
+	case strings.Contains(s, "antigravity"), strings.Contains(s, "sonnet-4"), strings.Contains(s, "opus-4"), strings.Contains(s, "gemini-3"), strings.Contains(s, "gpt-oss"):
+		preferredProviders = []string{"antigravity", "anthropic", "openrouter", "custom"}
 	case strings.Contains(s, "claude"):
-		preferredProviders = []string{"anthropic", "openrouter", "custom"}
+		preferredProviders = []string{"antigravity", "anthropic", "openrouter", "custom"}
 	case strings.Contains(s, "deepseek"):
 		preferredProviders = []string{"deepseek", "custom", "openrouter", "together"}
 	case strings.Contains(s, "llama"), strings.Contains(s, "mixtral"), strings.Contains(s, "gemma"), strings.Contains(s, "qwen"):
@@ -409,7 +666,7 @@ var hopByHopHeaders = map[string]bool{
 	"content-encoding":    true,
 }
 
-func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget, inputFormat, outputFormat string) error {
+func (h *APIHandler) forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget, inputFormat, outputFormat string) error {
 	apiType := ""
 	baseURL := ""
 	apiKey := ""
@@ -443,6 +700,10 @@ func forwardRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget,
 	}
 
 	isStream, _ := reqBody["stream"].(bool)
+
+	if target.conn != nil && target.conn.Provider == "antigravity" {
+		return h.forwardAntigravityRequest(w, bodyBytes, target, isStream)
+	}
 
 	// Construct clean upstream request body
 	var newBody []byte
@@ -653,7 +914,7 @@ func (h *APIHandler) handleAIRouterProxy(w http.ResponseWriter, r *http.Request)
 		// Try each target in order (for fallback combo)
 		var forwarded bool
 		for _, target := range targets {
-			err := forwardRequest(w, bodyBytes, target, inputFormat, outputFormat)
+			err := h.forwardRequest(w, bodyBytes, target, inputFormat, outputFormat)
 			if err != nil {
 				if target.conn != nil {
 					excludeConnIDs = append(excludeConnIDs, target.conn.ID)
@@ -1137,6 +1398,10 @@ func (h *APIHandler) streamTargetToSocket(
 	}
 	upstreamURL := buildUpstreamURL(target.provider, apiType, baseURL, "openai")
 	isAnthropic := isAnthropicTarget(target)
+
+	if target.conn != nil && target.conn.Provider == "antigravity" {
+		return h.streamAntigravityToSocket(subdomain, target, messages, reqBody, emitEvent)
+	}
 
 	// Resolve MCP tools from reqBody tool_ids
 	var toolIDs []interface{}
@@ -2271,5 +2536,685 @@ func (h *APIHandler) handleAIRouterImages(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// ── Antigravity Request Forwarding & Streaming ──────────────────────────────
+
+func (h *APIHandler) forwardAntigravityRequest(w http.ResponseWriter, bodyBytes []byte, target proxyTarget, isStream bool) error {
+	_ = h.ensureFreshAntigravityToken(target.conn)
+	apiKey := target.conn.APIKey
+	projectID := target.conn.ProjectID
+
+	var reqBody map[string]interface{}
+	json.Unmarshal(bodyBytes, &reqBody)
+
+	var contents []map[string]interface{}
+	var systemParts []map[string]interface{}
+
+	if rawMsgs, ok := reqBody["messages"].([]interface{}); ok {
+		for _, m := range rawMsgs {
+			if mObj, ok := m.(map[string]interface{}); ok {
+				role, _ := mObj["role"].(string)
+				text := ""
+				if cStr, ok := mObj["content"].(string); ok {
+					text = cStr
+				} else if cArr, ok := mObj["content"].([]interface{}); ok {
+					for _, part := range cArr {
+						if pMap, ok := part.(map[string]interface{}); ok {
+							if pt, ok := pMap["text"].(string); ok {
+								text += pt
+							}
+						}
+					}
+				}
+
+				if role == "system" {
+					systemParts = append(systemParts, map[string]interface{}{"text": text})
+				} else {
+					geminiRole := "user"
+					if role == "assistant" {
+						geminiRole = "model"
+					}
+					contents = append(contents, map[string]interface{}{
+						"role":  geminiRole,
+						"parts": []map[string]interface{}{{"text": text}},
+					})
+				}
+			}
+		}
+	}
+
+	if len(contents) == 0 {
+		contents = append(contents, map[string]interface{}{
+			"role":  "user",
+			"parts": []map[string]interface{}{{"text": "Hello"}},
+		})
+	}
+
+	requestObj := map[string]interface{}{
+		"contents": contents,
+		"generationConfig": map[string]interface{}{
+			"temperature":     1.0,
+			"maxOutputTokens": 8192,
+		},
+	}
+	if len(systemParts) > 0 {
+		requestObj["systemInstruction"] = map[string]interface{}{
+			"role":  "user",
+			"parts": systemParts,
+		}
+	}
+
+	reqID := fmt.Sprintf("agent/%s/%d/%s/1", uuid.New().String(), time.Now().UnixMilli(), uuid.New().String())
+	envelope := map[string]interface{}{
+		"project":   projectID,
+		"model":     target.model,
+		"userAgent": "antigravity",
+		"requestId": reqID,
+		"request":   requestObj,
+	}
+
+	envBytes, _ := json.Marshal(envelope)
+	action := "generateContent"
+	if isStream {
+		action = "streamGenerateContent?alt=sse"
+	}
+	urlStr := fmt.Sprintf("%s/v1internal:%s", antigravityBaseURL, action)
+
+	req, err := http.NewRequest(http.MethodPost, urlStr, bytes.NewReader(envBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("User-Agent", antigravityUserAgent)
+	req.Header.Set("X-Client-Name", "antigravity")
+	req.Header.Set("X-Client-Version", "2.11.0")
+
+	proxyAddr := ""
+	if target.conn != nil {
+		proxyAddr = target.conn.Socks5Proxy
+	}
+	client, cErr := createProxyHTTPClient(proxyAddr, 120*time.Second)
+	if cErr != nil {
+		return fmt.Errorf("proxy error: %w", cErr)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return fmt.Errorf("rate_limited:%d", target.conn.ID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		if strings.Contains(string(b), "RESOURCE_EXHAUSTED") || strings.Contains(string(b), "Quota") {
+			return fmt.Errorf("rate_limited:%d", target.conn.ID)
+		}
+		return fmt.Errorf("antigravity upstream error (%d): %s", resp.StatusCode, string(b))
+	}
+
+	w.Header().Set("X-Router-Provider", "antigravity")
+	w.Header().Set("X-Router-Model", target.model)
+
+	if isStream {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache, no-transform")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.WriteHeader(http.StatusOK)
+
+		reader := bufio.NewReader(resp.Body)
+		flusher, _ := w.(http.Flusher)
+		chunkID := "chatcmpl-" + uuid.New().String()
+
+		for {
+			line, rErr := reader.ReadString('\n')
+			line = strings.TrimSpace(line)
+			if line != "" && strings.HasPrefix(line, "data: ") {
+				jsonStr := strings.TrimPrefix(line, "data: ")
+				var agResp struct {
+					Response struct {
+						Candidates []struct {
+							Content struct {
+								Parts []struct {
+									Text    string `json:"text"`
+									Thought bool   `json:"thought"`
+								} `json:"parts"`
+							} `json:"content"`
+						} `json:"candidates"`
+					} `json:"response"`
+				}
+				if json.Unmarshal([]byte(jsonStr), &agResp) == nil {
+					for _, cand := range agResp.Response.Candidates {
+						for _, part := range cand.Content.Parts {
+							if part.Text != "" && !part.Thought {
+								chunkPayload := map[string]interface{}{
+									"id":      chunkID,
+									"object":  "chat.completion.chunk",
+									"created": time.Now().Unix(),
+									"model":   target.model,
+									"choices": []interface{}{
+										map[string]interface{}{
+											"index":         0,
+											"delta":         map[string]interface{}{"content": part.Text},
+											"finish_reason": nil,
+										},
+									},
+								}
+								chunkBytes, _ := json.Marshal(chunkPayload)
+								fmt.Fprintf(w, "data: %s\n\n", string(chunkBytes))
+								if flusher != nil {
+									flusher.Flush()
+								}
+							}
+						}
+					}
+				}
+			}
+			if rErr != nil {
+				break
+			}
+		}
+
+		finalPayload := map[string]interface{}{
+			"id":      chunkID,
+			"object":  "chat.completion.chunk",
+			"created": time.Now().Unix(),
+			"model":   target.model,
+			"choices": []interface{}{
+				map[string]interface{}{
+					"index":         0,
+					"delta":         map[string]interface{}{},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		fBytes, _ := json.Marshal(finalPayload)
+		fmt.Fprintf(w, "data: %s\n\n", string(fBytes))
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+		return nil
+	}
+
+	// Non-streaming
+	var agResp struct {
+		Response struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text    string `json:"text"`
+						Thought bool   `json:"thought"`
+					} `json:"parts"`
+				} `json:"content"`
+			} `json:"candidates"`
+		} `json:"response"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&agResp); err != nil {
+		return err
+	}
+	var fullText strings.Builder
+	for _, cand := range agResp.Response.Candidates {
+		for _, part := range cand.Content.Parts {
+			if !part.Thought {
+				fullText.WriteString(part.Text)
+			}
+		}
+	}
+
+	oaiResp := map[string]interface{}{
+		"id":      "chatcmpl-" + uuid.New().String(),
+		"object":  "chat.completion",
+		"created": time.Now().Unix(),
+		"model":   target.model,
+		"choices": []interface{}{
+			map[string]interface{}{
+				"index": 0,
+				"message": map[string]interface{}{
+					"role":    "assistant",
+					"content": fullText.String(),
+				},
+				"finish_reason": "stop",
+			},
+		},
+	}
+	writeJSON(w, http.StatusOK, oaiResp)
+	return nil
+}
+
+func (h *APIHandler) streamAntigravityToSocket(
+	subdomain string,
+	target proxyTarget,
+	messages []map[string]interface{},
+	reqBody map[string]interface{},
+	emitEvent func(string, interface{}),
+) error {
+	_ = h.ensureFreshAntigravityToken(target.conn)
+	apiKey := target.conn.APIKey
+	projectID := target.conn.ProjectID
+
+	var contents []map[string]interface{}
+	var systemParts []map[string]interface{}
+
+	for _, m := range messages {
+		role, _ := m["role"].(string)
+		text, _ := m["content"].(string)
+		if role == "system" {
+			systemParts = append(systemParts, map[string]interface{}{"text": text})
+		} else {
+			geminiRole := "user"
+			if role == "assistant" {
+				geminiRole = "model"
+			}
+			contents = append(contents, map[string]interface{}{
+				"role":  geminiRole,
+				"parts": []map[string]interface{}{{"text": text}},
+			})
+		}
+	}
+
+	if len(contents) == 0 {
+		contents = append(contents, map[string]interface{}{
+			"role":  "user",
+			"parts": []map[string]interface{}{{"text": "Hello"}},
+		})
+	}
+
+	requestObj := map[string]interface{}{
+		"contents": contents,
+		"generationConfig": map[string]interface{}{
+			"temperature":     1.0,
+			"maxOutputTokens": 8192,
+		},
+	}
+	if len(systemParts) > 0 {
+		requestObj["systemInstruction"] = map[string]interface{}{
+			"role":  "user",
+			"parts": systemParts,
+		}
+	}
+
+	reqID := fmt.Sprintf("agent/%s/%d/%s/1", uuid.New().String(), time.Now().UnixMilli(), uuid.New().String())
+	envelope := map[string]interface{}{
+		"project":   projectID,
+		"model":     target.model,
+		"userAgent": "antigravity",
+		"requestId": reqID,
+		"request":   requestObj,
+	}
+
+	envBytes, _ := json.Marshal(envelope)
+	urlStr := fmt.Sprintf("%s/v1internal:streamGenerateContent?alt=sse", antigravityBaseURL)
+
+	req, err := http.NewRequest(http.MethodPost, urlStr, bytes.NewReader(envBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("User-Agent", antigravityUserAgent)
+	req.Header.Set("X-Client-Name", "antigravity")
+	req.Header.Set("X-Client-Version", "2.11.0")
+
+	proxyAddr := ""
+	if target.conn != nil {
+		proxyAddr = target.conn.Socks5Proxy
+	}
+	client, cErr := createProxyHTTPClient(proxyAddr, 180*time.Second)
+	if cErr != nil {
+		return fmt.Errorf("proxy error: %w", cErr)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return fmt.Errorf("rate_limited:%d", target.conn.ID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		if strings.Contains(string(b), "RESOURCE_EXHAUSTED") || strings.Contains(string(b), "Quota") {
+			return fmt.Errorf("rate_limited:%d", target.conn.ID)
+		}
+		return fmt.Errorf("antigravity upstream error (%d): %s", resp.StatusCode, string(b))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	thinkFilter := newThinkingStreamFilter()
+
+	for {
+		line, rErr := reader.ReadString('\n')
+		line = strings.TrimSpace(line)
+		if line != "" && strings.HasPrefix(line, "data: ") {
+			jsonStr := strings.TrimPrefix(line, "data: ")
+			var agResp struct {
+				Response struct {
+					Candidates []struct {
+						Content struct {
+							Parts []struct {
+								Text    string `json:"text"`
+								Thought bool   `json:"thought"`
+							} `json:"parts"`
+						} `json:"content"`
+					} `json:"candidates"`
+				} `json:"response"`
+			}
+			if json.Unmarshal([]byte(jsonStr), &agResp) == nil {
+				for _, cand := range agResp.Response.Candidates {
+					for _, part := range cand.Content.Parts {
+						var chunkText string
+						if part.Thought {
+							chunkText = thinkFilter.ProcessReasoning(part.Text)
+						} else {
+							chunkText = thinkFilter.ProcessContent(part.Text)
+						}
+						if chunkText != "" {
+							emitEvent("chat:completion", map[string]interface{}{
+								"choices": []interface{}{
+									map[string]interface{}{
+										"delta": map[string]interface{}{
+											"content": chunkText,
+										},
+									},
+								},
+								"done": false,
+							})
+						}
+					}
+				}
+			}
+		}
+		if rErr != nil {
+			break
+		}
+	}
+
+	if flush := thinkFilter.Flush(); flush != "" {
+		emitEvent("chat:completion", map[string]interface{}{
+			"choices": []interface{}{
+				map[string]interface{}{
+					"delta": map[string]interface{}{
+						"content": flush,
+					},
+				},
+			},
+			"done": false,
+		})
+	}
+	return nil
+}
+
+// ── Antigravity OAuth Handlers ──────────────────────────────────────────────
+
+func (h *APIHandler) handleAntigravityOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	subdomain := r.URL.Query().Get("subdomain")
+	if subdomain == "" {
+		subdomain = extractSubdomainFromHost(r.Host)
+	}
+
+	redirectURI := r.URL.Query().Get("redirect_uri")
+	if redirectURI == "" {
+		redirectURI = "http://localhost:8080/callback"
+	}
+
+	b := make([]byte, 16)
+	rand.Read(b)
+	state := hex.EncodeToString(b)
+	if subdomain != "" {
+		state = state + ":" + subdomain
+	}
+
+	scopes := []string{
+		"https://www.googleapis.com/auth/cloud-platform",
+		"https://www.googleapis.com/auth/userinfo.email",
+		"https://www.googleapis.com/auth/userinfo.profile",
+		"https://www.googleapis.com/auth/cclog",
+		"https://www.googleapis.com/auth/experimentsandconfigs",
+	}
+
+	q := url.Values{}
+	q.Set("client_id", getAntigravityClientID())
+	q.Set("response_type", "code")
+	q.Set("redirect_uri", redirectURI)
+	q.Set("scope", strings.Join(scopes, " "))
+	q.Set("state", state)
+	q.Set("access_type", "offline")
+	q.Set("prompt", "consent")
+
+	authURL := antigravityAuthorizeURL + "?" + q.Encode()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"authUrl":     authURL,
+		"state":       state,
+		"redirectUri": redirectURI,
+	})
+}
+
+func (h *APIHandler) handleAntigravityOAuthExchange(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var req struct {
+		Code        string `json:"code"`
+		RedirectURI string `json:"redirectUri"`
+		State       string `json:"state"`
+		Subdomain   string `json:"subdomain"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	subdomain := req.Subdomain
+	if subdomain == "" && strings.Contains(req.State, ":") {
+		parts := strings.Split(req.State, ":")
+		if len(parts) >= 2 {
+			subdomain = parts[1]
+		}
+	}
+	if subdomain == "" {
+		subdomain = extractSubdomainFromHost(r.Host)
+	}
+	if subdomain == "" {
+		writeJSONError(w, http.StatusBadRequest, "subdomain is required")
+		return
+	}
+
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("client_id", getAntigravityClientID())
+	form.Set("client_secret", getAntigravityClientSecret())
+	form.Set("code", req.Code)
+	form.Set("redirect_uri", req.RedirectURI)
+
+	resp, err := http.Post(antigravityTokenURL, "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to exchange token: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		writeJSONError(w, resp.StatusCode, "token exchange error: "+string(b))
+		return
+	}
+
+	var tokenRes struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+		Scope        string `json:"scope"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenRes); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to decode token response: "+err.Error())
+		return
+	}
+
+	// Fetch user email
+	userReq, _ := http.NewRequest(http.MethodGet, antigravityUserInfoURL+"?alt=json", nil)
+	userReq.Header.Set("Authorization", "Bearer "+tokenRes.AccessToken)
+	userReq.Header.Set("x-request-source", "local")
+	userResp, err := http.DefaultClient.Do(userReq)
+	var email string
+	if err == nil && userResp.StatusCode == http.StatusOK {
+		var userInfo struct {
+			Email string `json:"email"`
+		}
+		_ = json.NewDecoder(userResp.Body).Decode(&userInfo)
+		email = userInfo.Email
+		userResp.Body.Close()
+	}
+	if email == "" {
+		email = fmt.Sprintf("antigravity-user-%d", time.Now().Unix())
+	}
+
+	// Load Code Assist
+	loadBody := map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"ideType":    9,
+			"platform":   3,
+			"pluginType": 2,
+		},
+	}
+	loadBytes, _ := json.Marshal(loadBody)
+	loadReq, _ := http.NewRequest(http.MethodPost, antigravityLoadCodeAssistURL, bytes.NewReader(loadBytes))
+	loadReq.Header.Set("Authorization", "Bearer "+tokenRes.AccessToken)
+	loadReq.Header.Set("Content-Type", "application/json")
+	loadReq.Header.Set("User-Agent", antigravityUserAgent)
+	loadReq.Header.Set("x-request-source", "local")
+
+	var projectID string
+	var tierID string = "legacy-tier"
+	loadResp, err := http.DefaultClient.Do(loadReq)
+	if err == nil {
+		defer loadResp.Body.Close()
+		if loadResp.StatusCode == http.StatusOK {
+			var loadData struct {
+				CloudAICompanionProject interface{} `json:"cloudaicompanionProject"`
+				AllowedTiers            []struct {
+					ID        string `json:"id"`
+					IsDefault bool   `json:"isDefault"`
+				} `json:"allowedTiers"`
+			}
+			if json.NewDecoder(loadResp.Body).Decode(&loadData) == nil {
+				if s, ok := loadData.CloudAICompanionProject.(string); ok {
+					projectID = s
+				} else if m, ok := loadData.CloudAICompanionProject.(map[string]interface{}); ok {
+					if idStr, ok := m["id"].(string); ok {
+						projectID = idStr
+					}
+				}
+				for _, t := range loadData.AllowedTiers {
+					if t.IsDefault && t.ID != "" {
+						tierID = strings.TrimSpace(t.ID)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if projectID != "" {
+		go func(token, tier string) {
+			for i := 0; i < 5; i++ {
+				obBody, _ := json.Marshal(map[string]interface{}{
+					"tierId": tier,
+					"metadata": map[string]interface{}{
+						"ideType":    9,
+						"platform":   3,
+						"pluginType": 2,
+					},
+				})
+				obReq, _ := http.NewRequest(http.MethodPost, antigravityOnboardUserURL, bytes.NewReader(obBody))
+				obReq.Header.Set("Authorization", "Bearer "+token)
+				obReq.Header.Set("Content-Type", "application/json")
+				obReq.Header.Set("User-Agent", antigravityUserAgent)
+				resp, e := http.DefaultClient.Do(obReq)
+				if e == nil {
+					resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						break
+					}
+				}
+				time.Sleep(3 * time.Second)
+			}
+		}(tokenRes.AccessToken, tierID)
+	}
+
+	var expiresAt *time.Time
+	if tokenRes.ExpiresIn > 0 {
+		exp := time.Now().Add(time.Duration(tokenRes.ExpiresIn) * time.Second)
+		expiresAt = &exp
+	}
+
+	modelsJSONBytes, _ := json.Marshal(defaultAntigravityModels)
+	id, err := h.db.UpsertAntigravityConnection(subdomain, email, tokenRes.AccessToken, tokenRes.RefreshToken, projectID, expiresAt, string(modelsJSONBytes))
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to save connection: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":   true,
+		"id":        id,
+		"email":     email,
+		"projectId": projectID,
+	})
+}
+
+func (h *APIHandler) handleAntigravityOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	code := r.URL.Query().Get("code")
+	state := r.URL.Query().Get("state")
+	errStr := r.URL.Query().Get("error")
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head><title>OAuth Callback</title></head>
+<body>
+<div style="font-family:sans-serif;text-align:center;padding:50px;">
+  <h2>Authorization Complete</h2>
+  <p>You can close this window now.</p>
+</div>
+<script>
+  const data = { code: %q, state: %q, error: %q };
+  if (window.opener) {
+    window.opener.postMessage({ type: "oauth_callback", data: data }, "*");
+  }
+  try {
+    const ch = new BroadcastChannel("oauth_callback");
+    ch.postMessage(data);
+    ch.close();
+  } catch(e) {}
+  try {
+    localStorage.setItem("oauth_callback", JSON.stringify({ ...data, timestamp: Date.now() }));
+  } catch(e) {}
+  setTimeout(() => window.close(), 1200);
+</script>
+</body>
+</html>`, code, state, errStr)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(html))
 }
 

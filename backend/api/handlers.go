@@ -92,6 +92,11 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/airouter/connections", h.requireSubdomain(h.handleAddAIRouterConnection))
 	mux.HandleFunc("DELETE /api/airouter/connections/{id}", h.requireSubdomain(h.handleDeleteAIRouterConnection))
 
+	// AI Router - Antigravity OAuth
+	mux.HandleFunc("GET /api/airouter/oauth/antigravity/authorize", h.handleAntigravityOAuthAuthorize)
+	mux.HandleFunc("POST /api/airouter/oauth/antigravity/exchange", h.handleAntigravityOAuthExchange)
+	mux.HandleFunc("GET /api/airouter/oauth/antigravity/callback", h.handleAntigravityOAuthCallback)
+
 	// AI Router - Combos
 	mux.HandleFunc("POST /api/airouter/combos", h.requireSubdomain(h.handleUpsertAIRouterCombo))
 	mux.HandleFunc("DELETE /api/airouter/combos/{id}", h.requireSubdomain(h.handleDeleteAIRouterCombo))

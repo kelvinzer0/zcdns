@@ -17,6 +17,9 @@ interface Connection {
   socks5_proxy?: string;
   models_json?: string;
   status: string;
+  auth_type?: string;
+  account_email?: string;
+  project_id?: string;
 }
 
 interface Combo {
@@ -59,6 +62,7 @@ interface ProviderDef {
 const PROVIDERS: ProviderDef[] = [
   { value: 'openai', label: 'OpenAI (Official)', defaultType: 'openai', defaultBaseUrl: 'https://api.openai.com' },
   { value: 'anthropic', label: 'Anthropic (Official)', defaultType: 'anthropic', defaultBaseUrl: 'https://api.anthropic.com' },
+  { value: 'antigravity', label: 'Antigravity (Google OAuth)', defaultType: 'openai', defaultBaseUrl: 'https://daily-cloudcode-pa.googleapis.com' },
   { value: 'deepseek', label: 'DeepSeek', defaultType: 'openai', defaultBaseUrl: 'https://api.deepseek.com' },
   { value: 'groq', label: 'Groq (Free & Fast)', defaultType: 'openai', defaultBaseUrl: 'https://api.groq.com/openai' },
   { value: 'together', label: 'Together AI', defaultType: 'openai', defaultBaseUrl: 'https://api.together.xyz' },
@@ -73,6 +77,7 @@ const API_TYPES = [
 
 const STRATEGIES = [
   { value: 'smart_context', label: 'Smart Context — route by context size (small -> small model, large -> large model)' },
+  { value: 'usage', label: 'Usage — Quota-balanced Antigravity (multi-account auto-rotate)' },
   { value: 'fallback', label: 'Fallback — try in order, next if fail' },
   { value: 'round_robin', label: 'Round Robin — rotate each request' },
   { value: 'round_robin_sticky', label: 'Round Robin Sticky — rotate per session' },
@@ -101,6 +106,20 @@ function formatContextSize(size: number): string {
 const BUILTIN_MODEL_SUGGESTIONS: Record<string, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'o1', 'o3-mini'],
   anthropic: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
+  antigravity: [
+    'claude-sonnet-4-6',
+    'claude-opus-4-6-thinking',
+    'gemini-3.8-flash-high',
+    'gemini-3.8-flash-medium',
+    'gemini-3.8-flash-low',
+    'gemini-3.7-flash-high',
+    'gemini-3.7-flash-medium',
+    'gemini-3.7-flash-low',
+    'gemini-3.6-flash-high',
+    'gemini-3.5-flash-low',
+    'gemini-pro-agent',
+    'gpt-oss-120b-medium',
+  ],
   deepseek: ['deepseek-chat', 'deepseek-reasoner'],
   groq: ['groq/llama-3.3-70b-versatile', 'groq/llama-3.1-8b-instant', 'groq/gemma2-9b-it'],
   together: ['meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo'],
@@ -419,6 +438,109 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
       setSavingConn(false);
+    }
+  };
+
+  const [connectingOAuth, setConnectingOAuth] = useState(false);
+
+  const startAntigravityOAuth = async () => {
+    try {
+      setConnectingOAuth(true);
+      const redirectUri = `${window.location.origin}/api/airouter/oauth/antigravity/callback`;
+      const res = await fetch(`/api/airouter/oauth/antigravity/authorize?subdomain=${encodeURIComponent(subdomain)}&redirect_uri=${encodeURIComponent(redirectUri)}`);
+      const data = await res.json();
+      if (!res.ok || !data.authUrl) {
+        throw new Error(data.error || 'Failed to initiate Google OAuth');
+      }
+
+      const popup = window.open(data.authUrl, 'oauth_popup', 'width=600,height=700');
+      if (!popup) {
+        toast({ title: 'Popup Blocked', description: 'Please allow popups to sign in with Google.', variant: 'destructive' });
+        setConnectingOAuth(false);
+        return;
+      }
+
+      const doExchange = async (code: string, state: string) => {
+        try {
+          const exRes = await fetch('/api/airouter/oauth/antigravity/exchange', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              code,
+              state,
+              redirectUri,
+              subdomain,
+            }),
+          });
+          const exData = await exRes.json();
+          if (exRes.ok && exData.success) {
+            toast({
+              title: 'Antigravity Connected!',
+              description: `Successfully linked account: ${exData.email} (Project: ${exData.projectId || 'Default'})`,
+            });
+            await fetchAll();
+          } else {
+            toast({
+              title: 'OAuth Exchange Failed',
+              description: exData.error || 'Could not exchange authorization code',
+              variant: 'destructive',
+            });
+          }
+        } catch (err: any) {
+          toast({ title: 'Error', description: err.message, variant: 'destructive' });
+        } finally {
+          setConnectingOAuth(false);
+        }
+      };
+
+      let processed = false;
+      const messageHandler = (e: MessageEvent) => {
+        if (e.data?.type === 'oauth_callback' && e.data.data) {
+          const { code, state, error } = e.data.data;
+          if (!processed) {
+            processed = true;
+            window.removeEventListener('message', messageHandler);
+            if (error) {
+              toast({ title: 'OAuth Error', description: error, variant: 'destructive' });
+              setConnectingOAuth(false);
+            } else if (code) {
+              doExchange(code, state);
+            }
+          }
+        }
+      };
+      window.addEventListener('message', messageHandler);
+
+      try {
+        const bc = new BroadcastChannel('oauth_callback');
+        bc.onmessage = (e) => {
+          if (!processed && e.data?.code) {
+            processed = true;
+            bc.close();
+            window.removeEventListener('message', messageHandler);
+            doExchange(e.data.code, e.data.state);
+          }
+        };
+      } catch {}
+
+      const storageHandler = (e: StorageEvent) => {
+        if (e.key === 'oauth_callback' && e.newValue && !processed) {
+          try {
+            const parsed = JSON.parse(e.newValue);
+            if (parsed.code) {
+              processed = true;
+              window.removeEventListener('storage', storageHandler);
+              localStorage.removeItem('oauth_callback');
+              doExchange(parsed.code, parsed.state);
+            }
+          } catch {}
+        }
+      };
+      window.addEventListener('storage', storageHandler);
+
+    } catch (err: any) {
+      toast({ title: 'OAuth Failed', description: err.message, variant: 'destructive' });
+      setConnectingOAuth(false);
     }
   };
 
@@ -872,6 +994,31 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
           </button>
         </div>
 
+        {/* Antigravity One-Click OAuth Banner */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-transparent border border-blue-500/30 mb-3">
+          <div className="space-y-0.5">
+            <div className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+              <span>Antigravity Google OAuth (Google Cloud Code)</span>
+              <span className="text-[10px] bg-blue-500/20 text-blue-600 dark:text-blue-400 font-medium px-1.5 py-0.2 rounded-none">
+                Auto-Refresh & Quota-Balanced
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Hubungkan akun Google Anda untuk akses model Claude 4.6, Claude Opus 4.6 Thinking, Gemini 3.8 & 3.7. Mendukung strategi combo <code>usage</code> untuk rotasi multi-akun otomatis berbasis kuota tersisa.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={connectingOAuth}
+            onClick={startAntigravityOAuth}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition-colors shrink-0 shadow-sm disabled:opacity-50"
+          >
+            {connectingOAuth ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+            <span>{connectingOAuth ? 'Connecting Google...' : '+ Connect Antigravity (Google OAuth)'}</span>
+          </button>
+        </div>
+
         {/* Existing connections */}
         {connections.length > 0 && (
           <div className="mb-3 space-y-2">
@@ -893,6 +1040,11 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
                     <span className="text-[10px] font-mono bg-secondary px-1.5 py-0.5 rounded-none uppercase border border-border">
                       {c.api_type || (c.provider === 'anthropic' ? 'anthropic' : 'openai')}
                     </span>
+                    {c.account_email && (
+                      <span className="text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 font-mono px-1.5 py-0.5 border border-blue-500/20">
+                        {c.account_email}
+                      </span>
+                    )}
                     <span className="font-semibold text-foreground flex-1 min-w-[120px]">{c.name}</span>
 
                     <span className="font-mono text-muted-foreground text-xs">

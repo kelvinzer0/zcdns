@@ -1,6 +1,9 @@
 package db
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // ── AI Router Config (per subdomain) ─────────────────────────────────────────
 
@@ -18,8 +21,8 @@ type AIRouterConfig struct {
 type AIRouterConnection struct {
 	ID               int64      `json:"id"`
 	Subdomain        string     `json:"subdomain"`
-	Provider         string     `json:"provider"`         // "openai" | "anthropic" | "groq" | "together" | "openrouter" | "deepseek" | "custom"
-	APIType          string     `json:"api_type"`          // "openai" | "anthropic"
+	Provider         string     `json:"provider"`         // "openai" | "anthropic" | "antigravity" | ...
+	APIType          string     `json:"api_type"`          // "openai" | "anthropic" | "antigravity"
 	Name             string     `json:"name"`             // friendly label e.g. "Personal OpenAI"
 	APIKey           string     `json:"api_key"`
 	BaseURL          string     `json:"base_url"`         // custom provider upstream URL
@@ -27,6 +30,11 @@ type AIRouterConnection struct {
 	ModelsJSON       string     `json:"models_json"`       // JSON array of available models e.g. ["gpt-4o"]
 	Status           string     `json:"status"`           // "active" | "rate_limited" | "error"
 	RateLimitedUntil *time.Time `json:"rate_limited_until,omitempty"`
+	RefreshToken     string     `json:"refresh_token,omitempty"`
+	TokenExpiresAt   *time.Time `json:"token_expires_at,omitempty"`
+	ProjectID        string     `json:"project_id,omitempty"`
+	AuthType         string     `json:"auth_type"` // "api_key" | "oauth"
+	AccountEmail     string     `json:"account_email,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 }
 
@@ -106,7 +114,7 @@ func (d *DB) UpdateAIRouterConfig(subdomain, inputFormat, outputFormat string) e
 
 // Connections
 func (d *DB) GetAIRouterConnections(subdomain string) ([]AIRouterConnection, error) {
-	rows, err := d.conn.Query(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(socks5_proxy, ''), COALESCE(models_json, '[]'), status, rate_limited_until, created_at FROM ai_router_connections WHERE subdomain = ? ORDER BY provider, name`, subdomain)
+	rows, err := d.conn.Query(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(socks5_proxy, ''), COALESCE(models_json, '[]'), status, rate_limited_until, COALESCE(refresh_token, ''), token_expires_at, COALESCE(project_id, ''), COALESCE(auth_type, 'api_key'), COALESCE(account_email, ''), created_at FROM ai_router_connections WHERE subdomain = ? ORDER BY provider, name`, subdomain)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +122,7 @@ func (d *DB) GetAIRouterConnections(subdomain string) ([]AIRouterConnection, err
 	var conns []AIRouterConnection
 	for rows.Next() {
 		var c AIRouterConnection
-		if err := rows.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.Socks5Proxy, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.Socks5Proxy, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.RefreshToken, &c.TokenExpiresAt, &c.ProjectID, &c.AuthType, &c.AccountEmail, &c.CreatedAt); err != nil {
 			continue
 		}
 		// Mask API key
@@ -130,9 +138,9 @@ func (d *DB) GetAIRouterConnections(subdomain string) ([]AIRouterConnection, err
 }
 
 func (d *DB) GetAIRouterConnectionByID(subdomain string, id int64) (*AIRouterConnection, error) {
-	row := d.conn.QueryRow(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(socks5_proxy, ''), COALESCE(models_json, '[]'), status, rate_limited_until, created_at FROM ai_router_connections WHERE subdomain = ? AND id = ?`, subdomain, id)
+	row := d.conn.QueryRow(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(socks5_proxy, ''), COALESCE(models_json, '[]'), status, rate_limited_until, COALESCE(refresh_token, ''), token_expires_at, COALESCE(project_id, ''), COALESCE(auth_type, 'api_key'), COALESCE(account_email, ''), created_at FROM ai_router_connections WHERE subdomain = ? AND id = ?`, subdomain, id)
 	var c AIRouterConnection
-	if err := row.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.Socks5Proxy, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.CreatedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.Socks5Proxy, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.RefreshToken, &c.TokenExpiresAt, &c.ProjectID, &c.AuthType, &c.AccountEmail, &c.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &c, nil
@@ -151,8 +159,38 @@ func (d *DB) AddAIRouterConnection(conn *AIRouterConnection) (int64, error) {
 	if modelsJSON == "" {
 		modelsJSON = "[]"
 	}
-	res, err := d.conn.Exec(`INSERT INTO ai_router_connections (subdomain, provider, api_type, name, api_key, base_url, socks5_proxy, models_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
-		conn.Subdomain, conn.Provider, apiType, conn.Name, conn.APIKey, conn.BaseURL, conn.Socks5Proxy, modelsJSON)
+	authType := conn.AuthType
+	if authType == "" {
+		authType = "api_key"
+	}
+	res, err := d.conn.Exec(`INSERT INTO ai_router_connections (subdomain, provider, api_type, name, api_key, base_url, socks5_proxy, models_json, status, refresh_token, token_expires_at, project_id, auth_type, account_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
+		conn.Subdomain, conn.Provider, apiType, conn.Name, conn.APIKey, conn.BaseURL, conn.Socks5Proxy, modelsJSON, conn.RefreshToken, conn.TokenExpiresAt, conn.ProjectID, authType, conn.AccountEmail)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (d *DB) UpdateAIRouterConnectionToken(id int64, apiKey, refreshToken string, expiresAt *time.Time) error {
+	_, err := d.conn.Exec(`UPDATE ai_router_connections SET api_key=?, refresh_token=?, token_expires_at=? WHERE id=?`, apiKey, refreshToken, expiresAt, id)
+	return err
+}
+
+func (d *DB) UpsertAntigravityConnection(subdomain, email, accessToken, refreshToken, projectID string, expiresAt *time.Time, modelsJSON string) (int64, error) {
+	name := fmt.Sprintf("Antigravity (%s)", email)
+	var existingID int64
+	err := d.conn.QueryRow(`SELECT id FROM ai_router_connections WHERE subdomain=? AND provider='antigravity' AND (account_email=? OR name=?)`, subdomain, email, name).Scan(&existingID)
+	if err == nil && existingID > 0 {
+		_, err = d.conn.Exec(`UPDATE ai_router_connections 
+			SET api_key=?, refresh_token=?, project_id=?, token_expires_at=?, models_json=?, status='active', rate_limited_until=NULL, auth_type='oauth', account_email=?
+			WHERE id=?`, accessToken, refreshToken, projectID, expiresAt, modelsJSON, email, existingID)
+		return existingID, err
+	}
+
+	res, err := d.conn.Exec(`INSERT INTO ai_router_connections 
+		(subdomain, provider, api_type, name, api_key, base_url, socks5_proxy, models_json, status, refresh_token, token_expires_at, project_id, auth_type, account_email)
+		VALUES (?, 'antigravity', 'antigravity', ?, ?, 'https://daily-cloudcode-pa.googleapis.com', '', ?, 'active', ?, ?, ?, 'oauth', ?)`,
+		subdomain, name, accessToken, modelsJSON, refreshToken, expiresAt, projectID, email)
 	if err != nil {
 		return 0, err
 	}
@@ -177,12 +215,12 @@ func (d *DB) GetActiveAIRouterConnection(subdomain, provider string, excludeIDs 
 		excludeClause += " AND id != ?"
 		args = append(args, id)
 	}
-	row := d.conn.QueryRow(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(socks5_proxy, ''), COALESCE(models_json, '[]'), status, rate_limited_until, created_at
+	row := d.conn.QueryRow(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(socks5_proxy, ''), COALESCE(models_json, '[]'), status, rate_limited_until, COALESCE(refresh_token, ''), token_expires_at, COALESCE(project_id, ''), COALESCE(auth_type, 'api_key'), COALESCE(account_email, ''), created_at
 		FROM ai_router_connections
 		WHERE subdomain=? AND provider=? AND status='active'`+excludeClause+`
 		ORDER BY RANDOM() LIMIT 1`, args...)
 	var c AIRouterConnection
-	if err := row.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.Socks5Proxy, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.CreatedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.Socks5Proxy, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.RefreshToken, &c.TokenExpiresAt, &c.ProjectID, &c.AuthType, &c.AccountEmail, &c.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &c, nil
@@ -195,7 +233,7 @@ func (d *DB) GetActiveAIRouterConnectionsUnmasked(subdomain string, excludeIDs [
 		excludeClause += " AND id != ?"
 		args = append(args, id)
 	}
-	rows, err := d.conn.Query(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(socks5_proxy, ''), COALESCE(models_json, '[]'), status, rate_limited_until, created_at
+	rows, err := d.conn.Query(`SELECT id, subdomain, provider, COALESCE(api_type, 'openai'), name, api_key, base_url, COALESCE(socks5_proxy, ''), COALESCE(models_json, '[]'), status, rate_limited_until, COALESCE(refresh_token, ''), token_expires_at, COALESCE(project_id, ''), COALESCE(auth_type, 'api_key'), COALESCE(account_email, ''), created_at
 		FROM ai_router_connections
 		WHERE subdomain=? AND status='active'`+excludeClause+`
 		ORDER BY id ASC`, args...)
@@ -206,7 +244,7 @@ func (d *DB) GetActiveAIRouterConnectionsUnmasked(subdomain string, excludeIDs [
 	var list []AIRouterConnection
 	for rows.Next() {
 		var c AIRouterConnection
-		if err := rows.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.Socks5Proxy, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Subdomain, &c.Provider, &c.APIType, &c.Name, &c.APIKey, &c.BaseURL, &c.Socks5Proxy, &c.ModelsJSON, &c.Status, &c.RateLimitedUntil, &c.RefreshToken, &c.TokenExpiresAt, &c.ProjectID, &c.AuthType, &c.AccountEmail, &c.CreatedAt); err != nil {
 			continue
 		}
 		list = append(list, c)
