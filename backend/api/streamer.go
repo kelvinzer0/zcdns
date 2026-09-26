@@ -46,7 +46,7 @@ func NewStreamHub() *StreamHub {
 		clients:    make(map[string]map[*Client]bool),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
-		broadcast:  make(chan *SubdomainMessage, 256),
+		broadcast:  make(chan *SubdomainMessage, 2048), // increased: DNS bursts can be high volume
 	}
 }
 
@@ -78,18 +78,36 @@ func (h *StreamHub) Run() {
 			h.mu.Unlock()
 
 		case msg := <-h.broadcast:
+			// FIX: collect dead clients first under RLock, then remove under write Lock
+			// Previously: delete() under RLock = data race → crash under high DNS load
+			var dead []*Client
 			h.mu.RLock()
 			if subClients, ok := h.clients[msg.Subdomain]; ok {
 				for client := range subClients {
 					select {
 					case client.send <- msg.Data:
 					default:
-						close(client.send)
-						delete(subClients, client)
+						dead = append(dead, client)
 					}
 				}
 			}
 			h.mu.RUnlock()
+			// Remove dead clients under write lock
+			if len(dead) > 0 {
+				h.mu.Lock()
+				if subClients, ok := h.clients[msg.Subdomain]; ok {
+					for _, client := range dead {
+						if _, exists := subClients[client]; exists {
+							delete(subClients, client)
+							close(client.send)
+						}
+					}
+					if len(subClients) == 0 {
+						delete(h.clients, msg.Subdomain)
+					}
+				}
+				h.mu.Unlock()
+			}
 
 		case <-ticker.C:
 			// Send heartbeat ping to all connected clients

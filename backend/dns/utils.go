@@ -173,10 +173,15 @@ func (s *Server) logAndBroadcast(subdomain, qname, qtype, clientIP, rcode string
 		CreatedAt: time.Now(),
 	}
 
-	ansJSON, _ := json.Marshal(answers)
-	_ = s.db.LogRequest(reqLog, string(ansJSON))
+	// Run DB write and broadcast in a goroutine so the DNS response path is never blocked.
+	// Previously this was synchronous: every DNS query waited for SQLite INSERT → goroutine
+	// buildup under high load → OOM / server crash.
+	go func() {
+		ansJSON, _ := json.Marshal(answers)
+		_ = s.db.LogRequest(reqLog, string(ansJSON))
 
-	if s.broadcaster != nil {
-		s.broadcaster.BroadcastRequest(subdomain, reqLog)
-	}
+		if s.broadcaster != nil {
+			s.broadcaster.BroadcastRequest(subdomain, reqLog)
+		}
+	}()
 }

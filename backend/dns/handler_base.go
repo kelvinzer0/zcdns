@@ -259,8 +259,8 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	// Touch user last active
-	s.db.TouchUser(subdomain)
+	// Touch user last active (async — must not block DNS response path)
+	go s.db.TouchUser(subdomain)
 
 	// Lookup records
 	records, err := s.db.GetRecordsByNameAndType(subdomain, recordName, qTypeStr)
