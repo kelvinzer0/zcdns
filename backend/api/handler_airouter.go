@@ -199,18 +199,31 @@ const (
 )
 
 var defaultAntigravityModels = []string{
+	// Claude models (always have quota, not shared with Gemini pools)
 	"claude-sonnet-4-6",
 	"claude-opus-4-6-thinking",
+	// Gemini 3.8 Flash (3 quota tiers + alias)
 	"gemini-3.8-flash-high",
 	"gemini-3.8-flash-medium",
 	"gemini-3.8-flash-low",
+	"gemini-3.8-flash", // alias → medium tier
+	// Gemini 3.7 Flash
 	"gemini-3.7-flash-high",
 	"gemini-3.7-flash-medium",
 	"gemini-3.7-flash-low",
+	// Gemini 3.6 Flash
 	"gemini-3.6-flash-high",
+	"gemini-3.6-flash-medium",
+	"gemini-3.6-flash-low",
+	// Gemini 3.5 Flash
+	"gemini-3.5-flash-high",
 	"gemini-3.5-flash-low",
-	"gemini-pro-agent",
-	"gemini-3.1-pro-low",
+	"gemini-3.5-flash-extra-low",
+	"gemini-3-flash-agent",
+	// Gemini Pro
+	"gemini-pro-agent",    // Gemini 3.1 Pro (High)
+	"gemini-3.1-pro-low",  // Gemini 3.1 Pro (Low)
+	// GPT-OSS
 	"gpt-oss-120b-medium",
 }
 
@@ -2647,14 +2660,31 @@ func (h *APIHandler) forwardAntigravityRequest(w http.ResponseWriter, bodyBytes 
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
+		// Per-model quota: cache quota=0 for this model only, don't block the whole connection.
+		agQuotaCacheMu.Lock()
+		agQuotaCache[fmt.Sprintf("%d:%s", target.conn.ID, target.model)] = antigravityQuotaCacheEntry{
+			remainingFraction: 0.0,
+			cachedAt:          time.Now(),
+			resetAt:           time.Now().Add(1 * time.Hour).Format(time.RFC3339),
+		}
+		agQuotaCacheMu.Unlock()
 		return fmt.Errorf("rate_limited:%d", target.conn.ID)
 	}
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		if strings.Contains(string(b), "RESOURCE_EXHAUSTED") || strings.Contains(string(b), "Quota") {
+		bStr := string(b)
+		if strings.Contains(bStr, "RESOURCE_EXHAUSTED") || strings.Contains(bStr, "Quota") {
+			// Per-model quota exhausted: cache quota=0 for this model only, not the whole connection.
+			agQuotaCacheMu.Lock()
+			agQuotaCache[fmt.Sprintf("%d:%s", target.conn.ID, target.model)] = antigravityQuotaCacheEntry{
+				remainingFraction: 0.0,
+				cachedAt:          time.Now(),
+				resetAt:           time.Now().Add(1 * time.Hour).Format(time.RFC3339),
+			}
+			agQuotaCacheMu.Unlock()
 			return fmt.Errorf("rate_limited:%d", target.conn.ID)
 		}
-		return fmt.Errorf("antigravity upstream error (%d): %s", resp.StatusCode, string(b))
+		return fmt.Errorf("antigravity upstream error (%d): %s", resp.StatusCode, bStr)
 	}
 
 	w.Header().Set("X-Router-Provider", "antigravity")
