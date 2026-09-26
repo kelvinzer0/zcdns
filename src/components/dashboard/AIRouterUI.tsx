@@ -442,107 +442,78 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
   };
 
   const [connectingOAuth, setConnectingOAuth] = useState(false);
+  const [oauthStep, setOauthStep] = useState<'idle' | 'awaiting_paste'>('idle');
+  const [oauthAuthUrl, setOauthAuthUrl] = useState('');
+  const [oauthState, setOauthState] = useState('');
+  const [oauthRedirectUri, setOauthRedirectUri] = useState('');
+  const [pastedCallbackUrl, setPastedCallbackUrl] = useState('');
+  const [copiedAuthUrl, setCopiedAuthUrl] = useState(false);
 
+  // Step 1: Get auth URL → user opens in browser → Google redirects to localhost → user copies URL
   const startAntigravityOAuth = async () => {
     try {
       setConnectingOAuth(true);
-      const redirectUri = `${window.location.origin}/api/airouter/oauth/antigravity/callback`;
+      const redirectUri = 'http://localhost:1/callback';
       const res = await fetch(`/api/airouter/oauth/antigravity/authorize?subdomain=${encodeURIComponent(subdomain)}&redirect_uri=${encodeURIComponent(redirectUri)}`);
       const data = await res.json();
       if (!res.ok || !data.authUrl) {
         throw new Error(data.error || 'Failed to initiate Google OAuth');
       }
-
-      const popup = window.open(data.authUrl, 'oauth_popup', 'width=600,height=700');
-      if (!popup) {
-        toast({ title: 'Popup Blocked', description: 'Please allow popups to sign in with Google.', variant: 'destructive' });
-        setConnectingOAuth(false);
-        return;
-      }
-
-      const doExchange = async (code: string, state: string) => {
-        try {
-          const exRes = await fetch('/api/airouter/oauth/antigravity/exchange', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              code,
-              state,
-              redirectUri,
-              subdomain,
-            }),
-          });
-          const exData = await exRes.json();
-          if (exRes.ok && exData.success) {
-            toast({
-              title: 'Antigravity Connected!',
-              description: `Successfully linked account: ${exData.email} (Project: ${exData.projectId || 'Default'})`,
-            });
-            await fetchAll();
-          } else {
-            toast({
-              title: 'OAuth Exchange Failed',
-              description: exData.error || 'Could not exchange authorization code',
-              variant: 'destructive',
-            });
-          }
-        } catch (err: any) {
-          toast({ title: 'Error', description: err.message, variant: 'destructive' });
-        } finally {
-          setConnectingOAuth(false);
-        }
-      };
-
-      let processed = false;
-      const messageHandler = (e: MessageEvent) => {
-        if (e.data?.type === 'oauth_callback' && e.data.data) {
-          const { code, state, error } = e.data.data;
-          if (!processed) {
-            processed = true;
-            window.removeEventListener('message', messageHandler);
-            if (error) {
-              toast({ title: 'OAuth Error', description: error, variant: 'destructive' });
-              setConnectingOAuth(false);
-            } else if (code) {
-              doExchange(code, state);
-            }
-          }
-        }
-      };
-      window.addEventListener('message', messageHandler);
-
-      try {
-        const bc = new BroadcastChannel('oauth_callback');
-        bc.onmessage = (e) => {
-          if (!processed && e.data?.code) {
-            processed = true;
-            bc.close();
-            window.removeEventListener('message', messageHandler);
-            doExchange(e.data.code, e.data.state);
-          }
-        };
-      } catch {}
-
-      const storageHandler = (e: StorageEvent) => {
-        if (e.key === 'oauth_callback' && e.newValue && !processed) {
-          try {
-            const parsed = JSON.parse(e.newValue);
-            if (parsed.code) {
-              processed = true;
-              window.removeEventListener('storage', storageHandler);
-              localStorage.removeItem('oauth_callback');
-              doExchange(parsed.code, parsed.state);
-            }
-          } catch {}
-        }
-      };
-      window.addEventListener('storage', storageHandler);
-
+      setOauthAuthUrl(data.authUrl);
+      setOauthState(data.state);
+      setOauthRedirectUri(redirectUri);
+      setOauthStep('awaiting_paste');
+      setPastedCallbackUrl('');
     } catch (err: any) {
       toast({ title: 'OAuth Failed', description: err.message, variant: 'destructive' });
+    } finally {
       setConnectingOAuth(false);
     }
   };
+
+  // Step 2: Parse pasted URL and exchange code
+  const submitPastedCallback = async () => {
+    try {
+      let code = '';
+      let state = '';
+      try {
+        const u = new URL(pastedCallbackUrl.trim());
+        code = u.searchParams.get('code') || '';
+        state = u.searchParams.get('state') || '';
+      } catch {
+        const qs = pastedCallbackUrl.includes('?') ? pastedCallbackUrl.split('?')[1] : pastedCallbackUrl;
+        const params = new URLSearchParams(qs);
+        code = params.get('code') || '';
+        state = params.get('state') || '';
+      }
+      if (!code) {
+        toast({ title: 'Error', description: 'Tidak ditemukan authorization code di URL yang dipaste', variant: 'destructive' });
+        return;
+      }
+      setConnectingOAuth(true);
+      const exRes = await fetch('/api/airouter/oauth/antigravity/exchange', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, state: state || oauthState, redirectUri: oauthRedirectUri, subdomain }),
+      });
+      const exData = await exRes.json();
+      if (exRes.ok && exData.success) {
+        toast({ title: '✅ Antigravity Terhubung!', description: `Linked: ${exData.email}${exData.projectId ? ` — Project: ${exData.projectId}` : ''}` });
+        setOauthStep('idle');
+        setPastedCallbackUrl('');
+        setOauthAuthUrl('');
+        await fetchAll();
+      } else {
+        toast({ title: 'Exchange Gagal', description: exData.error || 'Gagal menukar authorization code', variant: 'destructive' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setConnectingOAuth(false);
+    }
+  };
+
+  const cancelOauth = () => { setOauthStep('idle'); setPastedCallbackUrl(''); setOauthAuthUrl(''); setCopiedAuthUrl(false); };
 
   const deleteConnection = async (id: number) => {
     await fetch(`/api/airouter/connections/${id}`, {
@@ -994,29 +965,95 @@ export function AIRouterUI({ subdomain }: { subdomain: string }) {
           </button>
         </div>
 
-        {/* Antigravity One-Click OAuth Banner */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-transparent border border-blue-500/30 mb-3">
-          <div className="space-y-0.5">
-            <div className="font-semibold text-xs text-foreground flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-              <span>Antigravity Google OAuth (Google Cloud Code)</span>
-              <span className="text-[10px] bg-blue-500/20 text-blue-600 dark:text-blue-400 font-medium px-1.5 py-0.2 rounded-none">
-                Auto-Refresh & Quota-Balanced
-              </span>
+        {/* Antigravity OAuth — Manual Copy-Paste Flow */}
+        <div className="flex flex-col gap-3 p-3 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-transparent border border-blue-500/30 mb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="space-y-0.5">
+              <div className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                <span>Antigravity Google OAuth (Google Cloud Code)</span>
+                <span className="text-[10px] bg-blue-500/20 text-blue-600 dark:text-blue-400 font-medium px-1.5 py-0.5 rounded-none">Auto-Refresh & Quota-Balanced</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Hubungkan akun Google untuk akses Claude 4.6, Claude Opus 4.6 Thinking, Gemini. Mendukung strategi <code>usage</code> untuk rotasi multi-akun berbasis kuota tersisa.
+              </p>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Hubungkan akun Google Anda untuk akses model Claude 4.6, Claude Opus 4.6 Thinking, Gemini 3.8 & 3.7. Mendukung strategi combo <code>usage</code> untuk rotasi multi-akun otomatis berbasis kuota tersisa.
-            </p>
+            {oauthStep === 'idle' && (
+              <button
+                type="button"
+                disabled={connectingOAuth}
+                onClick={startAntigravityOAuth}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition-colors shrink-0 shadow-sm disabled:opacity-50"
+              >
+                {connectingOAuth ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                <span>{connectingOAuth ? 'Loading...' : '+ Connect Antigravity (Google OAuth)'}</span>
+              </button>
+            )}
           </div>
-          <button
-            type="button"
-            disabled={connectingOAuth}
-            onClick={startAntigravityOAuth}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition-colors shrink-0 shadow-sm disabled:opacity-50"
-          >
-            {connectingOAuth ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-            <span>{connectingOAuth ? 'Connecting Google...' : '+ Connect Antigravity (Google OAuth)'}</span>
-          </button>
+
+          {oauthStep === 'awaiting_paste' && (
+            <div className="space-y-2 pt-1 border-t border-blue-500/20">
+              {/* Step 1 */}
+              <div className="text-[11px] font-medium text-foreground flex items-center gap-1">
+                <span className="bg-blue-600 text-white rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-bold shrink-0">1</span>
+                Buka link Google OAuth ini di browser, lalu login dengan akun Google kamu:
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={oauthAuthUrl}
+                  className="flex-1 font-mono text-[10px] bg-background border border-border px-2 py-1.5 text-muted-foreground truncate"
+                />
+                <button
+                  type="button"
+                  onClick={() => { navigator.clipboard.writeText(oauthAuthUrl); setCopiedAuthUrl(true); setTimeout(() => setCopiedAuthUrl(false), 2000); }}
+                  className="shrink-0 px-2 py-1.5 border border-border text-[11px] hover:bg-muted transition-colors flex items-center gap-1"
+                  title="Copy auth URL"
+                >
+                  {copiedAuthUrl ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                  {copiedAuthUrl ? 'Copied!' : 'Copy'}
+                </button>
+                <a
+                  href={oauthAuthUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] flex items-center gap-1 transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3" /> Open
+                </a>
+              </div>
+
+              {/* Step 2 */}
+              <div className="text-[11px] font-medium text-foreground flex items-center gap-1">
+                <span className="bg-blue-600 text-white rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-bold shrink-0">2</span>
+                Setelah Google redirect ke halaman error (localhost), copy URL dari address bar dan paste di sini:
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="http://localhost:1/callback?code=4/0A...&state=..."
+                  value={pastedCallbackUrl}
+                  onChange={e => setPastedCallbackUrl(e.target.value)}
+                  className="flex-1 font-mono text-[10px] bg-background border border-border px-2 py-1.5"
+                />
+                <button
+                  type="button"
+                  disabled={connectingOAuth || !pastedCallbackUrl.trim()}
+                  onClick={submitPastedCallback}
+                  className="shrink-0 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[11px] font-medium flex items-center gap-1 disabled:opacity-50 transition-colors"
+                >
+                  {connectingOAuth ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                  Submit
+                </button>
+                <button type="button" onClick={cancelOauth} className="shrink-0 px-2 py-1.5 border border-border text-[11px] hover:bg-muted transition-colors">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                💡 Browser akan menampilkan <em>"This site can't be reached"</em> — itu normal. Copy saja URL lengkap dari address bar.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Existing connections */}
