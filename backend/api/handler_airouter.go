@@ -1638,32 +1638,51 @@ func (h *APIHandler) streamTargetToSocket(
 	}
 
 	// If the model invoked tool calls, execute them and run follow-up synthesis
-	if len(pendingToolCalls) > 0 && len(mcpToolMap) > 0 {
+	if len(pendingToolCalls) > 0 {
 		var executedToolMessages []map[string]interface{}
 		var assistantToolCalls []map[string]interface{}
+		askUserTriggered := false // if ask_user was called, end turn and let user reply
 
 		for idx := 0; idx < len(pendingToolCalls); idx++ {
 			tc, ok := pendingToolCalls[idx]
 			if !ok {
 				continue
 			}
-			target, exists := mcpToolMap[tc.name]
+
+			// --- Handle ask_user / OpenWebUI interactive tool ---
+			// ask_user is a built-in OpenWebUI function that asks the user for input.
+			// We must NOT execute it as a regular tool — instead emit a 'confirmation'
+			// event so the frontend can show the interactive dialog, then end this turn.
+			if tc.name == "ask_user" || tc.name == "confirmation" {
+				var argsMap map[string]any
+				_ = json.Unmarshal([]byte(tc.arguments.String()), &argsMap)
+				questions, _ := argsMap["questions"].(string)
+				allowOther, _ := argsMap["allow_other"].(bool)
+				if questions == "" {
+					if q, ok := argsMap["question"].(string); ok {
+						questions = q
+					}
+				}
+				// Emit OpenWebUI confirmation event — triggers interactive UI in frontend
+				emitEvent("confirmation", map[string]interface{}{
+					"title":       "AI ingin bertanya",
+					"message":     questions,
+					"allow_other": allowOther,
+				})
+				askUserTriggered = true
+				continue
+			}
+
+			// Skip tools not in the MCP map
+			toolTarget, exists := mcpToolMap[tc.name]
 			if !exists {
 				continue
 			}
 
-			// Announce tool execution to chat UI
-			notice := fmt.Sprintf("\n> ⚡ *Menjalankan tool `%s`...*\n\n", tc.name)
-			accumulatedContent.WriteString(notice)
-			emitEvent("chat:completion", map[string]interface{}{
-				"choices": []interface{}{
-					map[string]interface{}{
-						"delta": map[string]interface{}{
-							"content": notice,
-						},
-					},
-				},
-				"done": false,
+			// Emit native OpenWebUI status event (NOT text into the message)
+			emitEvent("status", map[string]interface{}{
+				"description": tc.name,
+				"done":        false,
 			})
 
 			var argsObj any
@@ -1672,7 +1691,7 @@ func (h *APIHandler) streamTargetToSocket(
 			var rawRes any
 			var tErr error
 
-			if target.serverURL == "builtin" {
+			if toolTarget.serverURL == "builtin" {
 				var argsMap map[string]any
 				if m, ok := argsObj.(map[string]any); ok {
 					argsMap = m
@@ -1680,12 +1699,12 @@ func (h *APIHandler) streamTargetToSocket(
 					argsMap = make(map[string]any)
 				}
 				execCtx, execCancel := context.WithTimeout(context.Background(), 60*time.Second)
-				rawRes, tErr = h.ExecuteBuiltinTool(execCtx, target.toolName, argsMap, subdomain, userID, chatID)
+				rawRes, tErr = h.ExecuteBuiltinTool(execCtx, toolTarget.toolName, argsMap, subdomain, userID, chatID)
 				execCancel()
 			} else {
 				execCtx, execCancel := context.WithTimeout(context.Background(), 60*time.Second)
 				mcpClient := NewMCPClient()
-				rawRes, tErr = mcpClient.ExecuteTool(execCtx, target.serverURL, target.apiKey, target.toolName, argsObj)
+				rawRes, tErr = mcpClient.ExecuteTool(execCtx, toolTarget.serverURL, toolTarget.apiKey, toolTarget.toolName, argsObj)
 				execCancel()
 			}
 
@@ -1694,6 +1713,12 @@ func (h *APIHandler) streamTargetToSocket(
 			if tErr != nil {
 				resStr = "Error: " + tErr.Error()
 			}
+
+			// Emit status done
+			emitEvent("status", map[string]interface{}{
+				"description": tc.name,
+				"done":        true,
+			})
 
 			assistantToolCalls = append(assistantToolCalls, map[string]interface{}{
 				"id":   tc.id,
@@ -1709,6 +1734,11 @@ func (h *APIHandler) streamTargetToSocket(
 				"tool_call_id": tc.id,
 				"content":      resStr,
 			})
+		}
+
+		// If ask_user was triggered, end this turn. User reply = next message.
+		if askUserTriggered {
+			return nil
 		}
 
 		if len(executedToolMessages) > 0 {
