@@ -2700,19 +2700,53 @@ func (h *APIHandler) forwardAntigravityRequest(w http.ResponseWriter, bodyBytes 
 		reader := bufio.NewReader(resp.Body)
 		flusher, _ := w.(http.Flusher)
 		chunkID := "chatcmpl-" + uuid.New().String()
+		sentDone := false
+
+		emitDone := func() {
+			if sentDone {
+				return
+			}
+			sentDone = true
+			finalPayload := map[string]interface{}{
+				"id":      chunkID,
+				"object":  "chat.completion.chunk",
+				"created": time.Now().Unix(),
+				"model":   target.model,
+				"choices": []interface{}{
+					map[string]interface{}{
+						"index":         0,
+						"delta":         map[string]interface{}{},
+						"finish_reason": "stop",
+					},
+				},
+			}
+			fBytes, _ := json.Marshal(finalPayload)
+			fmt.Fprintf(w, "data: %s\n\n", string(fBytes))
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
 
 		for {
 			line, rErr := reader.ReadString('\n')
 			line = strings.TrimSpace(line)
 			if line != "" && strings.HasPrefix(line, "data: ") {
 				jsonStr := strings.TrimPrefix(line, "data: ")
+				if jsonStr == "[DONE]" {
+					// Antigravity sent its own [DONE] — emit ours and stop
+					emitDone()
+					break
+				}
 				var agResp struct {
 					Response struct {
 						Candidates []struct {
-							Content struct {
+							FinishReason string `json:"finishReason"`
+							Content      struct {
 								Parts []struct {
-									Text    string `json:"text"`
-									Thought bool   `json:"thought"`
+									Text             string `json:"text"`
+									Thought          bool   `json:"thought"`
+									ThoughtSignature string `json:"thoughtSignature"`
 								} `json:"parts"`
 							} `json:"content"`
 						} `json:"candidates"`
@@ -2721,26 +2755,38 @@ func (h *APIHandler) forwardAntigravityRequest(w http.ResponseWriter, bodyBytes 
 				if json.Unmarshal([]byte(jsonStr), &agResp) == nil {
 					for _, cand := range agResp.Response.Candidates {
 						for _, part := range cand.Content.Parts {
-							if part.Text != "" && !part.Thought {
-								chunkPayload := map[string]interface{}{
-									"id":      chunkID,
-									"object":  "chat.completion.chunk",
-									"created": time.Now().Unix(),
-									"model":   target.model,
-									"choices": []interface{}{
-										map[string]interface{}{
-											"index":         0,
-											"delta":         map[string]interface{}{"content": part.Text},
-											"finish_reason": nil,
-										},
-									},
-								}
-								chunkBytes, _ := json.Marshal(chunkPayload)
-								fmt.Fprintf(w, "data: %s\n\n", string(chunkBytes))
-								if flusher != nil {
-									flusher.Flush()
-								}
+							if part.Text == "" {
+								continue
 							}
+							var delta map[string]interface{}
+							if part.Thought || part.ThoughtSignature != "" {
+								// Thinking content → forward as reasoning_content
+								delta = map[string]interface{}{"reasoning_content": part.Text}
+							} else {
+								delta = map[string]interface{}{"content": part.Text}
+							}
+							chunkPayload := map[string]interface{}{
+								"id":      chunkID,
+								"object":  "chat.completion.chunk",
+								"created": time.Now().Unix(),
+								"model":   target.model,
+								"choices": []interface{}{
+									map[string]interface{}{
+										"index":         0,
+										"delta":         delta,
+										"finish_reason": nil,
+									},
+								},
+							}
+							chunkBytes, _ := json.Marshal(chunkPayload)
+							fmt.Fprintf(w, "data: %s\n\n", string(chunkBytes))
+							if flusher != nil {
+								flusher.Flush()
+							}
+						}
+						// finishReason=STOP → emit [DONE] immediately, don't wait for EOF
+						if cand.FinishReason == "STOP" || cand.FinishReason == "MAX_TOKENS" || cand.FinishReason == "SAFETY" {
+							emitDone()
 						}
 					}
 				}
@@ -2749,26 +2795,8 @@ func (h *APIHandler) forwardAntigravityRequest(w http.ResponseWriter, bodyBytes 
 				break
 			}
 		}
-
-		finalPayload := map[string]interface{}{
-			"id":      chunkID,
-			"object":  "chat.completion.chunk",
-			"created": time.Now().Unix(),
-			"model":   target.model,
-			"choices": []interface{}{
-				map[string]interface{}{
-					"index":         0,
-					"delta":         map[string]interface{}{},
-					"finish_reason": "stop",
-				},
-			},
-		}
-		fBytes, _ := json.Marshal(finalPayload)
-		fmt.Fprintf(w, "data: %s\n\n", string(fBytes))
-		fmt.Fprintf(w, "data: [DONE]\n\n")
-		if flusher != nil {
-			flusher.Flush()
-		}
+		// EOF — ensure [DONE] always sent (even if finishReason was missing)
+		emitDone()
 		return nil
 	}
 
