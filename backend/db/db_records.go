@@ -46,6 +46,24 @@ func (d *DB) GetAllActiveRecords() ([]Record, error) {
 	return records, nil
 }
 
+func (d *DB) GetAllSubdomains() ([]string, error) {
+	rows, err := d.conn.Query("SELECT subdomain FROM users ORDER BY subdomain ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	subs := make([]string, 0)
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		subs = append(subs, s)
+	}
+	return subs, nil
+}
+
 func (d *DB) GetRecordsByNameAndType(subdomain, name, recordType string) ([]Record, error) {
 	var rows *sql.Rows
 	var err error

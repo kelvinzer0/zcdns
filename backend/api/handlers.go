@@ -246,6 +246,14 @@ func (h *APIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/txt-records", h.requireAdmin(h.handleAdminCreateTXTRecord))
 	mux.HandleFunc("DELETE /api/admin/txt-records/{id}", h.requireAdmin(h.handleAdminDeleteTXTRecord))
 
+	// Admin: Full DNS Record Management (any subdomain)
+	mux.HandleFunc("GET /api/admin/records", h.requireAdmin(h.handleAdminGetAllRecords))
+	mux.HandleFunc("GET /api/admin/subdomains", h.requireAdmin(h.handleAdminGetSubdomains))
+	mux.HandleFunc("POST /api/admin/records", h.requireAdmin(h.handleAdminCreateRecord))
+	mux.HandleFunc("PUT /api/admin/records/{id}", h.requireAdmin(h.handleAdminUpdateRecord))
+	mux.HandleFunc("DELETE /api/admin/records/{id}", h.requireAdmin(h.handleAdminDeleteRecord))
+	mux.HandleFunc("DELETE /api/admin/records/subdomain/{subdomain}", h.requireAdmin(h.handleAdminDeleteSubdomainRecords))
+
 	// Static SPA file server
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// If request is targeted at *.router.zcdns.id, serve OpenWebUI!

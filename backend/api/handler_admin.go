@@ -260,6 +260,14 @@ type AdminTXTRequest struct {
 	TTL       int    `json:"ttl"`
 }
 
+type AdminRecordRequest struct {
+	Subdomain string `json:"subdomain"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Value     string `json:"value"`
+	TTL       int    `json:"ttl"`
+}
+
 func (h *APIHandler) handleAdminCreateTXTRecord(w http.ResponseWriter, r *http.Request) {
 	var req AdminTXTRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -326,4 +334,161 @@ func (h *APIHandler) handleAdminGetTXTRecords(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, records)
+}
+
+// ── Admin: Full DNS Record Management ────────────────────────────────────────
+
+func (h *APIHandler) handleAdminGetAllRecords(w http.ResponseWriter, r *http.Request) {
+	records, err := h.db.GetAllActiveRecords()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to retrieve records: "+err.Error())
+		return
+	}
+	if records == nil {
+		records = make([]db.Record, 0)
+	}
+	writeJSON(w, http.StatusOK, records)
+}
+
+func (h *APIHandler) handleAdminGetSubdomains(w http.ResponseWriter, r *http.Request) {
+	subs, err := h.db.GetAllSubdomains()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to retrieve subdomains: "+err.Error())
+		return
+	}
+	if subs == nil {
+		subs = make([]string, 0)
+	}
+	writeJSON(w, http.StatusOK, subs)
+}
+
+func (h *APIHandler) handleAdminCreateRecord(w http.ResponseWriter, r *http.Request) {
+	var req AdminRecordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	cleanName, cleanType, cleanValue, ttl, err := h.validateRecord(RecordRequest{
+		Name:  req.Name,
+		Type:  req.Type,
+		Value: req.Value,
+		TTL:   req.TTL,
+	})
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	sub := strings.ToLower(strings.TrimSpace(req.Subdomain))
+	sub = strings.TrimSuffix(sub, "."+strings.ToLower(h.cfg.BaseDomain))
+	if sub == "" {
+		writeJSONError(w, http.StatusBadRequest, "Subdomain is required")
+		return
+	}
+
+	// Ensure the subdomain exists so DNS lookups don't return NXDOMAIN
+	if _, err := h.db.GetUserBySubdomain(sub); err != nil {
+		_ = h.db.CreateUser(uuid.New().String(), sub)
+	}
+
+	record := &db.Record{
+		ID:        uuid.New().String(),
+		Subdomain: sub,
+		Name:      cleanName,
+		Type:      cleanType,
+		Value:     cleanValue,
+		TTL:       ttl,
+	}
+
+	if err := h.db.AddRecord(record); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to store record: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, record)
+	h.triggerRecordChanged()
+}
+
+func (h *APIHandler) handleAdminUpdateRecord(w http.ResponseWriter, r *http.Request) {
+	recordID := r.PathValue("id")
+	if recordID == "" {
+		writeJSONError(w, http.StatusBadRequest, "Record ID required")
+		return
+	}
+
+	var req AdminRecordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	cleanName, cleanType, cleanValue, ttl, err := h.validateRecord(RecordRequest{
+		Name:  req.Name,
+		Type:  req.Type,
+		Value: req.Value,
+		TTL:   req.TTL,
+	})
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	sub := strings.ToLower(strings.TrimSpace(req.Subdomain))
+	sub = strings.TrimSuffix(sub, "."+strings.ToLower(h.cfg.BaseDomain))
+	if sub == "" {
+		writeJSONError(w, http.StatusBadRequest, "Subdomain is required")
+		return
+	}
+
+	record := &db.Record{
+		ID:        recordID,
+		Subdomain: sub,
+		Name:      cleanName,
+		Type:      cleanType,
+		Value:     cleanValue,
+		TTL:       ttl,
+	}
+
+	if err := h.db.UpdateRecord(record); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to update record: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, record)
+	h.triggerRecordChanged()
+}
+
+func (h *APIHandler) handleAdminDeleteRecord(w http.ResponseWriter, r *http.Request) {
+	recordID := r.PathValue("id")
+	if recordID == "" {
+		writeJSONError(w, http.StatusBadRequest, "Record ID required")
+		return
+	}
+
+	if err := h.db.DeleteRecordByID(recordID); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to delete record: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	h.triggerRecordChanged()
+}
+
+func (h *APIHandler) handleAdminDeleteSubdomainRecords(w http.ResponseWriter, r *http.Request) {
+	sub := r.PathValue("subdomain")
+	sub = strings.ToLower(strings.TrimSpace(sub))
+	sub = strings.TrimSuffix(sub, "."+strings.ToLower(h.cfg.BaseDomain))
+	if sub == "" {
+		writeJSONError(w, http.StatusBadRequest, "Subdomain is required")
+		return
+	}
+
+	if err := h.db.DeleteAllRecords(sub); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to delete records: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "subdomain": sub})
+	h.triggerRecordChanged()
 }
