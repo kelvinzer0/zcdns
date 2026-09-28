@@ -176,6 +176,9 @@ jobs:
             (shared-ip update router.zcdns.id --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || shared-ip add router.zcdns.id --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || true) &&
             (shared-ip update '*.router.zcdns.id' --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || shared-ip add '*.router.zcdns.id' --localport=443 --localipv4=10.0.0.12 --localipv6=fd00::12 2>/dev/null || true) &&
 
+            # qwenapi.zcdns.id — Qwen API service (HTTPS, certbot SSL)
+            (shared-ip update qwenapi.zcdns.id --localport=443 --localipv4=10.0.0.148 --localipv6=fd00::148 --certbot --certbot-email=kelvinandriancom@gmail.com 2>/dev/null || shared-ip add qwenapi.zcdns.id --localport=443 --localipv4=10.0.0.148 --localipv6=fd00::148 --certbot --certbot-email=kelvinandriancom@gmail.com 2>/dev/null || true) &&
+
             # shared-ip first (creates virtual IPs), then zcdns (binds to them)
             systemctl restart shared-ip &&
             systemctl is-active shared-ip &&

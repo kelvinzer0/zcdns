@@ -361,6 +361,18 @@ func InitDB(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
+	// Seed infrastructure subdomains (idempotent). These are internal service
+	// hostnames that must always exist regardless of user sessions.
+	seedInfraSubdomains := []string{"qwenapi"}
+	for _, sub := range seedInfraSubdomains {
+		_, _ = conn.Exec(`INSERT INTO users (id, subdomain) VALUES (?, ?) ON CONFLICT(subdomain) DO NOTHING`,
+			"seed-"+sub, sub)
+	}
+	// qwenapi.zcdns.id — AAAA only (IPv6). No A record by design.
+	_, _ = conn.Exec(`INSERT INTO records (id, subdomain, name, type, value, ttl, created_at, updated_at)
+		VALUES ('seed-qwenapi-aaaa', 'qwenapi', '@', 'AAAA', '2606:c700:4020:98:1234:4321:73ab:1', 300, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT(id) DO NOTHING`)
+
 	// Migrations for existing databases
 	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN api_type TEXT NOT NULL DEFAULT 'openai';")
 	_, _ = conn.Exec("ALTER TABLE ai_router_connections ADD COLUMN models_json TEXT NOT NULL DEFAULT '[]';")
