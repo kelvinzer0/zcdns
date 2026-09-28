@@ -2891,16 +2891,85 @@ func (h *APIHandler) streamAntigravityToSocket(
 
 	for _, m := range messages {
 		role, _ := m["role"].(string)
+
+		// Handle tool result messages → Gemini functionResponse parts
+		if role == "tool" {
+			toolCallID, _ := m["tool_call_id"].(string)
+			toolContent, _ := m["content"].(string)
+			// Extract function name from tool_call_id (format: "name-..." or just use a fallback)
+			funcName := "unknown"
+			if idx := strings.Index(toolCallID, "-"); idx > 0 {
+				funcName = toolCallID[:idx]
+			}
+			// Parse the tool result content as JSON for the response field
+			var responseObj interface{}
+			if err := json.Unmarshal([]byte(toolContent), &responseObj); err != nil {
+				responseObj = map[string]interface{}{"result": toolContent}
+			}
+			contents = append(contents, map[string]interface{}{
+				"role": "user",
+				"parts": []map[string]interface{}{
+					{
+						"functionResponse": map[string]interface{}{
+							"id":   toolCallID,
+							"name": funcName,
+							"response": map[string]interface{}{
+								"result": responseObj,
+							},
+						},
+					},
+				},
+			})
+			continue
+		}
+
+		// Handle assistant messages with tool_calls → Gemini functionCall parts
+		if role == "assistant" {
+			var parts []map[string]interface{}
+			// Add text content if present
+			if text, ok := m["content"].(string); ok && text != "" {
+				parts = append(parts, map[string]interface{}{"text": text})
+			}
+			// Add tool calls as functionCall parts
+			if tcs, ok := m["tool_calls"].([]interface{}); ok {
+				for _, tcRaw := range tcs {
+					tc, ok := tcRaw.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					tcID, _ := tc["id"].(string)
+					fn, _ := tc["function"].(map[string]interface{})
+					fnName, _ := fn["name"].(string)
+					fnArgsStr, _ := fn["arguments"].(string)
+					var fnArgs interface{}
+					if err := json.Unmarshal([]byte(fnArgsStr), &fnArgs); err != nil {
+						fnArgs = map[string]interface{}{}
+					}
+					parts = append(parts, map[string]interface{}{
+						"functionCall": map[string]interface{}{
+							"id":   tcID,
+							"name": fnName,
+							"args": fnArgs,
+						},
+					})
+				}
+			}
+			if len(parts) > 0 {
+				contents = append(contents, map[string]interface{}{
+					"role":  "model",
+					"parts": parts,
+				})
+			}
+			continue
+		}
+
+		// Regular user/system messages
 		text, _ := m["content"].(string)
 		if role == "system" {
 			systemParts = append(systemParts, map[string]interface{}{"text": text})
 		} else {
-			geminiRole := "user"
-			if role == "assistant" {
-				geminiRole = "model"
-			}
 			contents = append(contents, map[string]interface{}{
-				"role":  geminiRole,
+				"role":  "user",
 				"parts": []map[string]interface{}{{"text": text}},
 			})
 		}
