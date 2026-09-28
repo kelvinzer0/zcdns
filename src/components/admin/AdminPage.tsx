@@ -5,7 +5,7 @@ import {
   ShieldCheck,
   Search,
   Lock,
-  
+
   CheckCircle2,
   Trash2,
   Ban,
@@ -17,6 +17,8 @@ import {
   X,
   Server,
   Plus,
+  Globe,
+  Pencil,
 } from "lucide-react";
 import { Seo } from "../Seo";
 import { useTranslations } from "../../lib/useTranslations";
@@ -60,6 +62,17 @@ interface GrowthStats {
   blocked_domains: number;
 }
 
+interface DNSRecord {
+  id: string;
+  subdomain: string;
+  name: string;
+  type: string;
+  value: string;
+  ttl: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export function AdminPage() {
   const t = useTranslations("Admin");
 
@@ -72,12 +85,23 @@ export function AdminPage() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Dashboard state
-  const [activeTab, setActiveTab] = useState<"reports" | "blocked" | "stats" | "txt">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "blocked" | "stats" | "txt" | "dns">("reports");
   const [reports, setReports] = useState<AbuseReport[]>([]);
   const [blockedList, setBlockedList] = useState<BlockedSubdomain[]>([]);
   const [growthStats, setGrowthStats] = useState<GrowthStats | null>(null);
   const [txtList, setTxtList] = useState<TXTRecord[]>([]);
+  const [dnsList, setDnsList] = useState<DNSRecord[]>([]);
+  const [dnsSearch, setDnsSearch] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  // Form for new DNS record
+  const [dnsSubdomain, setDnsSubdomain] = useState("");
+  const [dnsName, setDnsName] = useState("@");
+  const [dnsType, setDnsType] = useState("A");
+  const [dnsValue, setDnsValue] = useState("");
+  const [dnsTTL, setDnsTTL] = useState(300);
+  const [isSavingDns, setIsSavingDns] = useState(false);
+  const [editingDnsId, setEditingDnsId] = useState<string | null>(null);
 
   // Form for new TXT record
   const [txtSubdomain, setTxtSubdomain] = useState("guard");
@@ -105,11 +129,12 @@ export function AdminPage() {
     try {
       const headers = { "X-Admin-Key": token };
 
-      const [reportsRes, blockedRes, statsRes, txtRes] = await Promise.all([
+      const [reportsRes, blockedRes, statsRes, txtRes, dnsRes] = await Promise.all([
         fetch("/api/admin/abuse-reports", { headers }),
         fetch("/api/admin/blocked-subdomains", { headers }),
         fetch("/api/admin/stats", { headers }),
         fetch("/api/admin/txt-records", { headers }),
+        fetch("/api/admin/records", { headers }),
       ]);
 
       if (reportsRes.status === 401 || blockedRes.status === 401) {
@@ -135,6 +160,11 @@ export function AdminPage() {
       if (txtRes.ok) {
         const data = await txtRes.json();
         setTxtList(data);
+      }
+
+      if (dnsRes.ok) {
+        const data = await dnsRes.json();
+        setDnsList(data);
       }
     } catch (err) {
       console.error("Error fetching admin data:", err);
@@ -345,6 +375,121 @@ export function AdminPage() {
     }
   };
 
+  // ── DNS Record Management ──────────────────────────────────────────────
+
+  const resetDnsForm = () => {
+    setDnsSubdomain("");
+    setDnsName("@");
+    setDnsType("A");
+    setDnsValue("");
+    setDnsTTL(300);
+    setEditingDnsId(null);
+  };
+
+  const handleSaveDns = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminToken || !dnsSubdomain.trim() || !dnsValue.trim()) return;
+    setIsSavingDns(true);
+    try {
+      const url = editingDnsId
+        ? `/api/admin/records/${editingDnsId}`
+        : "/api/admin/records";
+      const method = editingDnsId ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Key": adminToken,
+        },
+        body: JSON.stringify({
+          subdomain: dnsSubdomain.trim(),
+          name: dnsName.trim() || "@",
+          type: dnsType,
+          value: dnsValue.trim(),
+          ttl: Number(dnsTTL) || 300,
+        }),
+      });
+
+      if (res.ok) {
+        setActionSuccess(
+          editingDnsId
+            ? "Record DNS berhasil diperbarui!"
+            : "Record DNS berhasil ditambahkan & disinkronkan ke slave nameserver!"
+        );
+        resetDnsForm();
+        fetchAdminData();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Gagal menyimpan record DNS");
+      }
+    } catch (err) {
+      console.error("Failed to save DNS record:", err);
+      alert("Terjadi kesalahan koneksi");
+    } finally {
+      setIsSavingDns(false);
+    }
+  };
+
+  const handleEditDns = (rec: DNSRecord) => {
+    setEditingDnsId(rec.id);
+    setDnsSubdomain(rec.subdomain);
+    setDnsName(rec.name);
+    setDnsType(rec.type);
+    setDnsValue(rec.value);
+    setDnsTTL(rec.ttl);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleDeleteDns = async (id: string) => {
+    if (!adminToken) return;
+    if (!confirm("Hapus record DNS ini? Perubahan langsung disinkronkan ke slave nameserver.")) return;
+
+    try {
+      const res = await fetch(`/api/admin/records/${id}`, {
+        method: "DELETE",
+        headers: { "X-Admin-Key": adminToken },
+      });
+
+      if (res.ok) {
+        setActionSuccess("Record DNS berhasil dihapus!");
+        fetchAdminData();
+      }
+    } catch (err) {
+      console.error("Failed to delete DNS record:", err);
+    }
+  };
+
+  const handleDeleteSubdomainRecords = async (subdomain: string) => {
+    if (!adminToken) return;
+    if (!confirm(`Hapus SEMUA record DNS milik ${subdomain}.zcdns.id? Tindakan ini tidak dapat dibatalkan.`)) return;
+
+    try {
+      const res = await fetch(`/api/admin/records/subdomain/${subdomain}`, {
+        method: "DELETE",
+        headers: { "X-Admin-Key": adminToken },
+      });
+
+      if (res.ok) {
+        setActionSuccess(`Semua record ${subdomain}.zcdns.id berhasil dihapus!`);
+        fetchAdminData();
+      }
+    } catch (err) {
+      console.error("Failed to delete subdomain records:", err);
+    }
+  };
+
+  const filteredDnsRecords = dnsList.filter((rec) => {
+    if (dnsSearch === "") return true;
+    const q = dnsSearch.toLowerCase();
+    return (
+      rec.subdomain.toLowerCase().includes(q) ||
+      rec.name.toLowerCase().includes(q) ||
+      rec.type.toLowerCase().includes(q) ||
+      rec.value.toLowerCase().includes(q)
+    );
+  });
+
   const filteredReports = reports.filter((rep) => {
     const matchesStatus =
       statusFilter === "all" ? true : rep.status === statusFilter;
@@ -535,6 +680,17 @@ export function AdminPage() {
           >
             <FileText className="w-4 h-4" />
             TXT & ACME ({txtList.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("dns")}
+            className={`pb-3 px-4 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+              activeTab === "dns"
+                ? "border-red-600 text-red-600"
+                : "border-transparent text-gray-500 hover:text-gray-900"
+            }`}
+          >
+            <Globe className="w-4 h-4" />
+            DNS Records ({dnsList.length})
           </button>
         </div>
 
@@ -1006,6 +1162,213 @@ export function AdminPage() {
                   </table>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 5: DNS Records (Root DNS Management) */}
+        {activeTab === "dns" && (
+          <div className="space-y-6">
+            {/* Add/Edit Record Form */}
+            <div className="bg-white p-6 rounded-none border border-gray-200 shadow-none">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <Globe className="w-5 h-5 text-red-600" />
+                    {editingDnsId ? "Edit Record DNS" : "Tambah Record DNS"}
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Kelola record DNS di seluruh subdomain. Perubahan langsung disinkronkan ke slave nameserver.
+                  </p>
+                </div>
+                {editingDnsId && (
+                  <button
+                    onClick={resetDnsForm}
+                    className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-none text-xs font-semibold"
+                  >
+                    Batal Edit
+                  </button>
+                )}
+              </div>
+
+              <form onSubmit={handleSaveDns} className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Subdomain</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="contoh: qwenapi"
+                    value={dnsSubdomain}
+                    onChange={(e) => setDnsSubdomain(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-none border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Name / Host</label>
+                  <input
+                    type="text"
+                    placeholder="@"
+                    value={dnsName}
+                    onChange={(e) => setDnsName(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-none border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Type</label>
+                  <select
+                    value={dnsType}
+                    onChange={(e) => setDnsType(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-none border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 font-mono bg-white"
+                  >
+                    {["A", "AAAA", "CNAME", "TXT", "MX", "NS", "PTR", "CAA", "SRV"].map((ty) => (
+                      <option key={ty} value={ty}>{ty}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Value</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="contoh: 192.0.2.1"
+                    value={dnsValue}
+                    onChange={(e) => setDnsValue(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-none border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">TTL (detik)</label>
+                  <input
+                    type="number"
+                    min={60}
+                    max={86400}
+                    placeholder="300"
+                    value={dnsTTL}
+                    onChange={(e) => setDnsTTL(Number(e.target.value))}
+                    className="w-full px-3.5 py-2 rounded-none border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
+                  />
+                </div>
+                <div className="md:col-span-5 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isSavingDns}
+                    className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-none text-sm transition-colors shadow-none flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {editingDnsId ? (
+                      <>
+                        <Pencil className="w-4 h-4" />
+                        Simpan Perubahan
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        Tambah Record
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Records Table */}
+            <div className="bg-white rounded-none border border-gray-200 shadow-none overflow-hidden">
+              <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row gap-4 justify-between items-center bg-gray-50/50">
+                <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-gray-500" />
+                  Semua Record DNS ({filteredDnsRecords.length})
+                </h4>
+                <div className="relative w-full md:w-72">
+                  <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Cari subdomain, name, type, value..."
+                    value={dnsSearch}
+                    onChange={(e) => setDnsSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-white rounded-none border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-semibold border-b border-gray-100">
+                    <tr>
+                      <th className="py-3 px-4">FQDN</th>
+                      <th className="py-3 px-4">Subdomain</th>
+                      <th className="py-3 px-4">Name</th>
+                      <th className="py-3 px-4">Type</th>
+                      <th className="py-3 px-4">Value</th>
+                      <th className="py-3 px-4">TTL</th>
+                      <th className="py-3 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredDnsRecords.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-12 text-center text-gray-500">
+                          {dnsList.length === 0 ? "Belum ada record DNS." : "Tidak ada record yang cocok dengan pencarian."}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredDnsRecords.map((rec) => {
+                        const fqdn =
+                          rec.name && rec.name !== "@"
+                            ? `${rec.name}.${rec.subdomain}.zcdns.id`
+                            : `${rec.subdomain}.zcdns.id`;
+                        const typeColor: Record<string, string> = {
+                          A: "text-blue-700 bg-blue-100",
+                          AAAA: "text-indigo-700 bg-indigo-100",
+                          CNAME: "text-purple-700 bg-purple-100",
+                          TXT: "text-gray-700 bg-gray-100",
+                          MX: "text-green-700 bg-green-100",
+                          NS: "text-cyan-700 bg-cyan-100",
+                          CAA: "text-orange-700 bg-orange-100",
+                          SRV: "text-pink-700 bg-pink-100",
+                          PTR: "text-yellow-700 bg-yellow-100",
+                        };
+                        return (
+                          <tr key={rec.id} className="hover:bg-gray-50">
+                            <td className="py-3 px-4 font-mono font-bold text-gray-900 text-xs">{fqdn}</td>
+                            <td className="py-3 px-4 font-mono text-gray-600 text-xs">{rec.subdomain}</td>
+                            <td className="py-3 px-4 font-mono text-gray-600 text-xs">{rec.name}</td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-0.5 rounded-none text-xs font-bold font-mono ${typeColor[rec.type] || "text-gray-700 bg-gray-100"}`}>
+                                {rec.type}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 font-mono text-gray-800 text-xs break-all max-w-xs">
+                              {rec.value}
+                            </td>
+                            <td className="py-3 px-4 font-mono text-gray-500 text-xs">{rec.ttl}s</td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              <button
+                                onClick={() => handleEditDns(rec)}
+                                className="p-1.5 text-gray-500 hover:text-blue-600 transition-colors"
+                                title="Edit Record"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteDns(rec.id)}
+                                className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
+                                title="Hapus Record"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSubdomainRecords(rec.subdomain)}
+                                className="p-1.5 text-gray-400 hover:text-red-700 transition-colors"
+                                title={`Hapus semua record ${rec.subdomain}.zcdns.id`}
+                              >
+                                <Ban className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
