@@ -843,6 +843,13 @@ func (h *APIHandler) forwardRequest(w http.ResponseWriter, bodyBytes []byte, tar
 	} else {
 		io.Copy(w, resp.Body)
 	}
+
+	// Non-200 responses are retriable so the proxy loop can failover to next key/connection.
+	// 429 is handled above as rate_limited. 404 for embeddings is handled above as terminal.
+	// All other non-200: body already copied to client, but signal retry to outer loop.
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("upstream_error:%d:%s", resp.StatusCode, target.provider)
+	}
 	return nil
 }
 
