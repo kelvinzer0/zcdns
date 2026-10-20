@@ -41,20 +41,40 @@ export function LocalizedLayout() {
 
   const getSeoData = () => {
     const path = location.pathname.replace(`/${locale}`, '') || '/';
+    const isId = locale === 'id';
     switch (path) {
       case '/about':
-        return { title: 'About Us - ZeroCentDNS', description: 'Learn more about the mission and team behind ZCDNS.' };
+        return { 
+          title: isId ? 'Tentang Kami - ZeroCentDNS' : 'About Us - ZeroCentDNS', 
+          description: isId ? 'Pelajari misi dan dedikasi di balik ZeroCentDNS.' : 'Learn more about the mission and team behind ZCDNS.',
+          lang: locale
+        };
       case '/abuse-report':
-        return { title: 'Abuse Report - ZeroCentDNS', description: 'Report abuse or malicious activity related to our DNS services.' };
+        return { 
+          title: isId ? 'Laporan Penyalahgunaan - ZeroCentDNS' : 'Abuse Report - ZeroCentDNS', 
+          description: isId ? 'Laporkan penyalahgunaan domain atau aktivitas mencurigakan.' : 'Report abuse or malicious activity related to our DNS services.',
+          lang: locale
+        };
       case '/admin':
-        return { title: 'Admin Abuse Management - ZeroCentDNS', description: 'Review and manage reported domains, abuse complaints, and enforce DNS suspensions.' };
+        return { 
+          title: isId ? 'Admin Manajemen Abuse - ZeroCentDNS' : 'Admin Abuse Management - ZeroCentDNS', 
+          description: isId ? 'Tinjau dan kelola subdomain terlapor serta penegakan DNS.' : 'Review and manage reported domains, abuse complaints, and enforce DNS suspensions.',
+          lang: locale
+        };
       case '/dashboard':
-        return { title: 'DNS Playground & Dashboard - ZeroCentDNS', description: 'Interactive DNS sandbox with live query stream, parental control, and record manager.' };
+        return { 
+          title: isId ? 'DNS Playground & Dasbor - ZeroCentDNS' : 'DNS Playground & Dashboard - ZeroCentDNS', 
+          description: isId ? 'Sandbox DNS interaktif dengan live query stream, parental control, dan record manager.' : 'Interactive DNS sandbox with live query stream, parental control, and record manager.',
+          lang: locale
+        };
       default:
         return { 
-          title: 'ZeroCentDNS - Free Educational DNS Platform', 
-          description: 'ZeroCentDNS is a free educational platform that offers hands-on experience with DNS configuration via delegated subdomains. It provides a safe and accessible environment for individuals to understand core DNS concepts before investing in a top-level domain.',
-          jsonLd: organizationJsonLd 
+          title: isId ? 'ZeroCentDNS - Platform Edukasi DNS Gratis' : 'ZeroCentDNS - Free Educational DNS Platform', 
+          description: isId 
+            ? 'ZeroCentDNS adalah platform edukasi gratis yang menawarkan praktik langsung konfigurasi DNS via subdomain terisolasi dengan authoritative nameserver live.'
+            : 'ZeroCentDNS is a free educational platform that offers hands-on experience with DNS configuration via delegated subdomains. It provides a safe and accessible environment for individuals to understand core DNS concepts before investing in a top-level domain.',
+          jsonLd: organizationJsonLd,
+          lang: locale
         };
     }
   };

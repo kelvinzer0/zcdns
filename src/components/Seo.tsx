@@ -8,6 +8,7 @@ interface SeoProps {
   canonical?: string;
   ogImage?: string;
   jsonLd?: Record<string, unknown>;
+  lang?: string;
 }
 
 const BASE_URL = 'https://www.zcdns.id';
@@ -20,7 +21,8 @@ export function Seo({
   description, 
   canonical,
   ogImage,
-  jsonLd 
+  jsonLd,
+  lang = 'id'
 }: SeoProps) {
   const { pathname } = useLocation();
 
@@ -32,7 +34,7 @@ export function Seo({
   };
 
   return (
-    <Helmet>
+    <Helmet htmlAttributes={{ lang }}>
       {/* Standard SEO Tags */}
       <title>{seo.title}</title>
       <meta name="description" content={seo.description} />

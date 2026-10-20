@@ -1,13 +1,16 @@
-import { AlarmClock, ArrowRight, BookOpen, CircuitBoard, Zap } from "lucide-react"
+import { AlarmClock, ArrowRight, BookOpen, CircuitBoard, Zap, Play } from "lucide-react"
 
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { CustomVideoSlider } from "./CustomVideoSlider";
+import { InteractiveProbe } from "./InteractiveProbe";
 import { LocalizedLink as Link } from './LocalizedLink';
 import { useTranslations } from '../lib/useTranslations';
+import { useState } from 'react';
 
 export function Hero() {
   const t = useTranslations('Hero');
+  const [viewMode, setViewMode] = useState<'demo' | 'video'>('demo');
   const videos = [
     {
       src: "https://codeberg.org/zcdns/mediakit/raw/branch/main/videos/zcdns-1.mp4",
@@ -86,11 +89,41 @@ export function Hero() {
           </div>
         </div>
 
-        {/* Visual Element */}
-        <div className="mt-16 relative">
-          <div className="bg-white  p-2 shadow-xl flex justify-center items-center">
-            <CustomVideoSlider videos={videos} />
+        {/* Interactive Feature Visual Element */}
+        <div className="mt-12 relative">
+          <div className="flex justify-center items-center gap-2 mb-4">
+            <button
+              type="button"
+              onClick={() => setViewMode('demo')}
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
+                viewMode === 'demo'
+                  ? 'bg-blue-900 text-white shadow'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              ⚡ Live Interactive Demo
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('video')}
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all flex items-center gap-1.5 ${
+                viewMode === 'video'
+                  ? 'bg-blue-900 text-white shadow'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <Play className="w-3 h-3 fill-current" />
+              Video Panduan
+            </button>
           </div>
+
+          {viewMode === 'demo' ? (
+            <InteractiveProbe />
+          ) : (
+            <div className="bg-white p-2 rounded-xl shadow-xl flex justify-center items-center border border-gray-100">
+              <CustomVideoSlider videos={videos} />
+            </div>
+          )}
         </div>
       </div>
     </section>

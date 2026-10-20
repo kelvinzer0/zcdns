@@ -1,10 +1,10 @@
 import { ArrowRight, Heart, Target, Zap } from "lucide-react"
 
-import { Badge } from "./ui/badge" // Adjusted import path
-import { Button } from "./ui/button" // Adjusted import path
+import { Badge } from "./ui/badge"
+import { Button } from "./ui/button"
 import EducationIllustration from '../assets/Education-amico.svg';
-import { Link } from 'react-router-dom'; // Changed to react-router-dom Link
-import { useTranslations } from '../lib/useTranslations'; // Adjusted import path for placeholder
+import { LocalizedLink as Link } from './LocalizedLink';
+import { useTranslations } from '../lib/useTranslations';
 
 export function About() {
   const t = useTranslations('About');
@@ -69,7 +69,7 @@ export function About() {
               size="lg"
               className="bg-[#012241] hover:bg-[#02365f] text-white shadow-lg hover:shadow-xl transition-all duration-200"
             >
-              <Link to="https://www.zcdns.id/dashboard" target="_blank">
+              <Link to="/dashboard">
                 {t('start-your-dns-journey')}
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Link>

@@ -81,7 +81,8 @@ export const CustomVideoSlider: React.FC<CustomVideoSliderProps> = ({ videos }) 
             {!isPlaying && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/30 bg-opacity-50">
                 <button
-                  className="w-20 h-20 bg-white/20 hover:bg-white/30 flex items-center justify-center"
+                  aria-label="Putar video"
+                  className="w-20 h-20 bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors rounded-full"
                   onClick={handlePlayButtonClick}
                 >
                   <PlayCircle className="h-16 w-16 text-white" />
@@ -93,13 +94,15 @@ export const CustomVideoSlider: React.FC<CustomVideoSliderProps> = ({ videos }) 
       </div>
       <button
         onClick={goToPrevious}
-        className="absolute top-1/2 left-4 -translate-y-1/2 bg-black/50 text-white p-2"
+        aria-label="Video sebelumnya"
+        className="absolute top-1/2 left-4 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors"
       >
         <ChevronLeft className="h-6 w-6" />
       </button>
       <button
         onClick={goToNext}
-        className="absolute top-1/2 right-4 -translate-y-1/2 bg-black/50 text-white p-2"
+        aria-label="Video berikutnya"
+        className="absolute top-1/2 right-4 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors"
       >
         <ChevronRight className="h-6 w-6" />
       </button>

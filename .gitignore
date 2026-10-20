@@ -45,3 +45,4 @@ zvault-cli/zvault
 
 # Vault local data
 .zvault/
+.taste-skill

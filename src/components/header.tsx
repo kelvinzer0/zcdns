@@ -50,7 +50,7 @@ export function Header({ setMobileMenuOpen }: { setMobileMenuOpen: (isOpen: bool
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
-            <Link to="/" className="inline-block group">
+            <Link to="/" aria-label={t('zerocentdns-logo')} className="inline-block group">
               <img
                 src="/zcdns-dark-logo.svg"
                 alt={t('zerocentdns-logo')}

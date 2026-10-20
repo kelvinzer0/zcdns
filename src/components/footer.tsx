@@ -42,7 +42,7 @@ export function Footer() {
           <div className="text-center space-y-8">
             {/* Brand Section */}
             <div className="space-y-6">
-              <Link to="/" className="inline-flex items-center group relative w-max">
+              <Link to="/" aria-label={t('zerocentdns-logo')} className="inline-flex items-center group relative w-max">
                 <img
                   src="/zcdns-light-logo.svg"
                   alt={t('zerocentdns-logo')}
